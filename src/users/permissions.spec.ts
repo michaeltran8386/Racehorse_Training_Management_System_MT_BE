@@ -5,7 +5,13 @@ import { permissionsOf, toPublicUser } from './public-user';
 describe('permissions', () => {
   it('should give each role its default permissions', () => {
     expect(defaultPermissions(Role.CLUB_MANAGER).manageAccounts).toBe(true);
+    expect(defaultPermissions(Role.CLUB_MANAGER).ackAlerts).toBe(false);
+    expect(defaultPermissions(Role.CLUB_MANAGER).editHorses).toBe(true);
+    expect(defaultPermissions(Role.CLUB_MANAGER).deleteHorses).toBe(true);
+    expect(defaultPermissions(Role.HEAD_TRAINER).editHorses).toBe(false);
+    expect(defaultPermissions(Role.HEAD_TRAINER).deleteHorses).toBe(false);
     expect(defaultPermissions(Role.VETERINARIAN).placeLock).toBe(true);
+    expect(defaultPermissions(Role.VETERINARIAN).ackAlerts).toBe(true);
     expect(defaultPermissions(Role.GROOM)).toEqual(
       expect.objectContaining({ viewHorses: true, editHorses: false, manageAccounts: false }),
     );
@@ -30,6 +36,18 @@ describe('permissions', () => {
     expect(normalizePermissions(Role.CLUB_MANAGER, { manageAccounts: false }).manageAccounts).toBe(
       true,
     );
+  });
+
+  it('Head Trainer default has no horse edit/delete authority and only Club Manager manages accounts', () => {
+    const ht = defaultPermissions(Role.HEAD_TRAINER);
+    expect(ht.editHorses).toBe(false);
+    expect(ht.deleteHorses).toBe(false);
+    expect(ht.manageAccounts).toBe(false);
+
+    expect(defaultPermissions(Role.CLUB_MANAGER).manageAccounts).toBe(true);
+    expect(defaultPermissions(Role.VETERINARIAN).manageAccounts).toBe(false);
+    expect(defaultPermissions(Role.GROOM).manageAccounts).toBe(false);
+    expect(defaultPermissions(Role.HORSE_OWNER).manageAccounts).toBe(false);
   });
 
   it('only a Veterinarian acknowledges and is notified of abnormal-sign alerts (Q-0.04)', () => {
