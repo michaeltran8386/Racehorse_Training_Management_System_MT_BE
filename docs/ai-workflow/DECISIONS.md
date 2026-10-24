@@ -1,6 +1,6 @@
 # Architecture Decision Log
 
-> Plan revision hiện hành là v1-approved-r4, approved by `APPROVE PLAN v1` on 2026-10-24. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
+> Plan revision hiện hành là v1-approved-r9, approved by `APPROVE PLAN v1` and amended through approved CR-010 on 2026-10-24. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
 
 ## ADR-001 — Backend là system of record
 - **Date:** 2026-10-23
@@ -89,6 +89,44 @@
 - **Boundary:** horse master create/edit/transfer/delete/restore chỉ thuộc Club Manager. Operational status transitions được `horse-rules.ts` cho phép cho Head Trainer và medical transitions của Vet không bị thu hồi bởi quyết định này.
 - **Data consequence:** không cần migration phá hủy; raw JSON cũ có thể tồn tại nhưng không được expose thành effective authority.
 - **Impacted tasks:** TASK-002; regression coverage của TASK-001.
+
+## ADR-013 — Tournament Close/Cancel không được mở lại
+- **Date:** 2026-10-24
+- **Status:** ACCEPTED by `APPROVE CR-006` on 2026-10-24
+- **Decision:** `CLOSED_REGISTRATION` không chuyển lại `OPEN_REGISTRATION`; nó chỉ có thể chuyển sang `CANCELLED` hoặc đạt `COMPLETED` qua quy trình ghi đủ và khóa kết quả. `CANCELLED` và `COMPLETED` là terminal. Muốn tổ chức lại giải đã hủy phải tạo giải mới.
+- **Safety boundary:** không expose `handleMock` hoặc test-only entry point qua `window` trong application runtime; bằng chứng gọi mock handler phải được mô tả đúng là mock evidence, không phải HTTP evidence.
+- **Impacted task:** TASK-003.
+
+## ADR-014 — Result modal dùng một transactional request để lưu và khóa
+- **Date:** 2026-10-24
+- **Status:** ACCEPTED by `APPROVE CR-007` on 2026-10-24
+- **Decision:** `RecordResultsModal` gọi `recordRaceResults(tournament.id, resultsPayload, lock)` đúng một lần. Khi `lock` là true, `/results` chịu trách nhiệm lưu toàn bộ kết quả và chuyển giải sang `COMPLETED` trong transaction hiện có; client không gọi tiếp `/lock-results`.
+- **Reasoning:** lời gọi thứ hai chỉ cố khóa lại một giải đã completed, tạo lỗi UI giả sau khi server đã commit thành công. Giữ một request tránh partial client flow mà không đổi API hoặc Backend.
+- **Impacted task:** TASK-003.
+
+## ADR-015 — Kết quả giải đua thuộc độc quyền Club Manager
+- **Date:** 2026-10-24
+- **Status:** ACCEPTED by `APPROVE CR-008` on 2026-10-24
+- **Decision:** Head Trainer được xem eligibility, đăng ký và rút/scratch ngựa, đồng thời xem kết quả đã công bố. Chỉ Club Manager được ghi, sửa và khóa kết quả cũng như quản lý vòng đời giải.
+- **Enforcement:** controller, service và mock đều từ chối HT trên `/tournaments/:id/results`; service guard phải chạy trước mọi result write, audit, status change hoặc prize allocation. UI không hiển thị result-entry action cho HT.
+- **Data consequence:** giữ nguyên draft result đã tồn tại; chỉ Club Manager tiếp tục xử lý chúng. Không có migration hoặc direct DB cleanup.
+- **Impacted tasks:** TASK-003, TASK-004.
+
+## ADR-016 — Ma trận thời điểm đăng ký, scratch và kết quả
+- **Date:** 2026-10-24
+- **Status:** ACCEPTED by `APPROVE CR-009` on 2026-10-24
+- **Decision:** đăng ký chỉ ở OPEN; scratch có lý do ở OPEN hoặc CLOSED trước terminal state; không ghi/khóa kết quả trước CLOSED hoặc trước `raceDate`; chỉ result locking của CM chuyển CLOSED thành COMPLETED.
+- **UI/Test consequence:** dùng `RaceRegistrationModal` để thực hiện registration và scratch thật; Save Draft phải giữ CLOSED; regression lock phải chứng minh không gọi `/lock-results` lần hai mà không expose runtime test hook.
+- **Data consequence:** không tự xóa hay sửa test residue từ revision cũ; mọi cleanup cần đi qua application policy hoặc một quyết định riêng.
+- **Impacted task:** TASK-003.
+
+## ADR-017 — Runtime và integration chỉ dùng API/PostgreSQL thật
+- **Date:** 2026-10-24
+- **Status:** ACCEPTED by `APPROVE CR-010` on 2026-10-24
+- **Decision:** Main Web và Simulator không có runtime mock mode hoặc fallback. Manual QA, browser/API integration và final acceptance phải chạy qua NestJS API với dữ liệu PostgreSQL thật. Mock/fake chỉ được phép trong unit test cô lập và không được import/reachable từ application runtime.
+- **Failure behavior:** khi Backend/PostgreSQL không sẵn sàng, client hiển thị lỗi rõ ràng và không tạo dữ liệu mẫu hoặc giả lập thành công.
+- **Evidence:** Network request tới Backend, DB before/after, persistence sau restart và negative failure check; mock-backed Playwright không phải integration evidence.
+- **Impacted tasks:** TASK-003 QA, TASK-010, TASK-013–019.
 
 Do not silently amend accepted decisions; create an ADR and/or CR entry and request approval where scope changes.
 

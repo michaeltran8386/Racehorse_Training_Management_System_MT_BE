@@ -1,9 +1,9 @@
 # Delivery Progress
 
-**Plan:** v1-approved-r4  
+**Plan:** v1-approved-r9
 **Plan approval:** APPROVED — explicit `APPROVE PLAN v1` recorded 2026-10-24  
-**Active task:** NONE  
-**Next eligible task:** NONE — clean TASK-002 Git baseline required
+**Active task:** NONE
+**Next eligible task:** TASK-004
 **Planned first task:** TASK-001  
 **Last updated:** 2026-10-24 (Asia/Bangkok)
 
@@ -13,11 +13,11 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 
 | State | Count |
 | --- | ---: |
-| TODO | 17 |
+| TODO | 16 |
 | BLOCKED | 0 |
 | IN_PROGRESS | 0 |
 | AWAITING_USER_QA | 0 |
-| DONE | 2 |
+| DONE | 3 |
 
 ## Task status
 
@@ -25,7 +25,7 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 | --- | --- | --- |
 | TASK-001 | DONE | None (Approved 2026-10-24) |
 | TASK-002 | DONE | Approved 2026-10-24 |
-| TASK-003 | TODO — not authorized | TASK-001 complete; clean TASK-002 Git baseline required before eligibility |
+| TASK-003 | DONE | Approved 2026-10-24 |
 | TASK-004 | TODO — not authorized | TASK-002, TASK-003 |
 | TASK-005 | TODO — not authorized | TASK-001 |
 | TASK-006 | TODO — not authorized | TASK-001; CR-002 resolved |
@@ -45,10 +45,10 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 
 ## Pending decisions
 
-- No design CR is pending. CR-005 was approved and incorporated on 2026-10-24.
+- No design CR is pending. CR-005 through CR-010 were approved and incorporated on 2026-10-24.
 - Plan v1 was explicitly approved on 2026-10-24; no design decision remains pending.
 - TASK-001 baseline is BE `86d9bf0` and FE `4a73709`; canonical Simulator is clean.
-- TASK-002 is approved but its Backend/Frontend changes and evidence are uncommitted. Separate baseline commit authorization is required before TASK-003 eligibility; push remains separately gated.
+- TASK-002 baseline verified: BE `f25a925`, FE `ee7ded8`; canonical Simulator is clean at `2dbf2c0`. Both application repositories are two commits ahead of origin, so push remains separately gated.
 
 TASK-001 evidence is recorded in `reports/TASK-001.md`. TASK-002 execution report is recorded in `reports/TASK-002.md` with direct HTTP API evidence and database integrity verification.
 

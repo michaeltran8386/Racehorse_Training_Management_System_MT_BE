@@ -2,30 +2,46 @@
 
 ## Gate state
 
-- **Plan:** v1-approved-r4 — approved on 2026-10-24; CR-005 incorporated.
-- **Last completed task:** TASK-002 — DONE and human-approved on 2026-10-24.
+- **Plan:** v1-approved-r9 — approved Plan v1 with CR-005 through CR-010 incorporated.
+- **Last completed task:** TASK-003 — DONE and human-approved on 2026-10-24.
 - **Active task:** NONE.
-- **Next eligible task:** NONE.
-- **Planned candidate after baseline:** TASK-003 — Tournament lifecycle and controls.
-- **Pending design change:** NONE.
-- **Operational blocker:** TASK-002 changes and evidence are not committed in the Backend and Frontend repositories.
-- **Do now:** Establish a reviewed TASK-002 Git baseline only. Do not start or prepare TASK-003.
+- **Active task status:** IDLE.
+- **Next eligible task:** TASK-004.
+- **Pending design change:** NONE; CR-010 is approved and incorporated.
+- **Operational blocker:** NONE.
+- **Do now:** Await explicit human `START TASK-004` command. Do not start TASK-004, commit or push until separately authorized.
 
-## Verified TASK-002 outcome
+## Approved CR-010 acceptance gate
 
-- Backend source/test scope: `src/users/permissions.ts`, `src/users/permissions.spec.ts`.
-- Frontend source/test scope: `src/shared/lib/permissions.ts`, `tests/e2e/rbac-matrix.spec.ts`.
-- Direct Head Trainer HTTP verification returned `403 FORBIDDEN` for all five horse-master mutations and left the tested database state unchanged.
-- Full evidence is recorded in `reports/TASK-002.md`.
+- Mock/fake is permitted only in isolated unit tests; mock-backed Playwright is regression-only and cannot approve TASK-003 or later integration work.
+- Runtime, manual QA, integration/E2E and final acceptance must use the real NestJS API and PostgreSQL data.
+- Browser Network, DB before/after and restart evidence must prove real requests and persistence.
+- Backend/DB failure must be visible; Web/SIM may not fallback to mock/sample data.
+- TASK-010 closes Main Web runtime mock; TASK-013 closes Simulator runtime mock; TASK-014 starts the real canonical stack; TASK-015–019 use real-stack acceptance.
 
-## Required next actions
+## Approved CR-009 boundary
 
-The human must separately authorize TASK-002 baseline commits, or commit the reviewed Backend/Frontend changes themselves. Push remains separately gated.
+- Register only while OPEN; scratch while OPEN or CLOSED before terminal state.
+- Record/lock results only while CLOSED and at/after raceDate; only lock moves CLOSED to COMPLETED.
+- Add `RaceRegistrationModal.tsx` as the eighth exact file to expose existing scratch API; no ninth file is authorized.
+- E2E must actually register then scratch, assert CLOSED remains after Save Draft, and preserve single-call lock behavior without runtime test hooks.
 
-After both working trees are clean, ChatGPT must verify the commit hashes and update `STATE.md`/`HANDOFF.md` to identify TASK-003 as `next_task`. Only then may the human separately send:
+## Approved CR-008 boundary
 
-```text
-START TASK-003
-```
+- Head Trainer: eligibility, register, scratch; read-only access to published results.
+- Club Manager only: record/edit draft results, lock official results and all tournament lifecycle management.
+- CR-008 added BE `src/tournaments/tournaments.controller.ts` as the seventh file; CR-009 subsequently approves the eighth file listed above.
+- Replace HT draft-success evidence with 403/no-side-effect Backend coverage and UI absence; preserve HT register/scratch success coverage.
 
-No approval of TASK-002, baseline commit, or prior conversation starts TASK-003.
+## Approved TASK-003 correction scope
+
+- Remove `CLOSED_REGISTRATION -> OPEN_REGISTRATION`; a closed tournament may only be cancelled or completed through result locking.
+- Keep `CANCELLED` and `COMPLETED` terminal; remove both reopen buttons and handlers.
+- Remove runtime `window.__handleMock` exposure and replace the test with user-visible/request-path coverage or live Backend manual API evidence.
+- Retain the verified R-1/R-2/R-3/R-4 protections.
+- CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`.
+- In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
+- Extend `tests/e2e/tournaments.spec.ts` under the CR-009 matrix: real HT register→scratch, CM CLOSED/post-race Save Draft preserving CLOSED, and one-call Lock transitioning to Completed; retain HT read-only published-result access.
+- No ninth application/test file is authorized.
+
+TASK-003 is DONE and approved by human QA. Execution is IDLE awaiting explicit START TASK-004.

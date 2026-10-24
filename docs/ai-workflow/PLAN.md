@@ -1,9 +1,17 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r4  
+**Version:** v1-approved-r9
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
+
+Revision r6 incorporates approved CR-007: the result modal must submit results and optional locking through the single transactional `/results` request; it must not call `/lock-results` again after that request succeeds. TASK-003 has an approved six-file scope for this correction and its focused E2E coverage.
+
+Revision r7 incorporates approved CR-008: Head Trainer retains eligibility screening, horse registration and scratch/withdrawal plus read-only access to published results. Club Manager exclusively records, edits and locks tournament results and manages the tournament lifecycle. TASK-003 has an approved seven-file scope for this authority correction.
+
+Revision r8 incorporates approved CR-009: registration is allowed only while OPEN; scratch is allowed while OPEN or CLOSED before a terminal state; CM result draft/lock requires CLOSED and `now >= raceDate`. TASK-003 has an approved eight-file scope adding `RaceRegistrationModal.tsx` for the existing scratch API.
+
+Revision r9 incorporates approved CR-010: runtime, manual QA, integration tests and final acceptance must use the real NestJS API and PostgreSQL data. Runtime mock/fallback paths are removed by the remaining Web/SIM tasks; mocks are permitted only inside isolated unit tests.
 
 > Không task nào được triển khai trước `APPROVE PLAN v1` và một lệnh `START TASK-XXX` riêng trong phiên AGY.
 
@@ -15,7 +23,7 @@ Hoàn thiện EquiFlow theo ba workstream có chung hợp đồng nghiệp vụ:
 2. Hoàn thiện Simulator trong repository Git chính thức.
 3. Kết nối Web–Simulator: Backend là nguồn dữ liệu chuẩn; Simulator phát dữ liệu mô phỏng, sự cố và kết quả về Web theo thời gian thực.
 
-Thành công cuối cùng: actor đăng nhập Main Web, thực hiện đúng quyền, mở phiên mô phỏng không cần đăng nhập lần hai, thấy dữ liệu ngựa thật, và kết quả/sự cố/khóa y tế đồng bộ hai chiều có lưu vết.
+Thành công cuối cùng: actor đăng nhập Main Web, thực hiện đúng quyền, mở phiên mô phỏng không cần đăng nhập lần hai, thấy dữ liệu thật từ PostgreSQL, và kết quả/sự cố/khóa y tế đồng bộ hai chiều có lưu vết. Runtime không dùng hoặc fallback sang dữ liệu mock.
 
 ## 2. Ngoài phạm vi
 
@@ -25,6 +33,7 @@ Thành công cuối cùng: actor đăng nhập Main Web, thực hiện đúng qu
 - Không triển khai 3D; Simulator hiện là Canvas 2D.
 - Không deploy, push, merge, xóa `_v3`, chạy migration phá hủy dữ liệu hoặc đổi hard invariant nếu chưa có phê duyệt riêng.
 - Không làm nhiều task AGY trong một lượt; mỗi task dừng ở `AWAITING_USER_QA`.
+- Không dùng mock trong runtime, manual QA, integration/E2E hoặc final acceptance. Mock/fake chỉ được phép trong unit test cô lập và không được import/reachable từ application runtime.
 
 ## 3. Baseline đã kiểm tra
 
@@ -65,7 +74,7 @@ Conflict với hard invariant phải có CR và phê duyệt; không tự chọn
 | Actor | Quyền mục tiêu | Không được làm |
 | --- | --- | --- |
 | Club Manager | account/permission; tạo/sửa/xóa mềm hồ sơ ngựa; quản lý giải; độc quyền create/update/toggle Supply Catalog; điều chỉnh tồn; duyệt/từ chối/xác nhận restock | đặt/gỡ Medical Lock thay Vet |
-| Head Trainer | xem ngựa; kế hoạch/lịch; trial; xét điều kiện, đăng ký/rút ngựa, nhập kết quả | tạo/sửa/xóa hồ sơ ngựa; quản lý giải; chỉnh permission cá nhân |
+| Head Trainer | xem ngựa; kế hoạch/lịch; trial; xét điều kiện, đăng ký/rút ngựa; xem kết quả giải đã công bố | tạo/sửa/xóa hồ sơ ngựa; tạo/sửa/xóa/hủy/chuyển trạng thái giải; ghi/sửa/khóa kết quả; chỉnh permission cá nhân |
 | Veterinarian | thấy toàn bộ Medical; bệnh án/injury/preventive; đặt/gỡ/gia hạn lock; chỉ đổi trạng thái y tế hợp lệ | đổi tùy ý toàn bộ vòng đời ngựa; quản lý permission |
 | Groom | ngựa/chuồng/ca/task được giao; chăm sóc/sự cố; chỉ xem Supply Catalog/tồn kho và tạo restock request khi thiếu | create/update/toggle Supply Catalog; review/deliver request; sửa tồn kho |
 | Horse Owner | chỉ ngựa sở hữu; xem training/race/financial; sửa profile/notification; gửi yêu cầu quyền | chỉnh permission; xem dữ liệu chủ khác |
@@ -85,6 +94,7 @@ Conflict với hard invariant phải có CR và phê duyệt; không tự chọn
 - Main Web xác thực actor và yêu cầu Backend tạo/ủy quyền session.
 - Simulator không có màn đăng nhập. Nó bootstrap bằng session ngắn hạn do Main Web mở; không đưa access token dài hạn vào URL/localStorage.
 - Backend kiểm tra actor, ownership, RBAC, medical lock và trạng thái trước khi trả context.
+- Main Web và Simulator chỉ có real runtime mode. Backend/PostgreSQL không sẵn sàng phải tạo lỗi kết nối rõ ràng; không được chuyển sang dữ liệu mẫu hoặc giả lập thành công.
 
 ### 6.3 Data flow
 
@@ -105,11 +115,13 @@ Không thêm `MAINTENANCE`. Dùng enum hiện có:
 
 - `UPCOMING`: đã tạo, chưa mở đăng ký.
 - `OPEN_REGISTRATION`: đang nhận đăng ký.
-- `CLOSED_REGISTRATION`: đóng đăng ký, giữ dữ liệu.
-- `CANCELLED`: hủy nhưng giữ lịch sử/audit.
+- `CLOSED_REGISTRATION`: đóng đăng ký, giữ dữ liệu; không được mở lại. Sau đó chỉ có thể hủy hoặc hoàn tất qua quy trình ghi/khóa kết quả.
+- `CANCELLED`: hủy nhưng giữ lịch sử/audit; trạng thái cuối cùng, không mở lại.
 - `COMPLETED`: có kết quả và bất biến.
 
-Hard delete chỉ cho giải chưa có registration/result và chưa completed. Giải đã có lịch sử dùng Cancel/Close; UI bỏ nghĩa “xóa vĩnh viễn mọi giải”.
+Hard delete chỉ cho giải chưa có registration/result và chưa completed. Giải đã có lịch sử dùng Cancel/Close; UI bỏ nghĩa “xóa vĩnh viễn mọi giải”. Không expose test-only mock hooks trong application runtime.
+
+Action matrix: `UPCOMING` chưa nhận đăng ký; `OPEN_REGISTRATION` cho HT/CM đăng ký và scratch; `CLOSED_REGISTRATION` không nhận đăng ký mới nhưng cho HT/CM scratch có lý do trước khi khóa. Chỉ CM được ghi draft hoặc khóa kết quả khi giải đang `CLOSED_REGISTRATION` và thời điểm hiện tại đã đạt `raceDate`. `CANCELLED`/`COMPLETED` chỉ đọc và audit.
 
 ### 6.5 Incident notification và acknowledgement
 
@@ -122,8 +134,8 @@ Hard delete chỉ cho giải chưa có registration/result và chưa completed. 
 
 ## 7. Phases — thứ tự bắt buộc WEB → SIM → ĐỒNG BỘ
 
-- **Phase A — WEB / TASK-001–010:** permission contract; Club Manager; tournament; Head Trainer; Vet; Groom; Horse Owner; notification; incident reminder; Medical Lock notification.
-- **Phase B — SIM / TASK-011–014:** REST/session packet contract; realtime engine/transport; UI session bootstrap; launcher chuyển sang Git Simulator.
+- **Phase A — WEB / TASK-001–010:** permission contract; Club Manager; tournament; Head Trainer; Vet; Groom; Horse Owner; notification; incident reminder; Medical Lock notification; đóng Web runtime mock tại checkpoint.
+- **Phase B — SIM / TASK-011–014:** REST/session packet contract; realtime engine/transport; UI session bootstrap real-only; launcher chuyển sang Git Simulator và khởi động real stack.
 - **Phase C — ĐỒNG BỘ / TASK-015–018:** horse/stall data flow; trial realtime; incident→Vet→lock; supplies delivery.
 - **Phase D — ACCEPTANCE / TASK-019:** full system acceptance, không mở rộng scope.
 
@@ -139,10 +151,11 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 ## 9. Testing strategy
 
 - Backend per task: focused Jest, `npm run typecheck`, `npm run lint`; migration thêm Prisma validation và rollback rehearsal trên DB test.
-- Frontend per task: `npm run typecheck`, `npm run lint`, focused Playwright mock; integration thêm `npm run test:live -- <spec>` khi stack chạy.
+- Frontend per task: `npm run typecheck`, `npm run lint`; UI integration/E2E chạy với Backend và PostgreSQL thật. Mock/fake chỉ dùng trong unit test cô lập và không được tính là integration evidence.
 - Simulator per task: `npm run typecheck`, `npm test`, `npm run build`; `verify:map` chỉ khi sửa map/assets.
 - Mỗi task ghi revision, command, exit code, acceptance evidence và manual QA vào `reports/TASK-XXX.md`.
-- Final gate: full BE unit/e2e; full FE Playwright; full SIM test/build; benchmark 1 Hz; regression Medical Lock, withdrawal, RBAC scope, inventory/tournament transactions, duplicate events, disconnect 15s và timeout 5 phút.
+- Live evidence phải chỉ ra request Web/SIM tới Backend, bản ghi PostgreSQL trước/sau và persistence sau restart; Backend/DB unavailable phải fail visibly, không fallback mock.
+- Final gate: full BE unit/e2e; full FE Playwright real-stack; full SIM test/build + live integration; benchmark 1 Hz; regression Medical Lock, withdrawal, RBAC scope, inventory/tournament transactions, duplicate events, disconnect 15s và timeout 5 phút.
 
 ## 10. Rollback
 
@@ -151,12 +164,13 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - Có thể rollback FE/SIM consumer trước; Backend giữ field/table additive tránh mất dữ liệu.
 - Không dùng `git reset --hard`, xóa migration đã chạy hoặc xóa `_v3`; dùng reviewed revert và backup DB.
 - Khi realtime lỗi, Web vẫn dùng REST snapshot; không bỏ persistence hoặc giả lập thành công.
+- Khi Backend/PostgreSQL lỗi, Web/SIM hiển thị lỗi và giữ dữ liệu chưa xác nhận ở trạng thái không thành công; tuyệt đối không fallback sang mock.
 
 ## 11. Risks
 
 | Risk | Mức | Mitigation |
 | --- | --- | --- |
-| Workflow canonical và thay đổi TASK-001 chưa có Git baseline sạch | Cao | review rồi commit theo quyền riêng trước khi TASK-002 được đưa vào `next_task`; push vẫn cần quyền riêng |
+| TASK-003 và workflow revision hiện chưa có Git baseline sạch | Cao | giữ nguyên thay đổi đang QA; chỉ commit/push sau phê duyệt và ủy quyền riêng, không trộn task kế tiếp |
 | `_v3` mới hơn nhưng không có history | Cao | transplant theo nhóm file + tests |
 | Login trực tiếp cũ trong `_v3` | Cao | thay bằng session bootstrap từ Main Web |
 | FE/BE permission drift | Cao | role-owned permission metadata, normalization tests và actor tasks riêng theo CR-005 |
@@ -164,6 +178,7 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 | Reminder 3 giờ spam/trùng | Trung bình | business ACK, dedupe, fake-clock tests |
 | Tournament hard delete mất audit | Cao | CANCELLED/CLOSED; delete chỉ unused record |
 | Stale test claims | Trung bình | rerun và ghi revision/exit code |
+| Mock runtime che giấu lỗi API/DB | Cao | loại runtime mock switch/import; real-stack QA/E2E và persistence-after-restart evidence |
 
 ## 12. Trạng thái quyết định và execution gate
 
@@ -171,6 +186,7 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - **CR-002 đã giải quyết:** chỉ Club Manager quản lý Supply Catalog; Groom chỉ xem và gửi yêu cầu bổ sung.
 - **CR-003 đã duyệt và hợp nhất:** `Racehorse_Training_Management_System_MT_BE/docs/ai-workflow/` là canonical tracked coordination home; root chỉ là mirror không authoritative.
 - **CR-005 đã duyệt và hợp nhất:** `editHorses` là quyền role-owned của Club Manager; stored/submitted permission của non-CM phải normalize về false; TASK-002 phân biệt horse master-data mutation với operational status transition.
+- **CR-010 đã duyệt và hợp nhất:** runtime/manual QA/integration/final acceptance chỉ dùng API và PostgreSQL thật; không fallback mock; mock chỉ trong unit test cô lập.
 
-Plan v1 was explicitly approved on 2026-10-24 with CR-005 incorporated. Approval does not start implementation. TASK-002 becomes eligible only after a clean TASK-001/workflow Git baseline is established; it still requires a separate `START TASK-002` in AGY.
+Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-010. Approval of a Plan/CR never starts or approves a task. TASK-003 remains `AWAITING_USER_QA`; every later task still requires its own direct `START TASK-XXX` in AGY.
 
