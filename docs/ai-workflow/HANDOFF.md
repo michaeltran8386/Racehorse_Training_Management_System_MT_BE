@@ -2,34 +2,30 @@
 
 ## Gate state
 
-- **Plan:** v1-approved-r4 — explicitly approved by `APPROVE PLAN v1` on 2026-10-24; CR-005 incorporated.
-- **Last completed task:** TASK-001 — DONE and human-approved on 2026-10-24.
-- **Next authorized task:** NONE.
+- **Plan:** v1-approved-r4 — approved on 2026-10-24; CR-005 incorporated.
+- **Last completed task:** TASK-002 — DONE and human-approved on 2026-10-24.
 - **Active task:** NONE.
+- **Next eligible task:** NONE.
+- **Planned candidate after baseline:** TASK-003 — Tournament lifecycle and controls.
 - **Pending design change:** NONE.
-- **Operational blocker:** TASK-001 application/workflow changes do not yet have a clean Git baseline.
-- **Do now:** Do not start or prepare TASK-002. Do not alter TASK-001 approval history.
+- **Operational blocker:** TASK-002 changes and evidence are not committed in the Backend and Frontend repositories.
+- **Do now:** Establish a reviewed TASK-002 Git baseline only. Do not start or prepare TASK-003.
 
-## Incorporated CR-005
+## Verified TASK-002 outcome
 
-TASK-002 now includes the minimal permission correction:
-
-- FE and BE must declare `editHorses` as Club-Manager-only through `ownerRoles`.
-- Stored/submitted `editHorses: true` for non-CM roles must normalize to `false`.
-- HT is prohibited from master-record create/edit/transfer/delete/restore but retains operational status transitions explicitly permitted by `horse-rules.ts`.
-- Vet remains limited to approved medical transitions.
-- Expected changed files are the four permission contract/test files in `TASKS.md`; horse/lifecycle/UI paths are verification-only unless a failing test proves a separately approved source change is required.
-
-Plan/CR approval did not authorize code changes or start TASK-002.
+- Backend source/test scope: `src/users/permissions.ts`, `src/users/permissions.spec.ts`.
+- Frontend source/test scope: `src/shared/lib/permissions.ts`, `tests/e2e/rbac-matrix.spec.ts`.
+- Direct Head Trainer HTTP verification returned `403 FORBIDDEN` for all five horse-master mutations and left the tested database state unchanged.
+- Full evidence is recorded in `reports/TASK-002.md`.
 
 ## Required next actions
 
-Establish a reviewed Git baseline for TASK-001 and canonical workflow documents using a separate commit authorization, or have the human commit them. Push remains a separate authorization.
+The human must separately authorize TASK-002 baseline commits, or commit the reviewed Backend/Frontend changes themselves. Push remains separately gated.
 
-After the baseline is clean, ChatGPT must verify it and update `STATE.md`/`HANDOFF.md` to `next_task: TASK-002`. The human must then separately send:
+After both working trees are clean, ChatGPT must verify the commit hashes and update `STATE.md`/`HANDOFF.md` to identify TASK-003 as `next_task`. Only then may the human separately send:
 
 ```text
-START TASK-002
+START TASK-003
 ```
 
-in the current AGY conversation. No other wording or prior approval starts the task.
+No approval of TASK-002, baseline commit, or prior conversation starts TASK-003.

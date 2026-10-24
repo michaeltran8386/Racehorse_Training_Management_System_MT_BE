@@ -3,7 +3,7 @@
 **Plan:** v1-approved-r4  
 **Plan approval:** APPROVED — explicit `APPROVE PLAN v1` recorded 2026-10-24  
 **Active task:** NONE  
-**Next authorized task:** NONE — clean TASK-001/workflow Git baseline required  
+**Next eligible task:** NONE — clean TASK-002 Git baseline required
 **Planned first task:** TASK-001  
 **Last updated:** 2026-10-24 (Asia/Bangkok)
 
@@ -14,18 +14,18 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 | State | Count |
 | --- | ---: |
 | TODO | 17 |
-| BLOCKED | 1 |
+| BLOCKED | 0 |
 | IN_PROGRESS | 0 |
 | AWAITING_USER_QA | 0 |
-| DONE | 1 |
+| DONE | 2 |
 
 ## Task status
 
 | Task | Status | Dependency/blocker |
 | --- | --- | --- |
 | TASK-001 | DONE | None (Approved 2026-10-24) |
-| TASK-002 | BLOCKED | Plan/CR-005 approved; clean TASK-001/workflow Git baseline required before eligibility |
-| TASK-003 | TODO — not authorized | TASK-001 |
+| TASK-002 | DONE | Approved 2026-10-24 |
+| TASK-003 | TODO — not authorized | TASK-001 complete; clean TASK-002 Git baseline required before eligibility |
 | TASK-004 | TODO — not authorized | TASK-002, TASK-003 |
 | TASK-005 | TODO — not authorized | TASK-001 |
 | TASK-006 | TODO — not authorized | TASK-001; CR-002 resolved |
@@ -47,7 +47,8 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 
 - No design CR is pending. CR-005 was approved and incorporated on 2026-10-24.
 - Plan v1 was explicitly approved on 2026-10-24; no design decision remains pending.
-- Operational authorization is still required to establish the canonical/TASK-001 Git baseline; push remains separately gated.
+- TASK-001 baseline is BE `86d9bf0` and FE `4a73709`; canonical Simulator is clean.
+- TASK-002 is approved but its Backend/Frontend changes and evidence are uncommitted. Separate baseline commit authorization is required before TASK-003 eligibility; push remains separately gated.
 
-TASK-001 evidence is recorded in `reports/TASK-001.md`. No TASK-002 execution report exists because TASK-002 has not started.
+TASK-001 evidence is recorded in `reports/TASK-001.md`. TASK-002 execution report is recorded in `reports/TASK-002.md` with direct HTTP API evidence and database integrity verification.
 

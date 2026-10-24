@@ -5,7 +5,7 @@
 | ID | Goal | Depends on | Status |
 | --- | --- | --- | --- |
 | TASK-001 | Align FE/BE permission contract | None | DONE |
-| TASK-002 | Enforce Club Manager horse authority | 001 | BLOCKED — clean Git baseline required |
+| TASK-002 | Enforce Club Manager horse authority | 001 | DONE |
 | TASK-003 | Finalize tournament lifecycle and controls | 001 | TODO |
 | TASK-004 | Enforce Head Trainer boundaries | 002, 003 | TODO |
 | TASK-005 | Expose Vet Medical and constrain status changes | 001 | TODO |
@@ -38,7 +38,7 @@
 
 ## TASK-002 — Club Manager horse authority
 
-- **Status:** BLOCKED only by the clean TASK-001/workflow Git baseline; CR-005 and Plan v1 are approved. No START yet.
+- **Status:** DONE
 - **Objective:** Make CM the only actor able to create/edit/delete/restore/transfer horse master records; restrict status transitions by domain.
 - **Dependencies:** TASK-001.
 - **Included corrective change:** add Club-Manager-only `ownerRoles` for `editHorses` in FE/BE and prove stored/submitted `true` normalizes to `false` for every non-CM role.
