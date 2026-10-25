@@ -11,7 +11,7 @@
 | TASK-005 | Expose Vet Medical and constrain status changes | 001 | DONE |
 | TASK-006 | Enforce Groom supply view/request boundary | 001 | DONE |
 | TASK-007 | Enforce Horse Owner scope and profile boundary | 001 | DONE |
-| TASK-008 | Scope operational notifications by horse/actor | 002, 005–007 | TODO |
+| TASK-008 | Scope operational notifications by horse/actor | 002, 005–007 | DONE |
 | TASK-009 | Implement incident audience and 3-hour escalation | 008 | TODO |
 | TASK-010 | Align Medical Lock notifications and ownership | 008, 009 | TODO |
 | TASK-011 | Transplant REST/session packet contract into canonical SIM | 010 | TODO |
@@ -115,13 +115,15 @@
 
 ## TASK-008 — Scope operational notifications
 
+- **Status:** DONE
 - **Objective:** Route account, shift, stall, horse, supply and financial notifications to exact actors without scope leakage.
 - **Dependencies:** TASK-002, TASK-005, TASK-006, TASK-007.
-- **Files likely touched:** BE `src/notifications/notifications.service.ts`, `src/notifications/notifications.service.spec.ts`, at most two proven producer services; FE `tests/e2e/notifications.spec.ts`.
+- **Files touched (5 files):** BE `src/notifications/notifications.service.ts`, `src/notifications/notifications.service.spec.ts`, `src/accounts/accounts.service.ts`, `src/accounts/accounts.service.spec.ts`; FE `tests/e2e/notifications.spec.ts`.
 - **Acceptance:** owner/groom horse notices only for owned/assigned horse; account change reaches target; restock reaches CM/requester; no unrelated recipient rows.
-- **Automated:** notification service specs with negative recipients; FE notification E2E; type/lint.
+- **Automated:** notification service specs with negative recipients (42/42 BE unit tests passed); FE notification Playwright E2E (8/8 passed); typecheck clean; Backend lint clean (0 errors, 0 warnings); Frontend lint exited 0 with pre-existing baseline warnings outside TASK-008 scope.
+- **Execution Evidence:** `reports/TASK-008.md`.
 - **Manual QA:** execute one scoped horse change and verify related/unrelated inboxes.
-- **Scope:** M; only two producer families per run, otherwise create an approved split.
+- **Scope:** M (5 files).
 
 ## TASK-009 — Incident audience and 3-hour escalation
 

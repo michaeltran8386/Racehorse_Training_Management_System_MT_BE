@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OtpPurpose, Prisma, Role, User, UserStatus } from '@prisma/client';
+import { NotificationCategory, OtpPurpose, Prisma, Role, User, UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AuditActor, AuditService } from '../audit/audit.service';
@@ -12,6 +12,7 @@ import { fullNameError } from '../common/utils/name';
 import { normalizePermissions, PERMISSIONS, ROLE_LABEL, ROLES } from '../users/permissions';
 import { permissionsOf } from '../users/public-user';
 import { InviteAccountDto, ReasonDto, UpdateAccountDto } from './dto/accounts.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export type AccountAction = 'approve' | 'decline' | 'lock' | 'unlock' | 'deactivate' | 'reactivate';
 
@@ -30,6 +31,7 @@ export class AccountsService {
     private readonly auth: AuthService,
     private readonly otp: OtpService,
     private readonly config: ConfigService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   list(): Promise<User[]> {
@@ -236,6 +238,31 @@ export class AccountsService {
     if (updated.status !== UserStatus.ACTIVE) await this.auth.revokeAllTokens(updated.id);
     if (action === 'approve') await this.mailApproved(updated);
     if (action === 'decline') await this.mailDeclined(updated);
+    if (action === 'approve' || action === 'unlock' || action === 'reactivate') {
+      const titles: Record<string, string> = {
+        approve: 'Tài khoản đã được phê duyệt',
+        unlock: 'Tài khoản đã được mở khóa',
+        reactivate: 'Tài khoản đã được kích hoạt lại',
+      };
+      const messages: Record<string, string> = {
+        approve: `Tài khoản của bạn đã được phê duyệt với vai trò ${ROLE_LABEL[updated.role]}.`,
+        unlock: `Tài khoản của bạn đã được mở khóa bởi ${actor.name}.`,
+        reactivate: `Tài khoản của bạn đã được kích hoạt lại bởi ${actor.name}.`,
+      };
+      await this.notifications.notifyUsers(
+        [updated.id],
+        {
+          type: 'ACCOUNT_STATUS_CHANGED',
+          category: NotificationCategory.ACCOUNT,
+          title: titles[action] || 'Cập nhật trạng thái tài khoản',
+          message: messages[action] || `Trạng thái tài khoản: ${updated.status}.`,
+          link: '/profile',
+          senderName: actor.name,
+          params: { status: updated.status, role: updated.role },
+        },
+        actor.id,
+      );
+    }
     return updated;
   }
 
@@ -303,7 +330,7 @@ export class AccountsService {
   // ------------------------------------------------------------------ quyền
 
   async updatePermissions(actor: AuditActor, id: string, incoming: Record<string, unknown>) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const target = await this.lockAccount(tx, id);
       const current = permissionsOf(target);
       const next = normalizePermissions(target.role, { ...current, ...incoming });
@@ -333,6 +360,22 @@ export class AccountsService {
       );
       return { user: changed, granted, revoked };
     });
+
+    await this.notifications.notifyUsers(
+      [result.user.id],
+      {
+        type: 'ACCOUNT_PERMISSIONS_CHANGED',
+        category: NotificationCategory.ACCOUNT,
+        title: 'Quyền tài khoản được cập nhật',
+        message: `Quyền của bạn đã được cập nhật bởi ${actor.name} (${result.granted} cấp mới, ${result.revoked} thu hồi).`,
+        link: '/profile',
+        senderName: actor.name,
+        params: { granted: result.granted, revoked: result.revoked },
+      },
+      actor.id,
+    );
+
+    return result;
   }
 
   private async lockAccount(tx: Prisma.TransactionClient, id: string): Promise<User> {

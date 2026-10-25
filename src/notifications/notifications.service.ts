@@ -19,6 +19,8 @@ export interface NotifyInput {
 const SETTING_OF: Record<string, NotifyKey> = {
   WORKOUT_ABNORMAL: 'thresholdAlert',
   LOCK_LIFTED: 'lockLifted',
+  TOURNAMENT_COMPLETED: 'raceResults',
+  RACE_RESULTS_PUBLISHED: 'raceResults',
 };
 
 /**
@@ -34,7 +36,7 @@ export class NotificationsService {
   async notifyUsers(
     userIds: (string | null | undefined)[],
     input: NotifyInput,
-    excludeUserId?: string,
+    excludeUserId?: string | null,
   ) {
     try {
       const ids = [...new Set(userIds.filter((id): id is string => !!id && id !== excludeUserId))];
@@ -69,7 +71,7 @@ export class NotificationsService {
     }
   }
 
-  async notifyRoles(roles: Role[], input: NotifyInput, excludeUserId?: string) {
+  async notifyRoles(roles: Role[], input: NotifyInput, excludeUserId?: string | null) {
     try {
       const users = await this.prisma.user.findMany({
         where: { role: { in: roles }, status: UserStatus.ACTIVE },
@@ -102,8 +104,10 @@ export class NotificationsService {
       });
       ids.push(...staff.map((u) => u.id));
     }
-    if (opts.owner) ids.push(horse?.ownerId);
-    if (opts.groom) ids.push(...(horse?.stallAllocations ?? []).map((a) => a.assignedGroomUserId));
+    if (opts.owner && horse?.ownerId) ids.push(horse.ownerId);
+    if (opts.groom && horse?.stallAllocations?.length) {
+      ids.push(...horse.stallAllocations.map((a) => a.assignedGroomUserId));
+    }
     return ids;
   }
 
@@ -111,7 +115,7 @@ export class NotificationsService {
     horseId: string,
     opts: { roles?: Role[]; owner?: boolean; groom?: boolean },
     input: NotifyInput,
-    excludeUserId?: string,
+    excludeUserId?: string | null,
   ) {
     try {
       await this.notifyUsers(await this.horseAudience(horseId, opts), input, excludeUserId);
