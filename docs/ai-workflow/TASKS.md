@@ -8,8 +8,8 @@
 | TASK-002 | Enforce Club Manager horse authority | 001 | DONE |
 | TASK-003 | Finalize tournament lifecycle and controls | 001 | DONE |
 | TASK-004 | Enforce Head Trainer boundaries | 002, 003 | DONE |
-| TASK-005 | Expose Vet Medical and constrain status changes | 001 | IN_PROGRESS |
-| TASK-006 | Enforce Groom supply view/request boundary | 001 | TODO |
+| TASK-005 | Expose Vet Medical and constrain status changes | 001 | DONE |
+| TASK-006 | Enforce Groom supply view/request boundary | 001 | DONE |
 | TASK-007 | Enforce Horse Owner scope and profile boundary | 001 | TODO |
 | TASK-008 | Scope operational notifications by horse/actor | 002, 005–007 | TODO |
 | TASK-009 | Implement incident audience and 3-hour escalation | 008 | TODO |
@@ -92,6 +92,7 @@
 
 ## TASK-006 — Groom supply view/request boundary
 
+- **Status:** DONE
 - **Objective:** Enforce the resolved rule that only Club Manager controls Supply Catalog while Groom can view assigned inventory and request replenishment when short.
 - **Dependencies:** TASK-001. CR-002 is resolved with no catalog permission for Groom.
 - **Files likely touched:** BE `src/supplies/supplies.controller.ts`, `src/supplies/supplies.controller.spec.ts`, `src/inventory/inventory.controller.spec.ts`; FE `src/features/master-data/pages/SuppliesCatalogPage.tsx`, focused supplies E2E.
