@@ -3,13 +3,13 @@
 ## Gate state
 
 - **Plan:** v1-approved-r10 — approved Plan v1 with CR-005 through CR-011 incorporated.
-- **Last completed task:** TASK-008 — DONE and human-approved on 2026-10-25.
+- **Last completed task:** TASK-009 — DONE and human-approved on 2026-10-25.
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-009.
+- **Next eligible task:** TASK-010.
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Await human authorization to commit TASK-008 or START TASK-009. Do not commit, push, or start TASK-009 without separate authorization.
+- **Do now:** Execution is IDLE. Await explicit human START TASK-010. Do not commit, push, or start TASK-010 without separate explicit authorization.
 
 ## Approved CR-010 acceptance gate
 
@@ -41,7 +41,4 @@
 - Retain the verified R-1/R-2/R-3/R-4 protections.
 - CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`.
 - In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
-- Extend `tests/e2e/tournaments.spec.ts` under the CR-009 matrix: real HT register→scratch, CM CLOSED/post-race Save Draft preserving CLOSED, and one-call Lock transitioning to Completed; retain HT read-only published-result access.
-- No ninth application/test file is authorized.
-
-CR-011 is approved and incorporated into v1-approved-r10. TASK-001 through TASK-008 are DONE and human-approved. Execution is IDLE. Next eligible task is TASK-009, awaiting explicit human START TASK-009. Do not commit, push, or start TASK-009.
+CR-011 is approved and incorporated into v1-approved-r10. TASK-001 through TASK-009 are DONE and human-approved. Execution is IDLE. Next eligible task is TASK-010, awaiting explicit human START TASK-010. Do not commit, push, or start TASK-010.

@@ -26,6 +26,7 @@ describe('IncidentsService', () => {
 
     auditService = { record: jest.fn().mockResolvedValue(undefined) };
     notifications = {
+      notifyHorse: jest.fn().mockResolvedValue(undefined),
       notifyRoles: jest.fn().mockResolvedValue(undefined),
       notifyUsers: jest.fn().mockResolvedValue(undefined),
     };
@@ -78,8 +79,13 @@ describe('IncidentsService', () => {
       );
 
       expect(res.id).toBe('inc-1');
-      expect(notifications.notifyRoles).toHaveBeenCalledWith(
-        [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+      expect(notifications.notifyHorse).toHaveBeenCalledWith(
+        'horse-1',
+        {
+          roles: [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+          owner: true,
+          groom: true,
+        },
         expect.objectContaining({
           type: 'CRITICAL_INCIDENT_REPORTED',
           category: 'MEDICAL',
@@ -123,13 +129,22 @@ describe('IncidentsService', () => {
       );
 
       expect(res.id).toBe('inc-2');
-      expect(notifications.notifyRoles).toHaveBeenCalledWith(
-        [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+      expect(notifications.notifyHorse).toHaveBeenCalledWith(
+        'horse-2',
+        {
+          roles: [Role.VETERINARIAN],
+          owner: true,
+          groom: true,
+        },
         expect.objectContaining({
           type: 'HEALTH_ANOMALY_LOGGED',
           category: 'MEDICAL',
         }),
       );
+      // Negative check: HT and CM must not be included for MODERATE
+      const opts = notifications.notifyHorse.mock.calls[0][1];
+      expect(opts.roles).not.toContain(Role.HEAD_TRAINER);
+      expect(opts.roles).not.toContain(Role.CLUB_MANAGER);
     });
 
     it('creates a low severity incident with empty symptoms defaulting to OTHER', async () => {
@@ -273,7 +288,7 @@ describe('IncidentsService', () => {
       );
     });
 
-    it('allows Club Manager to review incident without vetNotes', async () => {
+    it('rejects review by Club Manager (only Veterinarian can perform clinical review under CR-001)', async () => {
       const mockIncident = {
         id: 'inc-2',
         incidentNumber: 'INC-002',
@@ -283,10 +298,6 @@ describe('IncidentsService', () => {
       };
 
       prisma.incidentReport.findUnique.mockResolvedValue(mockIncident);
-      prisma.incidentReport.update.mockResolvedValue({
-        ...mockIncident,
-        status: IncidentStatus.UNDER_REVIEW,
-      });
 
       const manager = {
         userId: 'mgr-1',
@@ -294,9 +305,9 @@ describe('IncidentsService', () => {
         role: Role.CLUB_MANAGER,
       } as any;
 
-      const res = await service.review('inc-2', { status: IncidentStatus.UNDER_REVIEW }, manager);
-
-      expect(res.status).toBe(IncidentStatus.UNDER_REVIEW);
+      await expect(
+        service.review('inc-2', { status: IncidentStatus.UNDER_REVIEW }, manager),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('throws NotFoundException if incident does not exist', async () => {
@@ -338,7 +349,7 @@ describe('IncidentsService', () => {
 
       expect(result).toBe(existingIncident);
       expect(prisma.incidentReport.create).not.toHaveBeenCalled();
-      expect(notifications.notifyRoles).not.toHaveBeenCalled();
+      expect(notifications.notifyHorse).not.toHaveBeenCalled();
     });
 
     it('maps FRACTURE to CRITICAL severity and creates IncidentReport without activating MedicalLock', async () => {
@@ -394,9 +405,14 @@ describe('IncidentsService', () => {
           }),
         }),
       );
-      // Notifications sent to management roles
-      expect(notifications.notifyRoles).toHaveBeenCalledWith(
-        [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+      // Notifications sent via notifyHorse with 5 groups for CRITICAL
+      expect(notifications.notifyHorse).toHaveBeenCalledWith(
+        'horse-1',
+        {
+          roles: [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+          owner: true,
+          groom: true,
+        },
         expect.objectContaining({
           type: 'CRITICAL_INCIDENT_REPORTED',
           category: 'MEDICAL',

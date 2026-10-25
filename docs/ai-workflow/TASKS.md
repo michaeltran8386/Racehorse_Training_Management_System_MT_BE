@@ -12,7 +12,7 @@
 | TASK-006 | Enforce Groom supply view/request boundary | 001 | DONE |
 | TASK-007 | Enforce Horse Owner scope and profile boundary | 001 | DONE |
 | TASK-008 | Scope operational notifications by horse/actor | 002, 005–007 | DONE |
-| TASK-009 | Implement incident audience and 3-hour escalation | 008 | TODO |
+| TASK-009 | Implement incident audience and 3-hour escalation | 008 | DONE |
 | TASK-010 | Align Medical Lock notifications and ownership | 008, 009 | TODO |
 | TASK-011 | Transplant REST/session packet contract into canonical SIM | 010 | TODO |
 | TASK-012 | Reconcile SIM realtime engine and transport | 011 | TODO |
@@ -127,14 +127,15 @@
 
 ## TASK-009 — Incident audience and 3-hour escalation
 
-- **Status:** TODO — contract fixed by approved CR-001; not authorized until dependencies complete and a separate START.
+- **Status:** DONE
 - **Objective:** Implement the approved incident audience, acknowledgement and repeat policy without spam.
 - **Dependencies:** TASK-008.
-- **Files likely touched:** BE `src/incidents/incidents.service.ts`, its spec, notification scheduler/new focused spec, Prisma schema + one additive migration only if the approved semantics require fields.
-- **Acceptance:** immediate audience follows severity/CR; reminder occurs every 3 hours only while unacknowledged; acknowledgement stops reminders; retry dedupes per round/recipient; catastrophic injury halts the session and never auto-creates record/lock.
-- **Automated:** fake-clock scheduler, concurrency/dedupe, incident service and Prisma validation/migration tests.
+- **Files touched (5 files):** BE `src/incidents/incidents.service.ts`, `src/incidents/incidents.service.spec.ts`, `src/incidents/incidents.scheduler.ts`, `src/incidents/incidents.module.ts`, `src/incidents/incidents.scheduler.spec.ts`.
+- **Acceptance:** immediate audience follows severity/CR (5 groups for CRITICAL; 3 groups for MILD/MODERATE); reminder occurs every 3 hours only while unacknowledged; acknowledgement stops reminders; retry dedupes per round/recipient; catastrophic injury halts the session and never auto-creates record/lock. Non-Vet review rejected with 403 Forbidden.
+- **Automated:** fake-clock scheduler, concurrency/dedupe, incident service and Prisma validation tests (26/26 passed); full Backend test suite (623/623 passed); typecheck clean; lint clean.
+- **Execution Evidence:** `reports/TASK-009.md`.
 - **Manual QA:** create incident, advance test clock 3 hours, acknowledge as Vet and verify no later reminder.
-- **Scope:** M after contract freeze; split migration/scheduler if scope exceeds 5 files.
+- **Scope:** M (5 files).
 
 ## TASK-010 — Medical Lock notification ownership
 
