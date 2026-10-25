@@ -11,6 +11,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { apiError } from '../common/exceptions/api-error';
+import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import { UserRole } from '../common/enums/role.enum';
 import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { UpdateTournamentDto } from './dto/update-tournament.dto';
 import { QueryTournamentDto } from './dto/query-tournament.dto';
@@ -88,12 +90,25 @@ export class TournamentsService {
 
   /**
    * Lấy chi tiết một giải đua kèm danh sách ngựa đăng ký và kết quả
+   * Đối với HORSE_OWNER: chỉ trả về các lượt đăng ký và kết quả của ngựa thuộc quyền sở hữu
+   * (lọc ở mức truy vấn Prisma để ngăn rò rỉ dữ liệu giải đua và PII của chủ khác).
    */
-  async findOne(id: string) {
+  async findOne(id: string, user: CurrentUserPayload) {
+    const isOwner = user.role === UserRole.HORSE_OWNER;
+
+    const registrationWhere: Prisma.TournamentRegistrationWhereInput | undefined = isOwner
+      ? {
+          horse: {
+            ownerId: user.userId,
+          },
+        }
+      : undefined;
+
     const tournament = await this.prisma.tournament.findUnique({
       where: { id },
       include: {
         registrations: {
+          where: registrationWhere,
           include: {
             horse: {
               select: {
@@ -1021,7 +1036,12 @@ export class TournamentsService {
         actor.id,
       );
 
-      return this.findOne(tournamentId);
+      return this.findOne(tournamentId, {
+        userId: actor.id,
+        email: actor.name,
+        role: (actor.role as UserRole) || UserRole.CLUB_MANAGER,
+        fullName: actor.name,
+      });
     }
 
     // Draft mode (lockResults=false)
@@ -1256,6 +1276,11 @@ export class TournamentsService {
       actor.id,
     );
 
-    return this.findOne(tournamentId);
+    return this.findOne(tournamentId, {
+      userId: actor.id,
+      email: actor.name,
+      role: (actor.role as UserRole) || UserRole.CLUB_MANAGER,
+      fullName: actor.name,
+    });
   }
 }

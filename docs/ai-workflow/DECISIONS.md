@@ -1,6 +1,6 @@
 # Architecture Decision Log
 
-> Plan revision hiện hành là v1-approved-r9, approved by `APPROVE PLAN v1` and amended through approved CR-010 on 2026-10-24. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
+> Plan revision hiện hành là v1-approved-r10, approved by `APPROVE PLAN v1` and amended through approved CR-011 on 2026-10-25. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
 
 ## ADR-001 — Backend là system of record
 - **Date:** 2026-10-23
@@ -127,6 +127,14 @@
 - **Failure behavior:** khi Backend/PostgreSQL không sẵn sàng, client hiển thị lỗi rõ ràng và không tạo dữ liệu mẫu hoặc giả lập thành công.
 - **Evidence:** Network request tới Backend, DB before/after, persistence sau restart và negative failure check; mock-backed Playwright không phải integration evidence.
 - **Impacted tasks:** TASK-003 QA, TASK-010, TASK-013–019.
+
+## ADR-018 — Horse Owner tournament detail được lọc theo ownership tại Backend
+- **Date:** 2026-10-25
+- **Status:** ACCEPTED by `APPROVE CR-011` on 2026-10-25
+- **Context:** real-stack review chứng minh `GET /api/tournaments/:id` trả foreign registrations/results và owner PII cho Horse Owner vì controller không truyền caller và service trả toàn bộ registrations.
+- **Decision:** controller truyền authenticated `CurrentUserPayload`; khi caller là `HORSE_OWNER`, service ràng buộc Prisma query theo `horse.ownerId = user.userId`. Tournament metadata vẫn được trả, nhưng response không chứa foreign registration, result hoặc owner PII. Hành vi hiện tại của các role không phải Horse Owner không đổi trong CR này.
+- **Trade-off:** TASK-007 tăng từ giới hạn 5 lên đúng 7 application/test files để chứa controller, service và regression spec; file thứ tám cần CR mới.
+- **Impacted task:** TASK-007.
 
 Do not silently amend accepted decisions; create an ADR and/or CR entry and request approval where scope changes.
 

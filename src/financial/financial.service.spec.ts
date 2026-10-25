@@ -79,6 +79,20 @@ describe('FinancialService', () => {
         }),
       );
     });
+
+    it('should ignore foreign ownerId query param passed by HORSE_OWNER', async () => {
+      prisma.financialInvoice.findMany.mockResolvedValue([]);
+      prisma.financialInvoice.count.mockResolvedValue(0);
+
+      const user = { id: 'u-owner', name: 'Owner', role: 'HORSE_OWNER' };
+      await service.findAll({ ownerId: 'foreign-owner-id', page: 1, limit: 10 }, user);
+
+      expect(prisma.financialInvoice.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ ownerId: 'u-owner' }),
+        }),
+      );
+    });
   });
 
   describe('create', () => {

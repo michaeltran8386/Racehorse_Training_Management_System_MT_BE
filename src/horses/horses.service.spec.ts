@@ -961,4 +961,70 @@ describe('HorsesService', () => {
       });
     });
   });
+
+  describe('findAll - ownership scope', () => {
+    it('should scope query to ownerId for HORSE_OWNER', async () => {
+      prisma.horse.findMany.mockResolvedValue([]);
+      prisma.horse.count.mockResolvedValue(0);
+
+      await service.findAll({}, mockOwner);
+
+      expect(prisma.horse.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            deletedAt: null,
+            ownerId: mockOwner.userId,
+          }),
+        }),
+      );
+      expect(prisma.horse.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            deletedAt: null,
+            ownerId: mockOwner.userId,
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('findOne - ownership isolation', () => {
+    it('should return horse details when accessed by its owner', async () => {
+      const ownedHorse = {
+        id: 'h-1',
+        name: 'Thunderbolt Swift',
+        ownerId: mockOwner.userId,
+        microchip: '123456789012345',
+        microchipRfid: '123456789012345',
+        status: HorseStatus.ACTIVE,
+        stallAllocations: [],
+        medicalLocks: [],
+      };
+      prisma.horse.findUnique.mockResolvedValue(ownedHorse);
+
+      const result = await service.findOne('h-1', mockOwner);
+      expect(result.id).toBe('h-1');
+      expect(result.name).toBe('Thunderbolt Swift');
+    });
+
+    it('should throw 404 HORSE_NOT_FOUND without data leakage when owner accesses a foreign horse', async () => {
+      const foreignHorse = {
+        id: 'h-foreign',
+        name: 'Ironclad Titan',
+        ownerId: 'different-owner-id',
+        status: HorseStatus.ACTIVE,
+        stallAllocations: [],
+        medicalLocks: [],
+      };
+      prisma.horse.findUnique.mockResolvedValue(foreignHorse);
+
+      await expect(service.findOne('h-foreign', mockOwner)).rejects.toMatchObject({
+        status: HttpStatus.NOT_FOUND,
+        response: expect.objectContaining({
+          code: 'HORSE_NOT_FOUND',
+          message: 'Không tìm thấy hồ sơ ngựa hoặc bạn không có quyền xem.',
+        }),
+      });
+    });
+  });
 });

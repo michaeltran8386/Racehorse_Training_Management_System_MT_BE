@@ -36,8 +36,8 @@ export class TournamentsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Xem chi tiết giải đua và danh sách đăng ký / kết quả (SC-5.01)' })
-  async findOne(@Param('id') id: string) {
-    return this.tournamentsService.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
+    return this.tournamentsService.findOne(id, user);
   }
 
   @Get(':id/eligibility')

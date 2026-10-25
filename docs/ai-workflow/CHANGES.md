@@ -225,4 +225,37 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
 - **Resolution:** All `rfid` UI fields, state variables, generator functions, validation rules, and payload properties were completely deleted from Frontend (`HorseFormPage.tsx`, `HorseDetailPage.tsx`, `HorseListPage.tsx`, `types.ts`, and mock handlers). The frontend now strictly sends the canonical `microchip?: string` contract matching Backend `CreateHorseDto`/`UpdateHorseDto`. Verified: Club Manager horse creation via API succeeds with HTTP 201 Created.
 - **Target plan version:** v1-approved-r9 / TASK-004 rejection rework.
 
+## CR-011 — Ngăn rò rỉ dữ liệu giải đua và thông tin cá nhân (PII) của chủ ngựa khác và mở rộng phạm vi TASK-007 lên 7 tệp
+- **State:** APPROVED
+- **Approved by:** Human project owner via exact command `APPROVE CR-011` on 2026-10-25 (Asia/Bangkok).
+- **Raised by:** Human Review / Rejection of TASK-007 (`REJECT TASK-007: Real-stack review found a Horse Owner race-data authorization leak`), 2026-10-25
+- **Related plan:** v1-approved-r9 / TASK-007
+- **Verified blocker:**
+  1. Khi xác thực dưới vai trò Horse Owner (`owner@gmail.com`), endpoint `GET /api/tournaments/:id` trả về danh sách toàn bộ ngựa đăng ký (bao gồm ngựa thuộc sở hữu của chủ khác) và để lộ email cùng thông tin cá nhân (PII) của chủ ngựa khác (`horse.owner.email`, `fullName`, `id`).
+  2. `TournamentsController.findOne` hiện không nhận `@CurrentUser() user?: CurrentUserPayload`, và `TournamentsService.findOne` truy vấn/trả về toàn bộ `registrations` không lọc theo quyền sở hữu của caller.
+  3. Điều này vi phạm tiêu chí nghiệm thu của TASK-007: "Owner sees only owned horse/training/race/finance data; foreign IDs return 403/404 without leakage".
+  4. TASK-007 hiện đã thay đổi 4 tệp code/spec (`me.service.spec.ts`, `financial.service.spec.ts`, `horses.service.spec.ts` ở Backend và `tests/e2e/rbac-matrix.spec.ts` ở Frontend).
+  5. Việc sửa triệt để lỗ hổng rò rỉ dữ liệu giải đua ở Backend đòi hỏi thay đổi:
+     - `Racehorse_Training_Management_System_MT_BE/src/tournaments/tournaments.controller.ts` (nhận `@CurrentUser()` và truyền cho service).
+     - `Racehorse_Training_Management_System_MT_BE/src/tournaments/tournaments.service.ts` (lọc `registrations` và `result` theo `ownerId === user.userId` khi caller là `HORSE_OWNER`, bảo vệ PII chủ khác).
+     - `Racehorse_Training_Management_System_MT_BE/src/tournaments/tournaments.service.spec.ts` (bổ sung negative test chứng minh Horse Owner không nhận dữ liệu đăng ký/kết quả hoặc PII của chủ khác).
+  6. Tổng số tệp thay đổi sẽ là 7 tệp (4 tệp hiện tại + 3 tệp mới), vượt quá giới hạn 5 tệp (M-size) của TASK-007.
+- **Proposed exact scope expansion:**
+  Phê duyệt mở rộng phạm vi chính xác của TASK-007 thành 7 tệp:
+  1. `Racehorse_Training_Management_System_MT_BE/src/accounts/me.service.spec.ts`
+  2. `Racehorse_Training_Management_System_MT_BE/src/financial/financial.service.spec.ts`
+  3. `Racehorse_Training_Management_System_MT_BE/src/horses/horses.service.spec.ts`
+  4. `Racehorse_Training_Management_System_MT_BE/src/tournaments/tournaments.controller.ts`
+  5. `Racehorse_Training_Management_System_MT_BE/src/tournaments/tournaments.service.ts`
+  6. `Racehorse_Training_Management_System_MT_BE/src/tournaments/tournaments.service.spec.ts`
+  7. `Racehorse_Training_Management_System_MT_FE/tests/e2e/rbac-matrix.spec.ts`
+- **Behavior & Acceptance additions:**
+  1. `TournamentsController.findOne` nhận authenticated `@CurrentUser() user: CurrentUserPayload` và truyền vào `TournamentsService.findOne(id, user)`; caller không optional.
+  2. `TournamentsService.findOne`: Giữ nguyên metadata giải đua; khi caller là `HORSE_OWNER`, ràng buộc truy vấn Prisma theo `horse.ownerId = user.userId` để chỉ trả về `registrations` và `result` của ngựa thuộc sở hữu của caller, đồng thời không trả owner ID/full name/email hoặc PII của chủ khác. Các vai trò không phải Horse Owner giữ nguyên hành vi hiện tại; CR-011 không mở rộng sang thay đổi quyền của các role đó.
+  3. Playwright E2E kiểm tra foreign horse dùng ID ngựa thật đã seed của Owner 2 (`d2b6aac3-c3f8-4ee7-83f7-d7c7d260347b`), loại bỏ mock ID `/horses/horse-1`.
+  4. Bổ sung test kiểm thử tiêu cực (negative tests) chứng minh Horse Owner không nhận được registrations/results hoặc PII của chủ khác.
+  5. `reports/TASK-007.md` chỉ dùng NestJS API và PostgreSQL thật, loại bỏ toàn bộ phương án mock / fallback.
+- **Risk if rejected:** Dữ liệu đăng ký, kết quả giải đua và email của các chủ ngựa khác tiếp tục bị lộ cho Horse Owner qua API `GET /tournaments/:id`.
+- **Target plan version:** v1-approved-r10 / TASK-007.
+
 

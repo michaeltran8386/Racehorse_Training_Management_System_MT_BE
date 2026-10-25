@@ -1,6 +1,6 @@
-# Task Breakdown — Plan v1-approved-r9
+# Task Breakdown — Plan v1-approved-r10
 
-> Approved specification with CR-005 through CR-010 incorporated. AGY may edit execution status/evidence only after `STATE.md` names the task as `next_task` and the human separately sends `START TASK-XXX`. One task per run.
+> Approved specification with CR-005 through CR-011 incorporated. AGY may edit execution status/evidence only after `STATE.md` names the task as `next_task` and the human separately sends `START TASK-XXX`. One task per run.
 
 | ID | Goal | Depends on | Status |
 | --- | --- | --- | --- |
@@ -10,7 +10,7 @@
 | TASK-004 | Enforce Head Trainer boundaries | 002, 003 | DONE |
 | TASK-005 | Expose Vet Medical and constrain status changes | 001 | DONE |
 | TASK-006 | Enforce Groom supply view/request boundary | 001 | DONE |
-| TASK-007 | Enforce Horse Owner scope and profile boundary | 001 | TODO |
+| TASK-007 | Enforce Horse Owner scope and profile boundary | 001 | DONE |
 | TASK-008 | Scope operational notifications by horse/actor | 002, 005–007 | TODO |
 | TASK-009 | Implement incident audience and 3-hour escalation | 008 | TODO |
 | TASK-010 | Align Medical Lock notifications and ownership | 008, 009 | TODO |
@@ -103,13 +103,15 @@
 
 ## TASK-007 — Horse Owner scope and profile boundary
 
+- **Status:** DONE
 - **Objective:** Guarantee ownership isolation and remove direct self-permission editing.
 - **Dependencies:** TASK-001.
-- **Files likely touched:** BE `src/accounts/me.service.ts`, `src/accounts/me.service.spec.ts`, proven horse/financial scope service; verified FE profile page; `tests/e2e/rbac-matrix.spec.ts`.
-- **Acceptance:** Owner sees only owned horse/training/race/finance data; foreign IDs return 403/404 without leakage; profile/password/notification work; permission change is request-only.
-- **Automated:** focused BE scope/me tests and FE RBAC E2E.
+- **Approved files:** BE `src/accounts/me.service.spec.ts`, `src/financial/financial.service.spec.ts`, `src/horses/horses.service.spec.ts`, `src/tournaments/tournaments.controller.ts`, `src/tournaments/tournaments.service.ts`, `src/tournaments/tournaments.service.spec.ts`; FE `tests/e2e/rbac-matrix.spec.ts`.
+- **Acceptance:** Owner sees only owned horse/training/race/finance data; foreign IDs return 403/404 without leakage; profile/password/notification work; permission change is request-only. Tournament metadata remains available, but authenticated tournament detail must pass the caller to the service and a `HORSE_OWNER` query must constrain registrations/results by `horse.ownerId = user.userId` before data is returned. No foreign registration, result, owner ID, full name or email may be present. Existing behavior for non-owner roles is unchanged.
+- **Automated:** focused BE scope/me/tournament tests, including negative foreign registration/result/PII assertions; FE RBAC E2E using real seeded cross-owner IDs; real NestJS/PostgreSQL API verification; typecheck/lint and `git diff --check`.
+- **Execution Evidence:** `reports/TASK-007.md`.
 - **Manual QA:** two-owner cross-access matrix plus self-profile actions.
-- **Scope:** M; split if verified scope exceeds 5 files.
+- **Scope:** M; exactly 7 application/test files approved by CR-011. Any eighth application/test file requires another CR.
 
 ## TASK-008 — Scope operational notifications
 

@@ -10,6 +10,8 @@ import {
   TournamentStatus,
   TrackSurface,
 } from '@prisma/client';
+import { UserRole } from '../common/enums/role.enum';
+import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
 describe('TournamentsService', () => {
   let service: TournamentsService;
@@ -111,6 +113,13 @@ describe('TournamentsService', () => {
   });
 
   describe('findOne', () => {
+    const staffUser: CurrentUserPayload = {
+      userId: 'staff-1',
+      email: 'manager@gmail.com',
+      role: UserRole.CLUB_MANAGER,
+      fullName: 'Club Manager',
+    };
+
     it('should return a tournament if found', async () => {
       prisma.tournament.findUnique.mockResolvedValue({
         id: 't-1',
@@ -118,13 +127,13 @@ describe('TournamentsService', () => {
         prizePool: 10000000,
         registrations: [],
       });
-      const res = await service.findOne('t-1');
+      const res = await service.findOne('t-1', staffUser);
       expect(res.id).toBe('t-1');
     });
 
     it('should throw NOT_FOUND if tournament does not exist', async () => {
       prisma.tournament.findUnique.mockResolvedValue(null);
-      await expect(service.findOne('invalid')).rejects.toThrow();
+      await expect(service.findOne('invalid', staffUser)).rejects.toThrow();
     });
   });
 
@@ -1198,6 +1207,122 @@ describe('TournamentsService', () => {
       const actor = { id: 'u1', name: 'Manager', role: 'CLUB_MANAGER' };
       const res = await service.lockResults('t-1', actor);
       expect(res.status).toBe(TournamentStatus.COMPLETED);
+    });
+  });
+
+  describe('findOne - ownership scoping & PII protection (CR-011 / TASK-007)', () => {
+    const mockTournament = {
+      id: 'tourn-1',
+      name: 'Autumn Championship',
+      code: 'TOURN-AUTUMN-2026',
+      status: TournamentStatus.OPEN_REGISTRATION,
+      prizePool: '100000000',
+      raceDate: new Date('2026-11-01'),
+      registrationDeadline: new Date('2026-10-31'),
+    };
+
+    it('scopes registrations to owned horses at Prisma query level when caller is HORSE_OWNER', async () => {
+      const ownerUser = {
+        userId: 'owner-1',
+        email: 'owner1@gmail.com',
+        role: UserRole.HORSE_OWNER,
+        fullName: 'Owner One',
+      };
+
+      prisma.tournament.findUnique.mockImplementation(async (args: any) => {
+        expect(args.where).toEqual({ id: 'tourn-1' });
+        expect(args.include.registrations.where).toEqual({
+          horse: { ownerId: 'owner-1' },
+        });
+
+        return {
+          ...mockTournament,
+          registrations: [
+            {
+              id: 'reg-owner-1',
+              horseId: 'h-owned',
+              registrationDate: new Date('2026-10-20'),
+              horse: {
+                id: 'h-owned',
+                name: 'Owned Runner',
+                horseCode: 'HC-001',
+                breed: 'Thoroughbred',
+                avatarUrl: null,
+                status: 'ACTIVE',
+                isMedicalLocked: false,
+                ownerId: 'owner-1',
+                owner: { id: 'owner-1', fullName: 'Owner One', email: 'owner1@gmail.com' },
+              },
+              registeredByTrainer: {
+                id: 'tr-1',
+                fullName: 'Trainer John',
+                email: 'trainer@gmail.com',
+              },
+              result: { id: 'res-1', rank: 1, prizeMoneyWon: '50000000' },
+            },
+          ],
+        };
+      });
+
+      const result = await service.findOne('tourn-1', ownerUser);
+
+      expect(prisma.tournament.findUnique).toHaveBeenCalledTimes(1);
+      expect(result.id).toBe('tourn-1');
+      expect(result.registrations).toHaveLength(1);
+      expect(result.registrations[0].horse.ownerId).toBe('owner-1');
+      expect(result.registrations[0].horse.owner?.email).toBe('owner1@gmail.com');
+
+      // Negative assertions: ensure no foreign owner PII or foreign registrations exist
+      const hasForeignOwner = result.registrations.some((r: any) => r.horse.ownerId !== 'owner-1');
+      expect(hasForeignOwner).toBe(false);
+      const foreignEmails = result.registrations
+        .map((r: any) => r.horse.owner?.email)
+        .filter((e: string) => e !== 'owner1@gmail.com');
+      expect(foreignEmails).toEqual([]);
+    });
+
+    it('does not scope registrations when caller is staff (CLUB_MANAGER / HEAD_TRAINER)', async () => {
+      const managerUser = {
+        userId: 'mgr-1',
+        email: 'manager@gmail.com',
+        role: UserRole.CLUB_MANAGER,
+        fullName: 'Club Manager',
+      };
+
+      prisma.tournament.findUnique.mockImplementation(async (args: any) => {
+        expect(args.include.registrations.where).toBeUndefined();
+        return {
+          ...mockTournament,
+          registrations: [
+            {
+              id: 'reg-owner-1',
+              horse: { id: 'h-1', ownerId: 'owner-1', owner: { email: 'owner1@gmail.com' } },
+              result: null,
+            },
+            {
+              id: 'reg-owner-2',
+              horse: { id: 'h-2', ownerId: 'owner-2', owner: { email: 'owner2@gmail.com' } },
+              result: null,
+            },
+          ],
+        };
+      });
+
+      const result = await service.findOne('tourn-1', managerUser);
+      expect(result.registrations).toHaveLength(2);
+    });
+
+    it('throws 404 NOT_FOUND when tournament does not exist', async () => {
+      prisma.tournament.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.findOne('non-existent', {
+          userId: 'owner-1',
+          email: 'owner@gmail.com',
+          role: UserRole.HORSE_OWNER,
+          fullName: 'Owner',
+        }),
+      ).rejects.toThrow('Tournament non-existent not found');
     });
   });
 });
