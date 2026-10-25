@@ -65,5 +65,7 @@ export class MedicalAccessService {
       }
       return;
     }
+
+    throw apiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'Access denied.');
   }
 }

@@ -13,6 +13,8 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '../common/enums/role.enum';
 import { InjuriesService } from './injuries.service';
 import { MedicalLocksService } from './medical-locks.service';
 import { HealthOverviewService } from './health-overview.service';
@@ -110,7 +112,7 @@ export class MedicalController {
   }
 
   @Post('injuries')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Đánh dấu vị trí chấn thương 2D trên mô hình (API-007 / DL-3.10)' })
   createInjury(@CurrentUser() user: CurrentUserPayload, @Body() dto: CreateInjuryDto) {
     return this.injuries.createInjury(user, dto);
@@ -124,7 +126,7 @@ export class MedicalController {
   }
 
   @Put('injuries/:id')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Chỉnh sửa vị trí / thông tin điểm chấn thương 2D (DL-3.10 Sửa)' })
   updateInjury(
     @Param('id') id: string,
@@ -135,7 +137,7 @@ export class MedicalController {
   }
 
   @Delete('injuries/:id')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({
     summary: 'Xóa điểm chấn thương (chỉ trong 24h và chưa cập nhật hồi phục - BTN-3.37)',
   })
@@ -144,7 +146,7 @@ export class MedicalController {
   }
 
   @Post('injuries/:id/recovery')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Cập nhật tiến trình hồi phục chấn thương (DL-3.11 / BTN-3.36)' })
   updateRecoveryProgress(
     @Param('id') id: string,
@@ -173,6 +175,7 @@ export class MedicalController {
   }
 
   @Post('locks')
+  @Roles(UserRole.VETERINARIAN)
   @RequirePermission('placeLock')
   @ApiOperation({ summary: 'Đặt Khóa huấn luyện khẩn cấp (DL-3.01 / BTN-3.03)' })
   createLock(@CurrentUser() user: CurrentUserPayload, @Body() dto: CreateMedicalLockDto) {
@@ -181,6 +184,7 @@ export class MedicalController {
 
   @Post('locks/:id/release')
   @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.VETERINARIAN)
   @RequirePermission('liftLock')
   @ApiOperation({ summary: 'Gỡ Khóa huấn luyện (DL-3.02 / BTN-3.09)' })
   releaseLock(
@@ -193,6 +197,7 @@ export class MedicalController {
 
   @Post('locks/:id/extend')
   @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.VETERINARIAN)
   @RequirePermission('placeLock')
   @ApiOperation({ summary: 'Gia hạn ngày xem xét Khóa huấn luyện (DL-3.03 / BTN-3.10)' })
   extendLock(
@@ -215,7 +220,7 @@ export class MedicalController {
   }
 
   @Post('records')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Tạo bệnh án mới (Nháp hoặc Chốt)' })
   createRecord(@CurrentUser() user: CurrentUserPayload, @Body() dto: CreateMedicalRecordDto) {
     return this.records.createMedicalRecord(user, dto);
@@ -229,7 +234,7 @@ export class MedicalController {
   }
 
   @Put('records/:id')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Chỉnh sửa bệnh án' })
   updateRecord(
     @Param('id') id: string,
@@ -241,7 +246,7 @@ export class MedicalController {
 
   @Post('records/:id/finalize')
   @HttpCode(HttpStatus.OK)
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Chốt bệnh án (chuyển từ Nháp sang Chính thức)' })
   finalize(
     @Param('id') id: string,
@@ -252,7 +257,7 @@ export class MedicalController {
   }
 
   @Delete('records/:id')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Xóa bản nháp bệnh án' })
   deleteRecord(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.records.deleteMedicalRecord(id, user);
@@ -260,7 +265,7 @@ export class MedicalController {
 
   @Post('records/:id/close')
   @HttpCode(HttpStatus.OK)
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Kết thúc điều trị bệnh án' })
   closeRecord(
     @Param('id') id: string,
@@ -272,7 +277,7 @@ export class MedicalController {
 
   @Post('records/:id/reopen')
   @HttpCode(HttpStatus.OK)
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Mở lại bệnh án đã kết thúc (trong 7 ngày)' })
   reopenRecord(
     @Param('id') id: string,
@@ -287,7 +292,7 @@ export class MedicalController {
   // ---------------------------------------------------------------------------
 
   @Post('records/:id/treatment-phases')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Thêm giai đoạn phác đồ điều trị' })
   addTreatmentPhase(
     @Param('id') id: string,
@@ -298,7 +303,7 @@ export class MedicalController {
   }
 
   @Put('records/:id/treatment-phases/:phaseId')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Cập nhật giai đoạn phác đồ' })
   updateTreatmentPhase(
     @Param('id') id: string,
@@ -310,7 +315,7 @@ export class MedicalController {
   }
 
   @Post('records/:id/prescriptions')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Kê đơn thuốc' })
   addPrescription(
     @Param('id') id: string,
@@ -321,7 +326,7 @@ export class MedicalController {
   }
 
   @Put('records/:id/prescriptions/:prescriptionId')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Sửa đơn thuốc' })
   updatePrescription(
     @Param('id') id: string,
@@ -334,7 +339,7 @@ export class MedicalController {
 
   @Post('records/:id/prescriptions/:prescriptionId/stop')
   @HttpCode(HttpStatus.OK)
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Dừng đơn thuốc' })
   stopPrescription(
     @Param('id') id: string,
@@ -346,7 +351,7 @@ export class MedicalController {
   }
 
   @Post('records/:id/follow-ups')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Ghi nhận lần tái khám' })
   addFollowUp(
     @Param('id') id: string,
@@ -368,7 +373,7 @@ export class MedicalController {
   }
 
   @Post('preventive/catalogs')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Tạo loại chăm sóc định kỳ' })
   createPreventiveCatalog(
     @CurrentUser() user: CurrentUserPayload,
@@ -378,7 +383,7 @@ export class MedicalController {
   }
 
   @Put('preventive/catalogs/:id')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Cập nhật loại chăm sóc định kỳ' })
   updatePreventiveCatalog(
     @Param('id') id: string,
@@ -390,7 +395,7 @@ export class MedicalController {
 
   @Post('preventive/catalogs/:id/toggle-status')
   @HttpCode(HttpStatus.OK)
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Bật/Tắt trạng thái active loại chăm sóc định kỳ' })
   togglePreventiveCatalogStatus(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.preventive.togglePreventiveCatalogStatus(id, user);
@@ -407,7 +412,7 @@ export class MedicalController {
   }
 
   @Post('preventive/record')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Ghi nhận thực hiện chăm sóc định kỳ (đơn lẻ hoặc hàng loạt)' })
   recordPreventiveCare(
     @CurrentUser() user: CurrentUserPayload,
@@ -417,7 +422,7 @@ export class MedicalController {
   }
 
   @Post('preventive/setup')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Thiết lập chu kỳ định kỳ riêng cho từng ngựa' })
   setupHorsePreventive(
     @CurrentUser() user: CurrentUserPayload,
@@ -427,7 +432,7 @@ export class MedicalController {
   }
 
   @Post('preventive/schedules')
-  @RequirePermission('viewMedical')
+  @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Lập lịch chăm sóc định kỳ cho chiến mã' })
   createPreventiveSchedule(
     @CurrentUser() user: CurrentUserPayload,

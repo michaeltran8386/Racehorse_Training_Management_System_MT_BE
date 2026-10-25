@@ -3,13 +3,13 @@
 ## Gate state
 
 - **Plan:** v1-approved-r9 — approved Plan v1 with CR-005 through CR-010 incorporated.
-- **Last completed task:** TASK-003 — DONE and human-approved on 2026-10-24.
+- **Last completed task:** TASK-005 — DONE and human-approved on 2026-10-25.
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-004.
-- **Pending design change:** NONE; CR-010 is approved and incorporated.
+- **Next eligible task:** TASK-006.
+- **Pending design change:** NONE; CR-010 is approved and incorporated; DEFECT-001 resolved by human directive.
 - **Operational blocker:** NONE.
-- **Do now:** Await explicit human `START TASK-004` command. Do not start TASK-004, commit or push until separately authorized.
+- **Do now:** Await explicit human START TASK-006. Do not start TASK-006, commit, or push without separate human authorization.
 
 ## Approved CR-010 acceptance gate
 
@@ -44,4 +44,4 @@
 - Extend `tests/e2e/tournaments.spec.ts` under the CR-009 matrix: real HT register→scratch, CM CLOSED/post-race Save Draft preserving CLOSED, and one-call Lock transitioning to Completed; retain HT read-only published-result access.
 - No ninth application/test file is authorized.
 
-TASK-003 is DONE and approved by human QA. Execution is IDLE awaiting explicit START TASK-004.
+TASK-005 is DONE and approved by human QA on 2026-10-25. Execution is IDLE awaiting explicit human START TASK-006.

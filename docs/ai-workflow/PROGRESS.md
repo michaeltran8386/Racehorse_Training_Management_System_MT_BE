@@ -2,10 +2,10 @@
 
 **Plan:** v1-approved-r9
 **Plan approval:** APPROVED — explicit `APPROVE PLAN v1` recorded 2026-10-24  
-**Active task:** NONE
-**Next eligible task:** TASK-004
+**Active task:** NONE (Execution gate IDLE)
+**Next eligible task:** TASK-006
 **Planned first task:** TASK-001  
-**Last updated:** 2026-10-24 (Asia/Bangkok)
+**Last updated:** 2026-10-25 (Asia/Bangkok)
 
 This file reports progress only. It never authorizes implementation; `STATE.md`, recorded approval and a direct current-session `START TASK-XXX` command are all required.
 
@@ -13,11 +13,11 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 
 | State | Count |
 | --- | ---: |
-| TODO | 16 |
+| TODO | 13 |
 | BLOCKED | 0 |
 | IN_PROGRESS | 0 |
 | AWAITING_USER_QA | 0 |
-| DONE | 3 |
+| DONE | 5 |
 
 ## Task status
 
@@ -26,8 +26,8 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 | TASK-001 | DONE | None (Approved 2026-10-24) |
 | TASK-002 | DONE | Approved 2026-10-24 |
 | TASK-003 | DONE | Approved 2026-10-24 |
-| TASK-004 | TODO — not authorized | TASK-002, TASK-003 |
-| TASK-005 | TODO — not authorized | TASK-001 |
+| TASK-004 | DONE | Approved 2026-10-25 |
+| TASK-005 | DONE | Approved 2026-10-25 |
 | TASK-006 | TODO — not authorized | TASK-001; CR-002 resolved |
 | TASK-007 | TODO — not authorized | TASK-001 |
 | TASK-008 | TODO — not authorized | TASK-002, TASK-005–007 |
@@ -50,5 +50,5 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 - TASK-001 baseline is BE `86d9bf0` and FE `4a73709`; canonical Simulator is clean.
 - TASK-002 baseline verified: BE `f25a925`, FE `ee7ded8`; canonical Simulator is clean at `2dbf2c0`. Both application repositories are two commits ahead of origin, so push remains separately gated.
 
-TASK-001 evidence is recorded in `reports/TASK-001.md`. TASK-002 execution report is recorded in `reports/TASK-002.md` with direct HTTP API evidence and database integrity verification.
+TASK-001 evidence is recorded in `reports/TASK-001.md`. TASK-002 execution report is recorded in `reports/TASK-002.md` with direct HTTP API evidence and database integrity verification. TASK-003 execution report is recorded in `reports/TASK-003.md`. TASK-004 execution report is recorded in `reports/TASK-004.md` with direct real-stack HTTP API evidence and negative boundary verification. TASK-005 execution report is recorded in `reports/TASK-005.md` with direct real-stack HTTP API evidence and Vet/non-Vet separation verification.
 

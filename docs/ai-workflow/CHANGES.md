@@ -216,3 +216,13 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
 - **Resolution:** incorporated into Plan v1-approved-r9 and TASK-003 QA/TASK-010–019 acceptance. Does not approve TASK-003 or authorize execution.
 - **Target plan version:** v1-approved-r9.
 
+## DEFECT-001 — Lỗi hợp đồng dữ liệu tạo ngựa của Club Manager (property rfid should not exist)
+- **State:** RESOLVED_BY_HUMAN_DIRECTIVE
+- **Raised by:** Human during TASK-004 manual QA, 2026-10-25
+- **Related plan:** Outside current TASK-004 diff / Horse Master-Data contract
+- **Observed behavior:** Club Manager tạo ngựa trên Web bị lỗi HTTP 400 Bad Request từ Backend: `property rfid should not exist`. FE `HorseFormPage.tsx` (lines 221 & 236) gửi payload có trường `rfid`, nhưng Backend `CreateHorseDto`/`UpdateHorseDto` (`src/horses/dto/create-horse.dto.ts` & `update-horse.dto.ts`) không khai báo `rfid` và kích hoạt `forbidNonWhitelisted: true`.
+- **Human instruction:** On 2026-10-25 10:07 (Asia/Bangkok), Human explicitly rejected TASK-004 with directive: `vẫn còn rfid, vui lòng mọi thao tác liên quan đến rfid xóa hẵng, đồng thời tạo database sao cho dư thừa để mà test thực tế`.
+- **Resolution:** All `rfid` UI fields, state variables, generator functions, validation rules, and payload properties were completely deleted from Frontend (`HorseFormPage.tsx`, `HorseDetailPage.tsx`, `HorseListPage.tsx`, `types.ts`, and mock handlers). The frontend now strictly sends the canonical `microchip?: string` contract matching Backend `CreateHorseDto`/`UpdateHorseDto`. Verified: Club Manager horse creation via API succeeds with HTTP 201 Created.
+- **Target plan version:** v1-approved-r9 / TASK-004 rejection rework.
+
+

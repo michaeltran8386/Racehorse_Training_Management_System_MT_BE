@@ -7,8 +7,8 @@
 | TASK-001 | Align FE/BE permission contract | None | DONE |
 | TASK-002 | Enforce Club Manager horse authority | 001 | DONE |
 | TASK-003 | Finalize tournament lifecycle and controls | 001 | DONE |
-| TASK-004 | Enforce Head Trainer boundaries | 002, 003 | TODO |
-| TASK-005 | Expose Vet Medical and constrain status changes | 001 | TODO |
+| TASK-004 | Enforce Head Trainer boundaries | 002, 003 | DONE |
+| TASK-005 | Expose Vet Medical and constrain status changes | 001 | IN_PROGRESS |
 | TASK-006 | Enforce Groom supply view/request boundary | 001 | TODO |
 | TASK-007 | Enforce Horse Owner scope and profile boundary | 001 | TODO |
 | TASK-008 | Scope operational notifications by horse/actor | 002, 005–007 | TODO |
@@ -64,11 +64,13 @@
 
 ## TASK-004 — Head Trainer boundaries
 
+- **Status:** DONE
 - **Objective:** Complete HT screens/actions without horse master-data or tournament-management leakage.
 - **Dependencies:** TASK-002, TASK-003.
 - **Files likely touched:** FE `src/shared/lib/permissions.ts`, verified training/race action component, `tests/e2e/rbac-matrix.spec.ts`, `tests/e2e/training.spec.ts`; BE controller spec only if a guard gap is proven.
 - **Acceptance:** HT can plan/schedule/run trial, check eligibility, register/scratch and view published tournament results; cannot record/edit/lock results or mutate horse profile, event definition/status, accounts or permissions.
 - **Automated:** FE RBAC/training/racing E2E, typecheck/lint; focused BE guard spec if touched. Retain negative result-write coverage established by TASK-003.
+- **Execution Evidence:** `reports/TASK-004.md`.
 - **Manual QA:** navigate all HT menu items and direct URLs; verify register/scratch succeeds while result-entry and all other prohibited API/UI actions fail closed.
 - **Scope:** M (3–5 files).
 
@@ -78,11 +80,13 @@
 
 ## TASK-005 — Vet Medical visibility and status boundary
 
+- **Status:** DONE
 - **Objective:** Keep all required Medical screens visible to Vet and separate view permission from write authority.
 - **Dependencies:** TASK-001.
 - **Files likely touched:** BE `src/medical/medical.controller.ts`, `src/medical/medical-access.service.ts`, `src/medical/medical.controller.spec.ts`; FE `src/shared/lib/permissions.ts`, `tests/e2e/medical.spec.ts`.
 - **Acceptance:** Vet can perform the specified medical workflow and lock actions; other `viewMedical` holders cannot write Vet records; Vet status changes are limited to medical transitions; non-medical lifecycle mutation is rejected server-side.
 - **Automated:** medical controller/services specs, FE medical E2E, type/lint.
+- **Execution Evidence:** `reports/TASK-005.md`.
 - **Manual QA:** Vet completes record→lock→release; Owner/Groom read scoped records but write attempts fail.
 - **Scope:** M (5 files).
 
