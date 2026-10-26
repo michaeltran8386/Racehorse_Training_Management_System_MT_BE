@@ -2,14 +2,22 @@
 
 ## Gate state
 
-- **Plan:** v1-approved-r10 — approved Plan v1 with CR-005 through CR-011 incorporated.
-- **Last completed task:** TASK-009 — DONE and human-approved on 2026-10-25.
+- **Plan:** v1-approved-r11 — approved Plan v1 with CR-005 through CR-012 incorporated.
+- **Last completed task:** TASK-010 — DONE and human-approved on 2026-10-26.
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-010.
+- **Next eligible task:** TASK-011.
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Execution is IDLE. Await explicit human START TASK-010. Do not commit, push, or start TASK-010 without separate explicit authorization.
+- **Do now:** Await explicit human start (`START TASK-011`). TASK-010 has been approved and marked DONE. Execution is IDLE. Do not commit, push, or start TASK-011 without authorization.
+
+## Approved CR-012 execution boundary
+
+- TASK-010 remains one task with two sequential M-size slices; there is no TASK-010B and no intermediate approval after Slice A.
+- Slice A is the five existing dirty application/test files: BE `src/medical/medical-locks.service.ts`, `src/medical/medical-services.spec.ts`; FE `src/shared/lib/api.ts`, `.env.example`, `tests/e2e/notifications.spec.ts`.
+- Slice B is exactly five FE files: `src/features/dashboard/pages/AuditLogPage.tsx`, `Dockerfile`, `src/vite-env.d.ts`, `.github/workflows/ci.yml`, `AGENTS.md`.
+- Build/CI must be real-only with no `VITE_USE_MOCK`. Standalone FE CI may transparently defer integration Playwright when it has no Backend/PostgreSQL, but may not substitute mock-backed browser tests.
+- Combined acceptance still requires local real-stack Playwright, browser Network calls to `localhost:3000/api`, PostgreSQL persistence after restart, explicit UI failure with Backend stopped, and exact-ID transactional cleanup restoring the captured original horse state.
 
 ## Approved CR-010 acceptance gate
 
@@ -39,6 +47,6 @@
 - Keep `CANCELLED` and `COMPLETED` terminal; remove both reopen buttons and handlers.
 - Remove runtime `window.__handleMock` exposure and replace the test with user-visible/request-path coverage or live Backend manual API evidence.
 - Retain the verified R-1/R-2/R-3/R-4 protections.
-- CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`.
-- In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
-CR-011 is approved and incorporated into v1-approved-r10. TASK-001 through TASK-009 are DONE and human-approved. Execution is IDLE. Next eligible task is TASK-010, awaiting explicit human START TASK-010. Do not commit, push, or start TASK-010.
+- CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`. In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
+
+CR-012 is approved and incorporated into v1-approved-r11. TASK-001 through TASK-010 are DONE and human-approved. Execution is IDLE awaiting explicit authorization or start for TASK-011; TASK-011 remains unauthorized.

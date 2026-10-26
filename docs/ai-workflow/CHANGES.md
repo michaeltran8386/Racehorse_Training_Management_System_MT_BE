@@ -258,4 +258,69 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
 - **Risk if rejected:** Dữ liệu đăng ký, kết quả giải đua và email của các chủ ngựa khác tiếp tục bị lộ cho Horse Owner qua API `GET /tournaments/:id`.
 - **Target plan version:** v1-approved-r10 / TASK-007.
 
+## CR-012 — Phân tách TASK-010 thành hai slice kiểm soát, hoàn tất chuyển đổi Main Web sang real-only runtime, và điều chỉnh CI/Governance
 
+- **State:** APPROVED by exact human command `APPROVE CR-012` on 2026-10-25.
+- **Raised by:** Human Review / Rejection of TASK-010 (`REJECT TASK-010`), 2026-10-25; revised per human planning directive.
+- **Related plan:** v1-approved-r10 / TASK-010; incorporated into Plan v1-approved-r11.
+- **Verified gap & Scope trigger:**
+  1. Main Web runtime mock cutover chưa triệt để trong các tệp ngoài scope 5 tệp ban đầu của TASK-010:
+     - `Racehorse_Training_Management_System_MT_FE/src/features/dashboard/pages/AuditLogPage.tsx` tại dòng 197 vẫn rẽ nhánh theo `import.meta.env.VITE_USE_MOCK === "true"` và render Alert "Demo audit history" (dòng 198–206).
+     - `Racehorse_Training_Management_System_MT_FE/Dockerfile` tại dòng 14 khai báo `ARG VITE_USE_MOCK=false` và dòng 17 khai báo `ENV VITE_USE_MOCK=$VITE_USE_MOCK`.
+     - `Racehorse_Training_Management_System_MT_FE/src/vite-env.d.ts` tại dòng 4 khai báo `readonly VITE_USE_MOCK?: string;`.
+     - `Racehorse_Training_Management_System_MT_FE/.github/workflows/ci.yml` tại dòng 122 build browser artifact với `VITE_USE_MOCK: 'true'`.
+     - `Racehorse_Training_Management_System_MT_FE/AGENTS.md` tại dòng 67–68 chứa quy tắc lỗi thời: `"VITE_USE_MOCK=true routes calls to shared/mock/handlers.ts (browser data, OTP 123456), so every new API needs a matching mock handler"`, trực tiếp xung đột với quyết định kiến trúc real-only CR-010 đã duyệt.
+  2. Giữ vững cổng Human Gate và giới hạn cỡ M (tối đa 5 tệp mỗi task/slice):
+     - Không mở rộng bừa bãi một task M-size lên 10 tệp.
+     - Phân chia nhiệm vụ TASK-010 thành hai slice kiểm soát:
+       - **Slice A (5 tệp - Đã triển khai trong working tree):** Phân phối thông báo Medical Lock và chuyển đổi API runtime (`api.ts`, `.env.example`, `notifications.spec.ts`, `medical-locks.service.ts`, `medical-services.spec.ts`).
+       - **Slice B (5 tệp - Corrective scope):** Dọn sạch mock runtime trong `AuditLogPage.tsx`, loại bỏ biến mock khỏi `Dockerfile` và `vite-env.d.ts`, điều chỉnh standalone CI trong `ci.yml`, và cập nhật `FE/AGENTS.md`.
+  3. Trình tự Human Gate chuẩn xác:
+     - Tuyệt đối không phê duyệt `APPROVE TASK-010` sau Slice A vì tiêu chí nghiệm thu của TASK-010 vẫn chưa hoàn tất.
+     - Không tạo ra task riêng "TASK-010B" làm biến đổi cấu trúc phụ thuộc của plan khi chưa có plan revision chính thức.
+     - Trình tự thực thi đúng quy trình:
+       `APPROVE CR-012`
+       -> Planner tích hợp vào Plan v1-approved-r11
+       -> Human gửi lệnh `START TASK-010` (tiếp tục thực thi chính task TASK-010 đã bị reject, dành riêng cho 5 tệp Slice B)
+       -> AGY triển khai 5 tệp Slice B
+       -> AGY chạy toàn bộ nghiệm thu kết hợp của TASK-010 (automated baseline, local real-stack Playwright, browser Network tới `localhost:3000/api`, tính bền vững sau restart, lỗi hiển thị khi dừng Backend, quy trình cleanup PowerShell an toàn)
+       -> Chuyển trạng thái TASK-010 sang `AWAITING_USER_QA`
+       -> Human xem xét bằng chứng và gửi lệnh `APPROVE TASK-010`
+       -> Human gửi lệnh `AUTHORIZE COMMIT TASK-010` -> STOP
+       -> Chỉ khi đó Human mới gửi lệnh `START TASK-011`.
+  4. Chiến lược kiểm thử tự động CI trung thực (`.github/workflows/ci.yml`):
+     - Giai đoạn 2 (Build): Build real-only với production target, tuyệt đối không có `VITE_USE_MOCK`.
+     - Giai đoạn 3 (Black-box Playwright): Standalone runner trên GitHub Actions không có Backend/PostgreSQL. Việc chạy integration Playwright trong môi trường thiếu backend sẽ bị lỗi mạng, còn bật mock thì vi phạm CR-010. Do đó, Playwright tích hợp trong standalone FE CI sẽ được **tạm dừng/vô hiệu hóa rõ ràng kèm giải thích minh bạch**; tuyệt đối không để CI âm thầm báo pass giả lập và không chạy mock-backed browser tests.
+     - Kiểm thử Playwright trên real-stack là cổng nghiệm thu bắt buộc tại local/manual cho TASK-010.
+  5. Chiến lược dọn dẹp dữ liệu kiểm thử an toàn trên PowerShell:
+     - Đọc và lưu trữ `status` và `isMedicalLocked` gốc của ngựa trước khi thực hiện thao tác kiểm thử.
+     - Chỉ nhắm mục tiêu vào đúng `createdLockId` vừa tạo.
+     - Thu thập chính xác danh sách ID thông báo và ID audit log sinh ra từ lần chạy này.
+     - Xóa đúng các ID nói trên trong một giao dịch Prisma duy nhất (`prisma.$transaction`).
+     - Khôi phục giá trị trạng thái ngựa về đúng giá trị gốc đã lưu (không hard-code `RESTING`).
+     - Xác nhận (assert) số lượng bản ghi tồn dư của các ID mục tiêu bằng 0; abort nếu kiểm tra an toàn thất bại.
+     - Tuyệt đối không dùng bộ lọc `lockReason contains "tendon strain"`.
+
+- **Approved exact 10 authorized files for TASK-010 across the two slices:**
+  - **Slice A (5 files — already modified in working tree):**
+    1. `Racehorse_Training_Management_System_MT_BE/src/medical/medical-locks.service.ts`
+    2. `Racehorse_Training_Management_System_MT_BE/src/medical/medical-services.spec.ts`
+    3. `Racehorse_Training_Management_System_MT_FE/src/shared/lib/api.ts`
+    4. `Racehorse_Training_Management_System_MT_FE/.env.example`
+    5. `Racehorse_Training_Management_System_MT_FE/tests/e2e/notifications.spec.ts`
+  - **Slice B (5 corrective files authorized upon CR-012 approval):**
+    1. `Racehorse_Training_Management_System_MT_FE/src/features/dashboard/pages/AuditLogPage.tsx`
+    2. `Racehorse_Training_Management_System_MT_FE/Dockerfile`
+    3. `Racehorse_Training_Management_System_MT_FE/src/vite-env.d.ts`
+    4. `Racehorse_Training_Management_System_MT_FE/.github/workflows/ci.yml`
+    5. `Racehorse_Training_Management_System_MT_FE/AGENTS.md`
+
+- **Approved outcome:**
+  1. Planner tích hợp CR-012 vào Plan v1-approved-r11 và phạm vi TASK-010 trong `TASKS.md`.
+  2. Execution trở về `IDLE`; human phải gửi lệnh mới `START TASK-010` để AGY chỉ triển khai 5 tệp Slice B rồi chạy toàn bộ nghiệm thu kết hợp của TASK-010.
+  3. Approval này không phê duyệt TASK-010, không cho phép commit/push và không cho phép bắt đầu TASK-011.
+
+- **Risk if rejected:**
+  - Main Web tiếp tục tồn tại các nhánh rẽ mock ẩn; bản build Docker và CI có thể kích hoạt lại mock data; `AGENTS.md` tiếp tục hướng dẫn sai lệch; nghiệm thu real-only không được khép kín.
+
+- **Target plan version:** v1-approved-r11.

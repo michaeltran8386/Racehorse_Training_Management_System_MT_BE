@@ -26,7 +26,7 @@ export class MedicalLocksService {
     private readonly realtime: SimulatorRealtimeService,
   ) {}
 
-  /** FR-011: đặt/gỡ khóa báo HT, CM, chủ ngựa và groom đang chăm. */
+  /** FR-011: đặt/gỡ/gia hạn khóa báo HT, CM, chủ ngựa và groom đang chăm. */
   private notifyLockAudience(
     horseId: string,
     input: Parameters<NotificationsService['notifyUsers']>[1],
@@ -445,9 +445,8 @@ export class MedicalLocksService {
     });
 
     const until = extended.recheckDate ? extended.recheckDate.toISOString().slice(0, 10) : '';
-    await this.notifications.notifyHorse(
+    await this.notifyLockAudience(
       extended.horseId,
-      { roles: [Role.HEAD_TRAINER], owner: true },
       {
         type: 'LOCK_EXTENDED',
         category: 'LOCK',
@@ -459,6 +458,16 @@ export class MedicalLocksService {
       },
       actor.userId,
     );
+
+    this.realtime.emit('sys:medical_lock_sync', {
+      event: 'sys:medical_lock_sync',
+      horse_id: extended.horseId,
+      medical_lock: true,
+      issued_by_role: 'VETERINARIAN',
+      lock_actions: ['BLOCK_HEAVY_WORKOUT', 'BLOCK_TOURNAMENT_ENTRY'],
+      note: extended.recheckNotes || 'Medical lock extended',
+    });
+
     return extended;
   }
 

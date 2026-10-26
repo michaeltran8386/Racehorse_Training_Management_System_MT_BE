@@ -1,6 +1,6 @@
 # Architecture Decision Log
 
-> Plan revision hiện hành là v1-approved-r10, approved by `APPROVE PLAN v1` and amended through approved CR-011 on 2026-10-25. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
+> Plan revision hiện hành là v1-approved-r11, approved by `APPROVE PLAN v1` and amended through approved CR-012 on 2026-10-25. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
 
 ## ADR-001 — Backend là system of record
 - **Date:** 2026-10-23
@@ -135,6 +135,14 @@
 - **Decision:** controller truyền authenticated `CurrentUserPayload`; khi caller là `HORSE_OWNER`, service ràng buộc Prisma query theo `horse.ownerId = user.userId`. Tournament metadata vẫn được trả, nhưng response không chứa foreign registration, result hoặc owner PII. Hành vi hiện tại của các role không phải Horse Owner không đổi trong CR này.
 - **Trade-off:** TASK-007 tăng từ giới hạn 5 lên đúng 7 application/test files để chứa controller, service và regression spec; file thứ tám cần CR mới.
 - **Impacted task:** TASK-007.
+
+## ADR-019 — TASK-010 hoàn tất real-only cutover bằng hai slice tuần tự
+- **Date:** 2026-10-25
+- **Status:** ACCEPTED by `APPROVE CR-012` on 2026-10-25
+- **Decision:** TASK-010 vẫn là một task human-gated, được thực hiện bằng hai slice tuần tự, mỗi slice đúng 5 tệp. Slice A giữ các thay đổi Medical Lock/runtime hiện có; Slice B loại nhánh/cấu hình/hướng dẫn mock runtime còn lại trong năm tệp FE đã liệt kê. Chỉ nghiệm thu và phê duyệt TASK-010 sau khi cả hai slice cùng vượt qua acceptance real-stack.
+- **CI boundary:** build artifact phải real-only và không có `VITE_USE_MOCK`. Standalone FE CI không có Backend/PostgreSQL phải công khai defer integration Playwright; không được bật mock để tạo kết quả pass giả. Local real-stack Playwright và manual QA vẫn bắt buộc.
+- **Data safety:** cleanup QA chỉ dùng các ID đã capture, thực hiện atomically, khôi phục trạng thái ngựa ban đầu và xác nhận không còn target residue.
+- **Impacted task:** TASK-010.
 
 Do not silently amend accepted decisions; create an ADR and/or CR entry and request approval where scope changes.
 

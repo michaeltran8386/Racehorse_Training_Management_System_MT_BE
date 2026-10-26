@@ -10,6 +10,7 @@ import { AuditService } from '../audit/audit.service';
 import { Role } from '@prisma/client';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { notificationsMock } from '../notifications/notifications.testing';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { SimulatorRealtimeService } from '../simulator/simulator-realtime.service';
 
@@ -20,6 +21,7 @@ describe('Medical services', () => {
   let records: MedicalRecordsService;
   let overview: HealthOverviewService;
   let preventive: PreventiveCareService;
+  let notifications: NotificationsService;
 
   const mockPrismaService: any = {
     $transaction: jest.fn((fn: (tx: any) => unknown) => fn(mockPrismaService)),
@@ -104,6 +106,20 @@ describe('Medical services', () => {
     role: Role.HORSE_OWNER,
   };
 
+  const mockTrainerUser = {
+    userId: 'ht-1',
+    email: 'ht@example.com',
+    fullName: 'Head Trainer',
+    role: Role.HEAD_TRAINER,
+  };
+
+  const mockGroomUser = {
+    userId: 'groom-1',
+    email: 'groom@example.com',
+    fullName: 'Groom User',
+    role: Role.GROOM,
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -125,6 +141,7 @@ describe('Medical services', () => {
     records = module.get(MedicalRecordsService);
     overview = module.get(HealthOverviewService);
     preventive = module.get(PreventiveCareService);
+    notifications = module.get(NotificationsService);
     jest.clearAllMocks();
   });
 
@@ -344,6 +361,18 @@ describe('Medical services', () => {
           issued_by_role: 'VETERINARIAN',
         }),
       );
+      expect(notifications.notifyHorse).toHaveBeenCalledWith(
+        'horse-1',
+        { roles: [Role.HEAD_TRAINER, Role.CLUB_MANAGER], owner: true, groom: true },
+        expect.objectContaining({
+          type: 'LOCK_PLACED',
+          category: 'LOCK',
+          title: 'Training Lock placed',
+          link: '/locks',
+          senderName: mockVetUser.fullName,
+        }),
+        mockVetUser.userId,
+      );
     });
 
     it('should not let a Club Manager place a training lock (VET_ONLY)', async () => {
@@ -411,6 +440,18 @@ describe('Medical services', () => {
           issued_by_role: 'VETERINARIAN',
         }),
       );
+      expect(notifications.notifyHorse).toHaveBeenCalledWith(
+        'horse-1',
+        { roles: [Role.HEAD_TRAINER, Role.CLUB_MANAGER], owner: true, groom: true },
+        expect.objectContaining({
+          type: 'LOCK_LIFTED',
+          category: 'LOCK',
+          title: 'Training Lock lifted',
+          link: '/locks',
+          senderName: mockVetUser.fullName,
+        }),
+        mockVetUser.userId,
+      );
     });
 
     it('should extend medical lock with new recheck date and history timeline', async () => {
@@ -429,8 +470,10 @@ describe('Medical services', () => {
       mockPrismaService.medicalLock.update.mockResolvedValue({
         id: 'lock-1',
         lockCode: 'KH-000001',
+        horseId: 'horse-1',
         recheckDate: newRecheck,
         isLocked: true,
+        horse: { id: 'horse-1', name: 'Thunder' },
       });
 
       const result = await locks.extendMedicalLock('lock-1', mockVetUser, {
@@ -446,6 +489,98 @@ describe('Medical services', () => {
         'lock-1',
         { entityName: 'MedicalLock' },
         mockPrismaService,
+      );
+      expect(notifications.notifyHorse).toHaveBeenCalledWith(
+        'horse-1',
+        { roles: [Role.HEAD_TRAINER, Role.CLUB_MANAGER], owner: true, groom: true },
+        expect.objectContaining({
+          type: 'LOCK_EXTENDED',
+          category: 'LOCK',
+          title: 'Training Lock extended',
+          link: '/locks',
+          senderName: mockVetUser.fullName,
+        }),
+        mockVetUser.userId,
+      );
+      expect(mockRealtimeService.emit).toHaveBeenCalledWith(
+        'sys:medical_lock_sync',
+        expect.objectContaining({
+          event: 'sys:medical_lock_sync',
+          horse_id: 'horse-1',
+          medical_lock: true,
+          issued_by_role: 'VETERINARIAN',
+        }),
+      );
+    });
+
+    it('should not let a Club Manager release a training lock (VET_ONLY)', async () => {
+      const error = await locks
+        .releaseMedicalLock('lock-1', mockManagerUser, { unlockReason: 'Test' })
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'VET_ONLY' }));
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should not let a Club Manager extend a training lock (VET_ONLY)', async () => {
+      const error = await locks
+        .extendMedicalLock('lock-1', mockManagerUser, { recheckNotes: 'Test', additionalDays: 7 })
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'VET_ONLY' }));
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('should not let a Head Trainer or Groom create, release or extend a training lock (VET_ONLY)', async () => {
+      await expect(
+        locks.createMedicalLock(mockTrainerUser, { horseId: 'horse-1', lockReason: 'Test' }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        locks.releaseMedicalLock('lock-1', mockTrainerUser, { unlockReason: 'Test' }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        locks.extendMedicalLock('lock-1', mockTrainerUser, { additionalDays: 7 }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        locks.createMedicalLock(mockGroomUser, { horseId: 'horse-1', lockReason: 'Test' }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        locks.releaseMedicalLock('lock-1', mockGroomUser, { unlockReason: 'Test' }),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        locks.extendMedicalLock('lock-1', mockGroomUser, { additionalDays: 7 }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('excludes acting Veterinarian from receiving lock notification to prevent duplicate inboxes', async () => {
+      mockPrismaService.horse.findUnique.mockResolvedValue({
+        id: 'horse-1',
+        name: 'Thunder',
+        status: 'ACTIVE',
+        medicalLocks: [],
+        isMedicalLocked: false,
+      });
+      mockPrismaService.medicalLock.findFirst.mockResolvedValue(null);
+      mockPrismaService.medicalLock.count.mockResolvedValue(0);
+      mockPrismaService.medicalLock.create.mockResolvedValue({
+        id: 'lock-1',
+        lockCode: 'KH-000001',
+        horseId: 'horse-1',
+        isLocked: true,
+        recheckDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+
+      await locks.createMedicalLock(mockVetUser, {
+        horseId: 'horse-1',
+        expectedRestDays: 7,
+        lockReason: 'Test exclusion',
+      });
+
+      expect(notifications.notifyHorse).toHaveBeenCalledWith(
+        'horse-1',
+        expect.anything(),
+        expect.anything(),
+        mockVetUser.userId,
       );
     });
 

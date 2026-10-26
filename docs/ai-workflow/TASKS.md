@@ -1,6 +1,6 @@
-# Task Breakdown — Plan v1-approved-r10
+# Task Breakdown — Plan v1-approved-r11
 
-> Approved specification with CR-005 through CR-011 incorporated. AGY may edit execution status/evidence only after `STATE.md` names the task as `next_task` and the human separately sends `START TASK-XXX`. One task per run.
+> Approved specification with CR-005 through CR-012 incorporated. AGY may edit execution status/evidence only after `STATE.md` names the task as `next_task` and the human separately sends `START TASK-XXX`. One task per run.
 
 | ID | Goal | Depends on | Status |
 | --- | --- | --- | --- |
@@ -13,7 +13,7 @@
 | TASK-007 | Enforce Horse Owner scope and profile boundary | 001 | DONE |
 | TASK-008 | Scope operational notifications by horse/actor | 002, 005–007 | DONE |
 | TASK-009 | Implement incident audience and 3-hour escalation | 008 | DONE |
-| TASK-010 | Align Medical Lock notifications and ownership | 008, 009 | TODO |
+| TASK-010 | Align Medical Lock notifications and ownership | 008, 009 | DONE |
 | TASK-011 | Transplant REST/session packet contract into canonical SIM | 010 | TODO |
 | TASK-012 | Reconcile SIM realtime engine and transport | 011 | TODO |
 | TASK-013 | Wire canonical SIM UI with session bootstrap, no login | 012 | TODO |
@@ -139,13 +139,17 @@
 
 ## TASK-010 — Medical Lock notification ownership
 
+- **Status:** DONE
 - **Objective:** Align lock-created/lifted/extended notifications with approved responsibilities and complete the Main Web real-only runtime cutover.
 - **Dependencies:** TASK-008, TASK-009.
-- **Files likely touched:** BE `src/medical/medical-locks.service.ts`, `src/medical/medical-services.spec.ts`; FE `src/shared/lib/api.ts`, `.env.example`, `tests/e2e/notifications.spec.ts`. Exact removal/migration of runtime mock imports must be verified at START; split by approved CR if more than five changed files are required.
+- **Authorized files:** exactly ten files across two sequential M-size slices under the same TASK-010:
+  - **Slice A — already modified and preserved:** BE `src/medical/medical-locks.service.ts`, `src/medical/medical-services.spec.ts`; FE `src/shared/lib/api.ts`, `.env.example`, `tests/e2e/notifications.spec.ts`.
+  - **Slice B — corrective work authorized by CR-012 after a new START:** FE `src/features/dashboard/pages/AuditLogPage.tsx`, `Dockerfile`, `src/vite-env.d.ts`, `.github/workflows/ci.yml`, `AGENTS.md`.
 - **Acceptance:** only Vet mutates a lock; each affected actor receives only scoped events; CM audit behavior follows accepted CR-001; lock sync remains immediate; no duplicate for acting Vet unless policy requires it. Main Web runtime has no mock mode/import/fallback, defaults to the real API, and reports Backend/DB unavailability as an error.
-- **Automated:** medical service tests; FE type/lint/build; notification browser integration against real Backend/PostgreSQL; static/build check proves application runtime cannot import `src/shared/mock/`.
-- **Manual QA:** create/lift lock through the real stack and inspect all actor inboxes plus persisted audit/lock state; restart services and confirm persistence; stop Backend and confirm an explicit error with no sample data.
-- **Scope:** M (up to 5 files); any wider mock-test migration requires an approved split before implementation.
+- **Automated:** medical service tests; FE type/lint/build; notification browser integration against real Backend/PostgreSQL; static/build check proves application runtime cannot import `src/shared/mock/`. Production/CI build is real-only and contains no `VITE_USE_MOCK`; standalone FE CI must explicitly defer integration Playwright when Backend/PostgreSQL are unavailable rather than enable mock-backed tests.
+- **Execution Evidence:** `reports/TASK-010.md`.
+- **Manual QA:** create/lift lock through the real stack and inspect all actor inboxes plus persisted audit/lock state; restart services and confirm persistence; stop Backend and confirm an explicit error with no sample data. Cleanup must target captured lock/notification/audit IDs atomically, restore the captured original horse state, and assert zero targeted residue.
+- **Scope:** two sequential M-size slices of exactly 5 files each. No intermediate TASK-010 approval, no parallel task, and no TASK-011 work before combined TASK-010 acceptance and human approval.
 
 ### Checkpoint WEB-2
 

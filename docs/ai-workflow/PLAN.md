@@ -1,6 +1,6 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r10
+**Version:** v1-approved-r11
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
@@ -14,6 +14,8 @@ Revision r8 incorporates approved CR-009: registration is allowed only while OPE
 Revision r9 incorporates approved CR-010: runtime, manual QA, integration tests and final acceptance must use the real NestJS API and PostgreSQL data. Runtime mock/fallback paths are removed by the remaining Web/SIM tasks; mocks are permitted only inside isolated unit tests.
 
 Revision r10 incorporates approved CR-011: TASK-007 expands to exactly seven application/test files to close the verified Horse Owner tournament race-data and foreign-owner PII leak. Authenticated tournament detail reads must pass the caller to the service; Horse Owner registrations/results are constrained by ownership in the Prisma query, while existing non-owner-role behavior remains unchanged.
+
+Revision r11 incorporates approved CR-012: TASK-010 remains one human-gated task but is executed as two sequential M-size slices. Slice A preserves the five existing Medical Lock/runtime changes; Slice B authorizes exactly five corrective FE runtime/config/governance files to complete the Main Web real-only cutover. TASK-010 may be approved only after combined real-stack acceptance for both slices; standalone FE CI must not report mock-backed browser integration as passing.
 
 > Không task nào được triển khai trước `APPROVE PLAN v1` và một lệnh `START TASK-XXX` riêng trong phiên AGY.
 
@@ -190,6 +192,7 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - **CR-005 đã duyệt và hợp nhất:** `editHorses` là quyền role-owned của Club Manager; stored/submitted permission của non-CM phải normalize về false; TASK-002 phân biệt horse master-data mutation với operational status transition.
 - **CR-010 đã duyệt và hợp nhất:** runtime/manual QA/integration/final acceptance chỉ dùng API và PostgreSQL thật; không fallback mock; mock chỉ trong unit test cô lập.
 - **CR-011 đã duyệt và hợp nhất:** TASK-007 có phạm vi chính xác bảy tệp để lọc race registrations/results của Horse Owner theo ownership tại truy vấn Backend và không trả PII của chủ khác.
+- **CR-012 đã duyệt và hợp nhất:** TASK-010 dùng hai slice tuần tự, tổng cộng đúng mười tệp đã liệt kê; Slice B loại các đường dẫn cấu hình/runtime mock còn lại và CI không được dùng mock để giả lập integration pass.
 
-Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-011. Approval of a Plan/CR never starts or approves a task. TASK-007 is ready for a new direct `START TASK-007` in AGY; TASK-008 remains unauthorized.
+Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-012. Approval of a Plan/CR never starts or approves a task. TASK-001 through TASK-010 are DONE and human-approved; execution is IDLE; TASK-011 is next eligible but remains unauthorized and requires a separate direct `START TASK-011`.
 
