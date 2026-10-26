@@ -1,6 +1,6 @@
 # Architecture Decision Log
 
-> Plan revision hiện hành là v1-approved-r12, approved by `APPROVE PLAN v1` and amended through approved CR-013 on 2026-10-26. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
+> Plan revision hiện hành là v1-approved-r13, approved by `APPROVE PLAN v1` and amended through approved CR-014 on 2026-10-26. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
 
 ## ADR-001 — Backend là system of record
 - **Date:** 2026-10-23
@@ -21,9 +21,9 @@
 
 ## ADR-003 — Simulator không có secondary login
 - **Date:** 2026-10-23
-- **Status:** ACCEPTED by `APPROVE PLAN v1` on 2026-10-24
+- **Status:** ACCEPTED by `APPROVE PLAN v1` on 2026-10-24; refined by `APPROVE CR-014` on 2026-10-26
 - **Evidence:** quyết định trong `CLAUDE.md` ngày 23/10/2026; `_v3` còn luồng login trực tiếp cũ.
-- **Decision:** Main Web tạo/nhận session rồi mở Simulator; Simulator bootstrap bằng session ngắn hạn, không có form login hoặc access token dài hạn trong URL/localStorage.
+- **Decision:** Main Web tạo/nhận session rồi mở Simulator; Simulator bootstrap bằng session ngắn hạn, không có form login hoặc access token dài hạn trong URL/localStorage. REST context và Socket.IO cùng xác thực session; Backend không được fallback sang actor Head Trainer mặc định.
 - **Trade-off:** phải xử lý expired/forbidden session rõ ràng.
 - **Impacted tasks:** TASK-013, TASK-015–018.
 
@@ -152,6 +152,14 @@
 - **Acceptance:** chạy hai lần phải idempotent; non-QA counts/fingerprints bất biến; kiểm tra năm role qua NestJS API thật và xác nhận persistence sau restart. Runtime mock/fallback không được dùng.
 - **Sequence:** TASK-012 phụ thuộc TASK-020. Approval CR không tự chạy seed; TASK-020 cần lệnh `START TASK-020` riêng.
 - **Impacted tasks:** TASK-020, TASK-012, TASK-019.
+
+## ADR-021 — Canonical Git Simulator là sản phẩm v3; transport dùng session capability
+- **Date:** 2026-10-26
+- **Status:** ACCEPTED by `APPROVE CR-014` on 2026-10-26
+- **Decision:** `Racehorse_Simulator_Web/` là repository GitHub và source duy nhất của sản phẩm v3; thư mục `Racehorse_Simulator_Web_v3/` chỉ là bản sao tham chiếu, không được sửa, test hoặc dùng làm acceptance runtime. Main Web cấp một `sessionId` không đoán được; Simulator dùng cùng session cho REST context và Socket.IO thay vì secondary login.
+- **Security boundary:** chỉ session `PENDING`/`RUNNING` hợp lệ được dùng; `PENDING` quá năm phút, session thiếu/sai/terminal hoặc actor không tồn tại bị từ chối. Socket không có session không được gán một tài khoản mặc định. Không thêm schema nếu có thể kiểm tra timeout từ `createdAt` và status hiện có.
+- **Runtime boundary:** giai đoạn TASK-013 dùng khởi động Docker/npm thủ công. `.bat` vẫn thuộc TASK-014, giữ TODO và cần lệnh `START TASK-014` riêng.
+- **Impacted tasks:** TASK-013, TASK-014, TASK-015–019.
 
 Do not silently amend accepted decisions; create an ADR and/or CR entry and request approval where scope changes.
 

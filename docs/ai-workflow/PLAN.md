@@ -1,6 +1,6 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r12
+**Version:** v1-approved-r13
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
@@ -18,6 +18,8 @@ Revision r10 incorporates approved CR-011: TASK-007 expands to exactly seven app
 Revision r11 incorporates approved CR-012: TASK-010 remains one human-gated task but is executed as two sequential M-size slices. Slice A preserves the five existing Medical Lock/runtime changes; Slice B authorizes exactly five corrective FE runtime/config/governance files to complete the Main Web real-only cutover. TASK-010 may be approved only after combined real-stack acceptance for both slices; standalone FE CI must not report mock-backed browser integration as passing.
 
 Revision r12 incorporates approved CR-013: add TASK-020 as an additive, deterministic Web manual-QA dataset checkpoint after TASK-011 and before TASK-012. It creates only clearly identified QA fixtures in the existing local PostgreSQL database, never a second database/schema, and must not delete or overwrite non-QA records.
+
+Revision r13 incorporates approved CR-014: the canonical Git repository `Racehorse_Simulator_Web/` remains the sole v3 product source; TASK-013 removes the secondary Simulator login and binds REST/Socket.IO runtime identity to the Main-Web-issued simulator session. It is executed as two sequential slices covering Backend session validation/transport and canonical v3 UI bootstrap. Root `.bat` launcher work remains isolated in TASK-014 and is deferred until separately started.
 
 > Không task nào được triển khai trước `APPROVE PLAN v1` và một lệnh `START TASK-XXX` riêng trong phiên AGY.
 
@@ -99,7 +101,8 @@ Conflict với hard invariant phải có CR và phê duyệt; không tự chọn
 - PostgreSQL/Backend là system of record cho horse, stall, workout/trial, incident, lock, supply request và inventory.
 - Main Web xác thực actor và yêu cầu Backend tạo/ủy quyền session.
 - Simulator không có màn đăng nhập. Nó bootstrap bằng session ngắn hạn do Main Web mở; không đưa access token dài hạn vào URL/localStorage.
-- Backend kiểm tra actor, ownership, RBAC, medical lock và trạng thái trước khi trả context.
+- `sessionId` là capability ngắn hạn do Backend phát hành: context và Socket.IO phải cùng xác thực session, trạng thái và actor; không được fallback sang một Head Trainer mặc định khi thiếu JWT/session.
+- Backend kiểm tra actor, ownership, RBAC, medical lock và trạng thái trước khi trả context; session thiếu, sai, terminal hoặc quá hạn bị từ chối.
 - Main Web và Simulator chỉ có real runtime mode. Backend/PostgreSQL không sẵn sàng phải tạo lỗi kết nối rõ ràng; không được chuyển sang dữ liệu mẫu hoặc giả lập thành công.
 
 ### 6.3 Data flow
@@ -199,6 +202,7 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - **CR-011 đã duyệt và hợp nhất:** TASK-007 có phạm vi chính xác bảy tệp để lọc race registrations/results của Horse Owner theo ownership tại truy vấn Backend và không trả PII của chủ khác.
 - **CR-012 đã duyệt và hợp nhất:** TASK-010 dùng hai slice tuần tự, tổng cộng đúng mười tệp đã liệt kê; Slice B loại các đường dẫn cấu hình/runtime mock còn lại và CI không được dùng mock để giả lập integration pass.
 - **CR-013 đã duyệt và hợp nhất:** TASK-020 tạo dataset manual-QA additive trong PostgreSQL hiện có bằng hai file Backend tooling; TASK-012 phụ thuộc TASK-020 để giữ thứ tự human-gated mà không đánh lại số TASK-012–019.
+- **CR-014 đã duyệt và hợp nhất:** canonical Git Simulator vẫn là sản phẩm v3 duy nhất; TASK-013 dùng hai slice tuần tự để loại secondary login, xác thực context/Socket.IO bằng session do Main Web cấp và xóa fallback actor mặc định. TASK-014 giữ riêng launcher `.bat` và chưa được thực thi.
 
-Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-013. TASK-001 through TASK-011 are DONE and human-approved. Execution is IDLE; TASK-020 is next eligible but remains unauthorized and requires a separate direct `START TASK-020`. CR approval does not execute seed data, commit, push, merge or start TASK-012.
+Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-014. TASK-001 through TASK-011 and TASK-020 are DONE and human-approved. TASK-012 remains `AWAITING_USER_QA`; TASK-013 is unauthorized. CR-014 approval does not approve/commit TASK-012, modify application code, start TASK-013, or authorize TASK-014.
 

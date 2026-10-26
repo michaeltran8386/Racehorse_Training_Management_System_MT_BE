@@ -340,3 +340,16 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
 - **Acceptance:** two identical runs create no duplicates; non-QA counts and fingerprints remain unchanged; real NestJS/PostgreSQL five-role checks and restart persistence pass; no mock/fallback.
 - **Human-gate result:** execution remains `IDLE`. This CR approval does not run the seed, start TASK-020, commit, push or authorize TASK-012. A separate exact `START TASK-020` is required.
 - **Target plan version:** v1-approved-r12.
+
+## CR-014 — Canonical v3 Simulator without secondary login; session-bound REST and Socket.IO
+
+- **State:** APPROVED by exact human command `APPROVE CR-014` on 2026-10-26.
+- **Raised by:** Human clarification after TASK-012 review: use the v3 Simulator product, do not use `.bat` yet, and never show a second Simulator login.
+- **Related plan:** v1-approved-r12 while TASK-012 remains `AWAITING_USER_QA`; incorporated into Plan v1-approved-r13.
+- **Verified gap:** canonical Git `Racehorse_Simulator_Web/` already contains the v3 product lineage, while the suffixed `_v3` directory has no `.git`. Both current UI copies still render `SimulatorLogin`. The Backend Socket.IO gateway accepts a connection without token/session and assigns a default Head Trainer, so merely hiding the form would create incorrect actor attribution and an unsafe trust boundary.
+- **Approved change:** keep `Racehorse_Simulator_Web/` as the only editable/testable v3 source; expand TASK-013 into two sequential slices. Slice A validates Main-Web-issued session identity for REST context and Socket.IO, resolves the recorded actor, rejects missing/invalid/terminal/expired sessions and removes the default-trainer fallback. Slice B removes reachable login/mock/sample paths and bootstraps the v3 UI solely from the real session context.
+- **Exact scope:** Slice A uses six files: BE `src/simulator/simulator.service.ts`, `src/simulator/simulator.service.spec.ts`, `src/simulator/simulator.gateway.ts`, `src/simulator/simulator.gateway.spec.ts`; SIM `src/sim/socketTransport.ts`, `src/sim/socketTransport.test.ts`. Slice B uses five SIM files: `src/ui/App.tsx`, `src/ui/FarmHub.tsx`, `src/ui/TrialTab.tsx`, `src/ui/VetZone.tsx`, `src/ui/HorseCard.tsx`.
+- **Session rule:** accept only `PENDING`/`RUNNING`; stale `PENDING` launch sessions expire after five minutes using existing timestamps, without schema/migration. Missing/invalid/terminal/expired session or missing actor fails closed. Valid Head Trainer workout and Veterinarian exam launches enter v3 directly without `/auth/login`.
+- **Launcher deferral:** root `start.bat` and `stop.bat` remain out of TASK-013 and TASK-014 remains TODO. Until a separate `START TASK-014`, developers start PostgreSQL, Backend, Frontend and canonical Simulator manually through Docker/npm.
+- **Human-gate result:** TASK-012 remains `AWAITING_USER_QA`; CR approval does not approve/commit TASK-012, modify code, start TASK-013, start TASK-014, push or merge.
+- **Target plan version:** v1-approved-r13.

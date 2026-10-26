@@ -2,14 +2,22 @@
 
 ## Gate state
 
-- **Plan:** v1-approved-r12 — approved Plan v1 with CR-005 through CR-013 incorporated.
-- **Last completed task:** TASK-020 — DONE and human-approved on 2026-10-26.
+- **Plan:** v1-approved-r13 — approved Plan v1 with CR-005 through CR-014 incorporated.
+- **Last completed task:** TASK-012 — DONE and human-approved on 2026-10-26.
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-012.
+- **Next eligible task:** TASK-013, unauthorized until a separate direct START TASK-013 command is issued.
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Await human's explicit START TASK-012 command. Do not execute pre-work, commit, push, or start coding.
+- **Do now:** Execution is IDLE. Await the human's explicit commit authorization or START TASK-013 command. Do not start TASK-013, edit launcher files, commit, push or merge without separate authorization.
+
+## Approved CR-014 canonical v3 / no-login boundary
+
+- `Racehorse_Simulator_Web/` is the only editable/testable Git source for the v3 Simulator product; `_v3` remains untouched reference material.
+- TASK-013 is one human-gated task with two sequential slices: session-bound Backend/transport validation, then canonical v3 UI bootstrap. There is one combined QA gate after both slices.
+- Simulator has no secondary login and no `/auth/login` runtime request. Main Web issues `sessionId`; REST context and Socket.IO validate the same eligible session and exact actor. Missing/invalid/terminal/stale-PENDING sessions fail closed; no default Head Trainer fallback is allowed.
+- Runtime mock/sample fallback is forbidden. Direct port 5175 without a session shows a safe instruction to open from Main Web rather than a login form.
+- Manual Docker/npm startup is the current operating mode. `start.bat`/`stop.bat` remain exclusively in TASK-014, which is TODO and unauthorized.
 
 ## Approved CR-013 dataset boundary
 
@@ -56,4 +64,4 @@
 - Retain the verified R-1/R-2/R-3/R-4 protections.
 - CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`. In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
 
-CR-013 is approved and incorporated into v1-approved-r12. TASK-001 through TASK-011 and TASK-020 are DONE and human-approved. Execution is IDLE; next_task is TASK-012 awaiting explicit human START TASK-012.
+CR-014 is approved and incorporated into v1-approved-r13. TASK-001 through TASK-012 and TASK-020 are DONE and human-approved. Execution is IDLE; TASK-013 is unauthorized and requires a separate direct `START TASK-013`.

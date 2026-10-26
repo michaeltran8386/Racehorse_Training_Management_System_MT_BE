@@ -1,6 +1,6 @@
-# Task Breakdown — Plan v1-approved-r12
+# Task Breakdown — Plan v1-approved-r13
 
-> Approved specification with CR-005 through CR-013 incorporated. AGY may edit execution status/evidence only after `STATE.md` names the task as `next_task` and the human separately sends `START TASK-XXX`. One task per run.
+> Approved specification with CR-005 through CR-014 incorporated. AGY may edit execution status/evidence only after `STATE.md` names the task as `next_task` and the human separately sends `START TASK-XXX`. One task per run.
 
 | ID | Goal | Depends on | Status |
 | --- | --- | --- | --- |
@@ -16,8 +16,8 @@
 | TASK-010 | Align Medical Lock notifications and ownership | 008, 009 | DONE |
 | TASK-011 | Transplant REST/session packet contract into canonical SIM | 010 | DONE |
 | TASK-020 | Expand controlled Web manual-QA dataset | 011 | DONE |
-| TASK-012 | Reconcile SIM realtime engine and transport | 020 | TODO |
-| TASK-013 | Wire canonical SIM UI with session bootstrap, no login | 012 | TODO |
+| TASK-012 | Reconcile SIM realtime engine and transport | 020 | DONE |
+| TASK-013 | Bind canonical v3 SIM to Main-Web session, no secondary login | 012 | TODO |
 | TASK-014 | Switch launcher to canonical SIM repo | 013 | TODO |
 | TASK-015 | Complete horse/stall Web→SIM data flow | 002, 006, 007, 014 | TODO |
 | TASK-016 | Complete trial session realtime flow | 004, 015 | TODO |
@@ -187,6 +187,7 @@
 
 ## TASK-012 — Realtime engine and transport reconciliation
 
+- **Status:** DONE
 - **Objective:** Bring canonical SIM packet emission/ACK behavior to `_v3` parity without overwriting newer canonical rules.
 - **Dependencies:** TASK-020.
 - **Included:** 1 Hz emission, ACK/retry/idempotent event id, disconnect state, finished/incident packets.
@@ -197,22 +198,26 @@
 - **Manual QA:** simulate lost ACK and reconnect; observe one logical incident/session finish.
 - **Scope:** M (5 files).
 
-## TASK-013 — Canonical SIM UI session bootstrap
+## TASK-013 — Canonical v3 SIM session-bound bootstrap, no secondary login
 
-- **Objective:** Wire canonical UI to session context/realtime while removing direct Simulator login.
+- **Objective:** Run the v3 product from canonical Git `Racehorse_Simulator_Web/`, remove the direct Simulator login, and bind REST context plus Socket.IO actor identity to the session issued by Main Web.
 - **Dependencies:** TASK-012.
-- **Included:** loading/expired/forbidden/backend-unavailable states, real Backend session context and lock sync; remove runtime mock selection/fallback.
-- **Excluded:** new authentication system or redesign.
-- **Files likely touched:** SIM `src/ui/App.tsx`, `src/ui/FarmHub.tsx`, `src/ui/TrialTab.tsx`, `src/ui/VetZone.tsx`, `src/ui/HorseCard.tsx`.
-- **Acceptance:** no login form or runtime mock mode; valid Main-Web session opens correct Backend context; invalid/expired/forbidden/unavailable states show safe Vietnamese errors; masked microchip is not reconstructed; Medical Lock disables heavy action immediately; no seed/sample operational data appears when API/DB fails.
-- **Automated:** SIM typecheck/test/build; focused pure tests for any extracted non-trivial branch.
-- **Manual QA:** using real Backend/PostgreSQL, open valid, expired and forbidden sessions; exercise a lock-sync event; stop Backend and confirm explicit failure without fallback data.
-- **Scope:** M (5 files).
+- **Execution shape:** one human-gated task with two sequential slices and one combined acceptance gate; no approval or stop between slices.
+- **Slice A — Backend/session transport:** validate the supplied `sessionId` for REST context and Socket.IO; accept only eligible `PENDING`/`RUNNING` sessions, apply a five-minute launch timeout to stale `PENDING` sessions without a schema migration, resolve the actor from `SimulatorSession.actorUserId`, and reject missing/invalid/terminal/expired sessions. Remove the no-token fallback that impersonates a default Head Trainer.
+- **Slice A authorized files:** BE `src/simulator/simulator.service.ts`, `src/simulator/simulator.service.spec.ts`, `src/simulator/simulator.gateway.ts`, `src/simulator/simulator.gateway.spec.ts`; SIM `src/sim/socketTransport.ts`, `src/sim/socketTransport.test.ts`.
+- **Slice B — canonical v3 UI:** bootstrap from `sessionId`, load the exact real session/horse/workout-or-exam context, connect transport with that session, apply lock sync immediately, and remove every reachable login/mock/sample-data path while preserving the v3 map, UI, animation and engine behavior.
+- **Slice B authorized files:** SIM `src/ui/App.tsx`, `src/ui/FarmHub.tsx`, `src/ui/TrialTab.tsx`, `src/ui/VetZone.tsx`, `src/ui/HorseCard.tsx`.
+- **Excluded:** root `start.bat`/`stop.bat`, `_v3` edits, schema/migration, a new authentication system, UI redesign, and TASK-014 or later work.
+- **Acceptance:** canonical `Racehorse_Simulator_Web/` is the only Simulator source changed/tested; a valid Main-Web-issued workout or exam session opens the v3 UI without a second login; no runtime form or request to `/auth/login`; direct port 5175 access without a session shows a safe Vietnamese instruction to open from Main Web; missing/invalid/terminal/expired/cross-actor sessions and Backend/DB failure are rejected without mock/sample fallback; Socket.IO persists under the exact session actor, never a fallback trainer; masked microchip is not reconstructed; Medical Lock disables heavy action immediately.
+- **Automated:** focused BE service/gateway tests; focused SIM bootstrap/transport tests; full relevant BE tests; SIM `npm test`, typecheck and build; static scan proves no reachable `SimulatorLogin`, `/auth/login`, `VITE_USE_MOCK` or `_v3` runtime path.
+- **Manual QA:** start PostgreSQL/BE/FE/canonical SIM manually with Docker/npm; from real Main Web open valid Head Trainer workout and Veterinarian exam sessions with no second login; verify missing, invalid, terminal and stale-PENDING session errors; verify exact actor attribution and lock sync; stop Backend and confirm explicit failure without fallback.
+- **Scope:** L, exactly 11 application/test files across two sequential slices (6 Slice A + 5 Slice B).
 
 ## TASK-014 — Launcher uses canonical SIM
 
 - **Objective:** Ensure one-click scripts install/start/stop the Git Simulator on port 5175.
 - **Dependencies:** TASK-013.
+- **Deferral:** CR-014 leaves this task TODO for later. Manual Docker/npm startup is used until the human separately sends `START TASK-014`; TASK-013 must not edit launcher files.
 - **Files likely touched:** root `start.bat`, `stop.bat`; canonical coordination files only if launcher evidence changes the handoff.
 - **Acceptance:** no runtime reference to `_v3`; BE 3000, FE 5173 and SIM 5175 start once against PostgreSQL; launcher never enables mock mode; stop closes them; missing Backend/DB/dependencies produce actionable errors and no fallback data.
 - **Automated:** script syntax/static path check and SIM build; do not terminate user processes during automated checks without authorization.
