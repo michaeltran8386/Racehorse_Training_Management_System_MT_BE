@@ -14,7 +14,7 @@
 | TASK-008 | Scope operational notifications by horse/actor | 002, 005–007 | DONE |
 | TASK-009 | Implement incident audience and 3-hour escalation | 008 | DONE |
 | TASK-010 | Align Medical Lock notifications and ownership | 008, 009 | DONE |
-| TASK-011 | Transplant REST/session packet contract into canonical SIM | 010 | TODO |
+| TASK-011 | Transplant REST/session packet contract into canonical SIM | 010 | DONE |
 | TASK-012 | Reconcile SIM realtime engine and transport | 011 | TODO |
 | TASK-013 | Wire canonical SIM UI with session bootstrap, no login | 012 | TODO |
 | TASK-014 | Switch launcher to canonical SIM repo | 013 | TODO |
@@ -157,14 +157,16 @@
 
 ## TASK-011 — REST/session packet contract in canonical SIM
 
+- **Status:** DONE
 - **Objective:** Port only validated API/session contract pieces from `_v3` into `Racehorse_Simulator_Web/`, preserving canonical microchip work.
 - **Dependencies:** TASK-010.
 - **Included:** session/context DTO mapping, API error handling, packet contract tests; compare before applying.
 - **Excluded:** UI wiring, engine changes, launcher changes, deletion of `_v3`.
-- **Files likely touched:** SIM `src/api/simulatorApi.ts`, `src/api/simulatorApi.test.ts`, `src/api/horsesApi.ts`, `src/sim/packetContract.test.ts`.
+- **Files touched (4 files):** SIM `src/api/simulatorApi.ts`, `src/api/simulatorApi.test.ts`, `src/api/horsesApi.ts`, `src/sim/packetContract.test.ts`.
 - **Acceptance:** real-mode client requests an existing session context; mapped horse keeps Backend `horse_id` and microchip masking; error envelopes surface code/message; packet test matches BE DTO/event names.
-- **Automated:** SIM `npm run typecheck`, `npm test`, `npm run build`.
-- **Manual QA:** inspect a known Backend session request; confirm no login UI was introduced.
+- **Automated:** SIM `npm run typecheck`, `npm test`, `npm run build` all pass cleanly.
+- **Execution Evidence:** `reports/TASK-011.md`.
+- **Manual QA:** inspect a known Backend session request; confirm no login UI was introduced; verify Backend error envelope surfacing.
 - **Scope:** M (4 files).
 
 ## TASK-012 — Realtime engine and transport reconciliation

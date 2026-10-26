@@ -3,13 +3,13 @@
 ## Gate state
 
 - **Plan:** v1-approved-r11 — approved Plan v1 with CR-005 through CR-012 incorporated.
-- **Last completed task:** TASK-010 — DONE and human-approved on 2026-10-26.
+- **Last completed task:** TASK-011 — DONE and human-approved on 2026-10-26.
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-011.
+- **Next eligible task:** TASK-012.
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Await explicit human start (`START TASK-011`). TASK-010 has been approved and marked DONE. Execution is IDLE. Do not commit, push, or start TASK-011 without authorization.
+- **Do now:** Execution is IDLE awaiting explicit authorization or start for TASK-012. Do not start TASK-012 until authorized.
 
 ## Approved CR-012 execution boundary
 
@@ -49,4 +49,4 @@
 - Retain the verified R-1/R-2/R-3/R-4 protections.
 - CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`. In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
 
-CR-012 is approved and incorporated into v1-approved-r11. TASK-001 through TASK-010 are DONE and human-approved. Execution is IDLE awaiting explicit authorization or start for TASK-011; TASK-011 remains unauthorized.
+CR-012 is approved and incorporated into v1-approved-r11. TASK-001 through TASK-011 are DONE and human-approved. Execution is IDLE awaiting explicit authorization or start for TASK-012; TASK-012 remains unauthorized.
