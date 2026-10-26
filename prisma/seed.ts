@@ -429,6 +429,104 @@ async function main() {
       stallCode: null,
       groomId: null,
     },
+    {
+      horseCode: 'HR-000010',
+      name: 'Apollo Chariot',
+      microchip: '985141002341010',
+      breed: 'Thoroughbred',
+      dob: new Date('2021-05-10'),
+      gender: 'Gelding',
+      color: 'Bay',
+      status: HorseStatus.ACTIVE,
+      isMedicalLocked: false,
+      ownerId: owner1.id,
+      stallCode: 'STALL-A05',
+      groomId: groom1.id,
+    },
+    {
+      horseCode: 'HR-000011',
+      name: 'Desert Mirage',
+      microchip: '985141002341011',
+      breed: 'Arabian',
+      dob: new Date('2021-03-22'),
+      gender: 'Stallion',
+      color: 'Chestnut',
+      status: HorseStatus.ACTIVE,
+      isMedicalLocked: false,
+      ownerId: owner2.id,
+      stallCode: 'STALL-A06',
+      groomId: groom2.id,
+    },
+    {
+      horseCode: 'HR-000012',
+      name: 'Starlight Express',
+      microchip: '985141002341012',
+      breed: 'Thoroughbred',
+      dob: new Date('2022-02-14'),
+      gender: 'Mare',
+      color: 'Grey',
+      status: HorseStatus.ACTIVE,
+      isMedicalLocked: false,
+      ownerId: owner1.id,
+      stallCode: 'STALL-A07',
+      groomId: groom1.id,
+    },
+    {
+      horseCode: 'HR-000013',
+      name: 'Ironclad Titan',
+      microchip: '985141002341013',
+      breed: 'Quarter Horse',
+      dob: new Date('2020-09-18'),
+      gender: 'Colt',
+      color: 'Bay Dark',
+      status: HorseStatus.ACTIVE,
+      isMedicalLocked: false,
+      ownerId: owner2.id,
+      stallCode: 'STALL-B04',
+      groomId: groom2.id,
+    },
+    {
+      horseCode: 'HR-000014',
+      name: 'Crimson Flash',
+      microchip: '985141002341014',
+      breed: 'Warmblood',
+      dob: new Date('2021-07-30'),
+      gender: 'Filly',
+      color: 'Roan',
+      status: HorseStatus.ACTIVE,
+      isMedicalLocked: false,
+      ownerId: owner1.id,
+      stallCode: 'STALL-B05',
+      groomId: groom1.id,
+    },
+    {
+      horseCode: 'HR-000015',
+      name: 'Ocean Breeze',
+      microchip: '985141002341015',
+      breed: 'Standardbred',
+      dob: new Date('2021-12-05'),
+      gender: 'Gelding',
+      color: 'Bay',
+      status: HorseStatus.ACTIVE,
+      isMedicalLocked: false,
+      ownerId: owner2.id,
+      stallCode: 'STALL-B06',
+      groomId: groom2.id,
+    },
+    {
+      horseCode: 'HR-000016',
+      name: 'Bucephalus Brave',
+      microchip: '985141002341016',
+      breed: 'Thoroughbred',
+      dob: new Date('2022-04-01'),
+      gender: 'Stallion',
+      color: 'Black',
+      status: HorseStatus.IN_TRAINING,
+      isMedicalLocked: false,
+      ownerId: owner1.id,
+      stallCode: 'STALL-B07',
+      groomId: groom1.id,
+    },
   ];
 
   const createdHorses: Record<string, any> = {};
@@ -806,6 +904,7 @@ async function main() {
   });
 
   // DRAFT Plan
+  const horse5 = createdHorses['HR-000005'];
   const horse6 = createdHorses['HR-000006'];
   await prisma.trainingPlan.upsert({
     where: { id: `plan-${horse6.id}-draft` },
@@ -961,10 +1060,233 @@ async function main() {
     },
   });
 
+  // Seed active training plan & 4 completed workouts for horse5 (Golden Eclipse, HR-000005)
+  // to ensure reproducible eligible unregistered horse for race registration (Flow 5)
+  const planHorse5 = await prisma.trainingPlan.upsert({
+    where: { id: `plan-${horse5.id}-active` },
+    update: { status: PlanStatus.ACTIVE },
+    create: {
+      id: `plan-${horse5.id}-active`,
+      planCode: 'GA-000095',
+      horseId: horse5.id,
+      trainerUserId: trainer.id,
+      phaseName: 'Huấn luyện tốc độ & Thể lực mùa xuân',
+      objective: 'Tích lũy khối lượng và nâng cao tốc độ cự ly 1200m.',
+      targetSpeed: 58.0,
+      targetDistance: 1200,
+      trackSurface: TrackSurface.SYNTHETIC,
+      startDate: new Date(now.getTime() - 25 * 86400000),
+      endDate: new Date(now.getTime() + 35 * 86400000),
+      status: PlanStatus.ACTIVE,
+    },
+  });
+
+  for (let i = 1; i <= 4; i++) {
+    const daysAgo = 22 - i * 4; // 18, 14, 10, 6 days ago (all within 30 days)
+    await prisma.workoutSession.upsert({
+      where: { id: `w${i}-${horse5.id}` },
+      update: {
+        status: WorkoutStatus.COMPLETED,
+        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+      },
+      create: {
+        id: `w${i}-${horse5.id}`,
+        trainingPlanId: planHorse5.id,
+        horseId: horse5.id,
+        assignedStaffUserId: groom2.id,
+        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+        distanceMeters: 1200,
+        actualTimeSeconds: 72 + i,
+        heartRatePeak: 172,
+        heartRateRecovery: 106,
+        performanceScore: 8.8,
+        status: WorkoutStatus.COMPLETED,
+        workoutType: 'CANTER',
+        intensity: 'MEDIUM',
+        trackSurface: 'SYNTHETIC',
+        averageSpeedKmh: 59.0,
+        topSpeedKmh: 63.5,
+        trainerNotes: `Hoàn thành bài tập chuẩn bị thi đấu ${i}/4`,
+      },
+    });
+  }
+
+  // Also seed active training plan & 4 completed workouts for horse6 (Storm Runner, HR-000006)
+  const planHorse6 = await prisma.trainingPlan.upsert({
+    where: { id: `plan-${horse6.id}-active` },
+    update: { status: PlanStatus.ACTIVE },
+    create: {
+      id: `plan-${horse6.id}-active`,
+      planCode: 'GA-000096',
+      horseId: horse6.id,
+      trainerUserId: trainer.id,
+      phaseName: 'Huấn luyện tăng tốc đường cỏ',
+      objective: 'Tích lũy thể lực bứt phá cự ly ngắn.',
+      targetSpeed: 57.0,
+      targetDistance: 1200,
+      trackSurface: TrackSurface.TURF,
+      startDate: new Date(now.getTime() - 25 * 86400000),
+      endDate: new Date(now.getTime() + 35 * 86400000),
+      status: PlanStatus.ACTIVE,
+    },
+  });
+
+  for (let i = 1; i <= 4; i++) {
+    const daysAgo = 24 - i * 4; // 20, 16, 12, 8 days ago
+    await prisma.workoutSession.upsert({
+      where: { id: `w${i}-${horse6.id}` },
+      update: {
+        status: WorkoutStatus.COMPLETED,
+        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+      },
+      create: {
+        id: `w${i}-${horse6.id}`,
+        trainingPlanId: planHorse6.id,
+        horseId: horse6.id,
+        assignedStaffUserId: groom1.id,
+        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+        distanceMeters: 1200,
+        actualTimeSeconds: 73 + i,
+        heartRatePeak: 170,
+        heartRateRecovery: 104,
+        performanceScore: 8.7,
+        status: WorkoutStatus.COMPLETED,
+        workoutType: 'CANTER',
+        intensity: 'MEDIUM',
+        trackSurface: 'TURF',
+        averageSpeedKmh: 58.5,
+        topSpeedKmh: 62.8,
+        trainerNotes: `Hoàn thành bài tập chuẩn bị thi đấu ${i}/4`,
+      },
+    });
+  }
+
+  // Seed active training plans & 4 completed workouts for horses 10 through 15 (Abundant eligible horses)
+  const eligibleHorsesDefs = [
+    { code: 'HR-000010', planCode: 'GA-000097', surface: TrackSurface.SYNTHETIC, groom: groom1, name: 'Tốc độ tổng hợp' },
+    { code: 'HR-000011', planCode: 'GA-000098', surface: TrackSurface.TURF, groom: groom2, name: 'Đường cỏ cự ly trung' },
+    { code: 'HR-000012', planCode: 'GA-000099', surface: TrackSurface.SYNTHETIC, groom: groom1, name: 'Bứt phá nước rút' },
+    { code: 'HR-000013', planCode: 'GA-000100', surface: TrackSurface.DIRT, groom: groom2, name: 'Sức bền đường cát' },
+    { code: 'HR-000014', planCode: 'GA-000101', surface: TrackSurface.TURF, groom: groom1, name: 'Tăng tốc chặng cuối' },
+    { code: 'HR-000015', planCode: 'GA-000102', surface: TrackSurface.SYNTHETIC, groom: groom2, name: 'Thể lực bền bỉ' },
+  ];
+
+  for (const item of eligibleHorsesDefs) {
+    const h = createdHorses[item.code];
+    if (!h) continue;
+
+    const plan = await prisma.trainingPlan.upsert({
+      where: { id: `plan-${h.id}-active` },
+      update: { status: PlanStatus.ACTIVE },
+      create: {
+        id: `plan-${h.id}-active`,
+        planCode: item.planCode,
+        horseId: h.id,
+        trainerUserId: trainer.id,
+        phaseName: item.name,
+        objective: 'Duy trì phong độ thi đấu đỉnh cao và thể lực xuất sắc.',
+        targetSpeed: 58.0,
+        targetDistance: 1400,
+        trackSurface: item.surface,
+        startDate: new Date(now.getTime() - 25 * 86400000),
+        endDate: new Date(now.getTime() + 35 * 86400000),
+        status: PlanStatus.ACTIVE,
+      },
+    });
+
+    for (let i = 1; i <= 4; i++) {
+      const daysAgo = 24 - i * 4; // 20, 16, 12, 8 days ago
+      await prisma.workoutSession.upsert({
+        where: { id: `w${i}-${h.id}` },
+        update: {
+          status: WorkoutStatus.COMPLETED,
+          scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+        },
+        create: {
+          id: `w${i}-${h.id}`,
+          trainingPlanId: plan.id,
+          horseId: h.id,
+          assignedStaffUserId: item.groom.id,
+          scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+          distanceMeters: 1400,
+          actualTimeSeconds: 84 + i,
+          heartRatePeak: 172,
+          heartRateRecovery: 106,
+          performanceScore: 8.8,
+          status: WorkoutStatus.COMPLETED,
+          workoutType: 'CANTER',
+          intensity: 'MEDIUM',
+          trackSurface: item.surface === TrackSurface.TURF ? 'TURF' : item.surface === TrackSurface.DIRT ? 'DIRT' : 'SYNTHETIC',
+          averageSpeedKmh: 59.0,
+          topSpeedKmh: 63.5,
+          trainerNotes: `Hoàn thành bài tập chuẩn bị thi đấu ${i}/4`,
+        },
+      });
+    }
+  }
+
+  // Horse 16 (Bucephalus Brave) with only 2 completed workouts (ineligible due to < 4 workouts)
+  const horse16 = createdHorses['HR-000016'];
+  if (horse16) {
+    const plan16 = await prisma.trainingPlan.upsert({
+      where: { id: `plan-${horse16.id}-active` },
+      update: { status: PlanStatus.ACTIVE },
+      create: {
+        id: `plan-${horse16.id}-active`,
+        planCode: 'GA-000103',
+        horseId: horse16.id,
+        trainerUserId: trainer.id,
+        phaseName: 'Huấn luyện cơ bản ngựa trẻ',
+        objective: 'Làm quen nhịp độ đường đua.',
+        targetSpeed: 53.0,
+        targetDistance: 1000,
+        trackSurface: TrackSurface.TURF,
+        startDate: new Date(now.getTime() - 15 * 86400000),
+        endDate: new Date(now.getTime() + 45 * 86400000),
+        status: PlanStatus.ACTIVE,
+      },
+    });
+
+    for (let i = 1; i <= 2; i++) {
+      const daysAgo = 10 - i * 4;
+      await prisma.workoutSession.upsert({
+        where: { id: `w${i}-${horse16.id}` },
+        update: { status: WorkoutStatus.COMPLETED },
+        create: {
+          id: `w${i}-${horse16.id}`,
+          trainingPlanId: plan16.id,
+          horseId: horse16.id,
+          assignedStaffUserId: groom1.id,
+          scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+          distanceMeters: 1000,
+          actualTimeSeconds: 66 + i,
+          heartRatePeak: 165,
+          heartRateRecovery: 112,
+          performanceScore: 8.0,
+          status: WorkoutStatus.COMPLETED,
+          workoutType: 'TROT',
+          intensity: 'LOW',
+          trackSurface: 'TURF',
+          averageSpeedKmh: 53.0,
+          topSpeedKmh: 56.5,
+          trainerNotes: `Bài tập căn bản ${i}/2`,
+        },
+      });
+    }
+  }
+
+  const existingPlanCount = await prisma.trainingPlan.count();
   await prisma.counter.upsert({
     where: { name: 'training_plan' },
-    update: { value: 4 },
-    create: { name: 'training_plan', value: 4 },
+    update: { value: Math.max(existingPlanCount + 50, 150) },
+    create: { name: 'training_plan', value: Math.max(existingPlanCount + 50, 150) },
+  });
+
+  const existingHorseCount = await prisma.horse.count();
+  await prisma.counter.upsert({
+    where: { name: 'horse_code' },
+    update: { value: Math.max(existingHorseCount + 50, 100) },
+    create: { name: 'horse_code', value: Math.max(existingHorseCount + 50, 100) },
   });
   console.log(
     `[5/9] Seeded Training Plans (ACTIVE, COMPLETED, DRAFT) & Workouts (COMPLETED, SCHEDULED, BLOCKED, MISSED)`,
@@ -1245,16 +1567,20 @@ async function main() {
 
   await prisma.tournament.upsert({
     where: { id: 'seed-tourn-2' },
-    update: {},
+    update: {
+      status: TournamentStatus.OPEN_REGISTRATION,
+      registrationDeadline: new Date(now.getTime() + 15 * 86400000),
+      raceDate: new Date(now.getTime() + 25 * 86400000),
+    },
     create: {
       id: 'seed-tourn-2',
       name: 'Saigon Spring Sprint 2026',
-      raceDate: new Date('2026-11-15'),
+      raceDate: new Date(now.getTime() + 25 * 86400000),
       location: 'Saigon Racecourse - Sprint Track',
       distanceMeters: 1200,
       trackType: TrackSurface.SYNTHETIC,
       prizePool: 200000000,
-      registrationDeadline: new Date('2026-11-05'),
+      registrationDeadline: new Date(now.getTime() + 15 * 86400000),
       status: TournamentStatus.OPEN_REGISTRATION,
     },
   });
@@ -1288,6 +1614,62 @@ async function main() {
       prizePool: 150000000,
       registrationDeadline: new Date('2026-08-01'),
       status: TournamentStatus.CANCELLED,
+    },
+  });
+
+  const tOpen2 = await prisma.tournament.upsert({
+    where: { id: 'seed-tourn-open-2' },
+    update: {
+      status: TournamentStatus.OPEN_REGISTRATION,
+      registrationDeadline: new Date(now.getTime() + 20 * 86400000),
+      raceDate: new Date(now.getTime() + 30 * 86400000),
+    },
+    create: {
+      id: 'seed-tourn-open-2',
+      name: 'Mekong Delta Championship 2026',
+      raceDate: new Date(now.getTime() + 30 * 86400000),
+      location: 'Can Tho Equestrian Arena - Green Turf',
+      distanceMeters: 1600,
+      trackType: TrackSurface.TURF,
+      prizePool: 350000000,
+      registrationDeadline: new Date(now.getTime() + 20 * 86400000),
+      status: TournamentStatus.OPEN_REGISTRATION,
+    },
+  });
+
+  const tClosed1 = await prisma.tournament.upsert({
+    where: { id: 'seed-tourn-closed-1' },
+    update: {
+      status: TournamentStatus.CLOSED_REGISTRATION,
+      registrationDeadline: new Date(now.getTime() - 2 * 86400000),
+      raceDate: new Date(now.getTime() + 10 * 86400000),
+    },
+    create: {
+      id: 'seed-tourn-closed-1',
+      name: 'Central Highlands Gold Cup 2026',
+      raceDate: new Date(now.getTime() + 10 * 86400000),
+      location: 'Pleiku Racecourse - Plateau Turf',
+      distanceMeters: 2000,
+      trackType: TrackSurface.TURF,
+      prizePool: 400000000,
+      registrationDeadline: new Date(now.getTime() - 2 * 86400000),
+      status: TournamentStatus.CLOSED_REGISTRATION,
+    },
+  });
+
+  const tComp2 = await prisma.tournament.upsert({
+    where: { id: 'seed-tourn-comp-2' },
+    update: {},
+    create: {
+      id: 'seed-tourn-comp-2',
+      name: 'Da Nang Grand Sprint 2026',
+      raceDate: new Date(now.getTime() - 15 * 86400000),
+      location: 'Da Nang Coastal Track - Synthetic',
+      distanceMeters: 1200,
+      trackType: TrackSurface.SYNTHETIC,
+      prizePool: 180000000,
+      registrationDeadline: new Date(now.getTime() - 25 * 86400000),
+      status: TournamentStatus.COMPLETED,
     },
   });
 

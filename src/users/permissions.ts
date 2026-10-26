@@ -45,7 +45,7 @@ interface PermissionMeta {
 
 export const PERMISSIONS: PermissionMeta[] = [
   { key: 'viewHorses', core: true },
-  { key: 'editHorses' },
+  { key: 'editHorses', ownerRoles: [Role.CLUB_MANAGER] },
   { key: 'deleteHorses', ownerRoles: [Role.CLUB_MANAGER] },
   // API giáo án / buổi tập / kết quả chỉ mở cho HT (Flow 2), nên công tắc chỉ có nghĩa với HT.
   { key: 'createPlan', ownerRoles: [Role.HEAD_TRAINER] },
@@ -61,14 +61,7 @@ export const PERMISSIONS: PermissionMeta[] = [
 ];
 
 const DEFAULT_ON: Record<Role, PermissionKey[]> = {
-  HEAD_TRAINER: [
-    'viewHorses',
-    'editHorses',
-    'createPlan',
-    'assignSchedule',
-    'recordMetrics',
-    'viewMedical',
-  ],
+  HEAD_TRAINER: ['viewHorses', 'createPlan', 'assignSchedule', 'recordMetrics', 'viewMedical'],
   VETERINARIAN: ['viewHorses', 'viewMedical', 'placeLock', 'liftLock', 'ackAlerts'],
   // Bổ sung quyền 'viewMedical' mặc định cho GROOM và HORSE_OWNER (giới hạn phạm vi theo ngựa phân công / sở hữu)
   GROOM: ['viewHorses', 'viewMedical'],

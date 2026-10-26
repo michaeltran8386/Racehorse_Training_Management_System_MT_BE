@@ -92,4 +92,96 @@ describe('MeService.changePassword', () => {
     expect(auth.revokeAllTokens).toHaveBeenCalledWith('user-1');
     expect(result.accessToken).toBe('a');
   });
+
+  describe('updateProfile', () => {
+    it('should update fullName and phoneNumber and record audit log on name change', async () => {
+      const updated = await service.updateProfile('user-1', {
+        fullName: 'New Trainer Name',
+        phone: '0901234567',
+      });
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { fullName: 'New Trainer Name', phoneNumber: '0901234567' },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        { id: 'user-1', name: 'Trainer' },
+        'NAME_CHANGED',
+        'Trainer → New Trainer Name',
+      );
+      expect(updated.fullName).toBe('New Trainer Name');
+    });
+
+    it('should reject invalid full name with 400 VALIDATION', async () => {
+      await expect(
+        service.updateProfile('user-1', {
+          fullName: 'Trainer123!',
+          phone: '0901234567',
+        }),
+      ).rejects.toMatchObject({
+        status: HttpStatus.BAD_REQUEST,
+        response: expect.objectContaining({ code: 'VALIDATION' }),
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should ignore any permission or role mutations in payload', async () => {
+      const payload: any = {
+        fullName: 'Valid Name',
+        phone: '0901234567',
+        role: Role.CLUB_MANAGER,
+        permissions: { manageAccounts: true },
+      };
+
+      await service.updateProfile('user-1', payload);
+
+      // Prisma update is strictly called with fullName and phoneNumber, ignoring role and permissions
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { fullName: 'Valid Name', phoneNumber: '0901234567' },
+      });
+    });
+  });
+
+  describe('updateNotification', () => {
+    it('should update allowed notification setting', async () => {
+      await service.updateNotification('user-1', {
+        key: 'dailyDigest',
+        value: true,
+      });
+
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: {
+          notify: expect.objectContaining({ dailyDigest: true }),
+        },
+      });
+    });
+
+    it('should throw 409 LOCKED when attempting to change locked notification (thresholdAlert)', async () => {
+      await expect(
+        service.updateNotification('user-1', {
+          key: 'thresholdAlert',
+          value: false,
+        }),
+      ).rejects.toMatchObject({
+        status: HttpStatus.CONFLICT,
+        response: expect.objectContaining({ code: 'LOCKED' }),
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should throw 400 VALIDATION for unknown notification key', async () => {
+      await expect(
+        service.updateNotification('user-1', {
+          key: 'unknownNotification' as any,
+          value: true,
+        }),
+      ).rejects.toMatchObject({
+        status: HttpStatus.BAD_REQUEST,
+        response: expect.objectContaining({ code: 'VALIDATION' }),
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
 });

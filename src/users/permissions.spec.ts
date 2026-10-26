@@ -5,7 +5,13 @@ import { permissionsOf, toPublicUser } from './public-user';
 describe('permissions', () => {
   it('should give each role its default permissions', () => {
     expect(defaultPermissions(Role.CLUB_MANAGER).manageAccounts).toBe(true);
+    expect(defaultPermissions(Role.CLUB_MANAGER).ackAlerts).toBe(false);
+    expect(defaultPermissions(Role.CLUB_MANAGER).editHorses).toBe(true);
+    expect(defaultPermissions(Role.CLUB_MANAGER).deleteHorses).toBe(true);
+    expect(defaultPermissions(Role.HEAD_TRAINER).editHorses).toBe(false);
+    expect(defaultPermissions(Role.HEAD_TRAINER).deleteHorses).toBe(false);
     expect(defaultPermissions(Role.VETERINARIAN).placeLock).toBe(true);
+    expect(defaultPermissions(Role.VETERINARIAN).ackAlerts).toBe(true);
     expect(defaultPermissions(Role.GROOM)).toEqual(
       expect.objectContaining({ viewHorses: true, editHorses: false, manageAccounts: false }),
     );
@@ -30,6 +36,37 @@ describe('permissions', () => {
     expect(normalizePermissions(Role.CLUB_MANAGER, { manageAccounts: false }).manageAccounts).toBe(
       true,
     );
+  });
+
+  it('Head Trainer default has no horse edit/delete authority and only Club Manager manages accounts', () => {
+    const ht = defaultPermissions(Role.HEAD_TRAINER);
+    expect(ht.editHorses).toBe(false);
+    expect(ht.deleteHorses).toBe(false);
+    expect(ht.manageAccounts).toBe(false);
+
+    expect(defaultPermissions(Role.CLUB_MANAGER).manageAccounts).toBe(true);
+    expect(defaultPermissions(Role.VETERINARIAN).manageAccounts).toBe(false);
+    expect(defaultPermissions(Role.GROOM).manageAccounts).toBe(false);
+    expect(defaultPermissions(Role.HORSE_OWNER).manageAccounts).toBe(false);
+  });
+
+  it('TASK-002: only Club Manager can retain or receive editHorses; all non-CM roles normalize editHorses to false', () => {
+    // 1. Default permissions check
+    expect(defaultPermissions(Role.CLUB_MANAGER).editHorses).toBe(true);
+    expect(defaultPermissions(Role.HEAD_TRAINER).editHorses).toBe(false);
+    expect(defaultPermissions(Role.VETERINARIAN).editHorses).toBe(false);
+    expect(defaultPermissions(Role.GROOM).editHorses).toBe(false);
+    expect(defaultPermissions(Role.HORSE_OWNER).editHorses).toBe(false);
+
+    // 2. Normalization check: client/stored attempting to set editHorses: true for non-CM roles MUST be forced to false
+    expect(normalizePermissions(Role.HEAD_TRAINER, { editHorses: true }).editHorses).toBe(false);
+    expect(normalizePermissions(Role.VETERINARIAN, { editHorses: true }).editHorses).toBe(false);
+    expect(normalizePermissions(Role.GROOM, { editHorses: true }).editHorses).toBe(false);
+    expect(normalizePermissions(Role.HORSE_OWNER, { editHorses: true }).editHorses).toBe(false);
+
+    // 3. Normalization check: Club Manager can retain editHorses
+    expect(normalizePermissions(Role.CLUB_MANAGER, { editHorses: true }).editHorses).toBe(true);
+    expect(normalizePermissions(Role.CLUB_MANAGER, {}).editHorses).toBe(true);
   });
 
   it('only a Veterinarian acknowledges and is notified of abnormal-sign alerts (Q-0.04)', () => {

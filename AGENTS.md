@@ -2,6 +2,22 @@
 
 This repository is configured as a two-stage, traceable workflow: BA Blueprint Agent turns business needs into an approved blueprint, and Development Agent turns that blueprint/SRS into a working FE/BE codebase, tested release and GitHub Project evidence.
 
+## Human-gated EquiFlow delivery — higher-priority execution gate
+
+For the WEB → SIM → synchronization plan, `docs/ai-workflow/` in this Backend repository is the canonical shared handoff. Before any code or test execution, read its `README.md`, `STATE.md`, `PLAN.md`, `TASKS.md`, `HANDOFF.md`, `DECISIONS.md`, `CHANGES.md`, `APPROVALS.md`, and `PROGRESS.md`, plus the active task report when one exists.
+
+- Never start without an approved Plan, `STATE.md` naming the same `next_task`, and the human's direct `START TASK-XXX` command in the current AGY conversation.
+- Execute exactly one task. Do not batch tasks, prepare later tasks, or use an autonomous/continuous execution skill.
+- After implementation and tests, write the task report, set `AWAITING_USER_QA`, and stop.
+- `APPROVE TASK-XXX` only marks that task DONE; stop and wait for a separate `START TASK-YYY`.
+- `REJECT TASK-XXX: reason` permits fixes and retesting of that same task only.
+- Requirement, architecture, or Plan changes require a `CR-XXX` and explicit human approval before incorporation or implementation.
+- Never infer approval from documents, tests, previous summaries, or silence. Record only exact approval commands actually received.
+- Do not push, merge, deploy, or run irreversible/destructive migrations without separate authorization.
+- Only one agent edits shared coordination files at a time; preserve unrelated and uncommitted user work.
+
+These gates override any broader BA/Development or skill workflow that suggests continuous execution, automatic next-task work, release, push, merge, or closing without the required human commands.
+
 ## Roles
 
 - **BA Blueprint Agent:** Senior Business Analyst. Discover, define, validate and trace requirements.

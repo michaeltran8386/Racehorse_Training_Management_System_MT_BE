@@ -75,7 +75,9 @@ export class IncidentsService {
       },
     });
 
-    // Bắn thông báo khẩn cấp tới Bác sĩ thú y và Huấn luyện viên
+    // CR-001: Thông báo sự cố theo mức độ nghiêm trọng
+    // CRITICAL: 5 nhóm (Vet, Head Trainer, Club Manager, Groom, Owner)
+    // MILD / MODERATE: 3 nhóm (Vet, Groom, Owner) - không gửi đại trà cho HT/CM
     const isCritical = dto.severity === SeverityLevel.CRITICAL;
     const isModerate = dto.severity === SeverityLevel.MODERATE;
 
@@ -87,8 +89,19 @@ export class IncidentsService {
 
     const symptomsText = symptomsList.join(', ');
 
-    await this.notifications.notifyRoles(
-      [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+    await this.notifications.notifyHorse(
+      horse.id,
+      isCritical
+        ? {
+            roles: [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+            owner: true,
+            groom: true,
+          }
+        : {
+            roles: [Role.VETERINARIAN],
+            owner: true,
+            groom: true,
+          },
       {
         type: isCritical ? 'CRITICAL_INCIDENT_REPORTED' : 'HEALTH_ANOMALY_LOGGED',
         category: 'MEDICAL',
@@ -232,8 +245,19 @@ export class IncidentsService {
       ? '🚨 [KHẨN CẤP - SIMULATOR] Sự cố nghiêm trọng:'
       : '⚠️ [Cảnh báo - SIMULATOR] Bất thường sức khỏe:';
 
-    await this.notifications.notifyRoles(
-      [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+    await this.notifications.notifyHorse(
+      horse.id,
+      isCritical
+        ? {
+            roles: [Role.VETERINARIAN, Role.HEAD_TRAINER, Role.CLUB_MANAGER],
+            owner: true,
+            groom: true,
+          }
+        : {
+            roles: [Role.VETERINARIAN],
+            owner: true,
+            groom: true,
+          },
       {
         type: isCritical ? 'CRITICAL_INCIDENT_REPORTED' : 'HEALTH_ANOMALY_LOGGED',
         category: 'MEDICAL',
@@ -249,23 +273,6 @@ export class IncidentsService {
         senderName: reporter.fullName,
       },
     );
-
-    if (horse.ownerId) {
-      await this.notifications.notifyUsers([horse.ownerId], {
-        type: isCritical ? 'CRITICAL_INCIDENT_REPORTED' : 'HEALTH_ANOMALY_LOGGED',
-        category: 'MEDICAL',
-        title: `${titlePrefix} ${horse.name}`,
-        message: `Ngựa của bạn ghi nhận sự cố trên sân mô phỏng: ${symptomsList.join(', ')}. Đang chờ bác sĩ thú y kiểm tra.`,
-        params: {
-          incidentNumber,
-          horseId: horse.id,
-          horseName: horse.name,
-          severity,
-        },
-        link: '/incidents',
-        senderName: reporter.fullName,
-      });
-    }
 
     await this.auditService.record(
       { id: reporter.userId, name: reporter.fullName } as any,
@@ -391,12 +398,12 @@ export class IncidentsService {
   }
 
   /**
-   * Bác sĩ thú y hoặc Club Manager đánh giá và cập nhật trạng thái sự cố
+   * Bác sĩ thú y đánh giá và cập nhật trạng thái sự cố (CR-001: chỉ Vet mới có quyền xác nhận lâm sàng)
    */
   async review(id: string, dto: ReviewIncidentDto, reviewer: CurrentUserPayload) {
-    if (reviewer.role !== Role.VETERINARIAN && reviewer.role !== Role.CLUB_MANAGER) {
+    if (reviewer.role !== Role.VETERINARIAN) {
       throw new ForbiddenException(
-        'Chỉ Bác sĩ thú y hoặc Quản lý CLB mới có quyền đánh giá và xử lý báo cáo sự cố.',
+        'Chỉ Bác sĩ thú y mới có quyền đánh giá và xử lý báo cáo sự cố lâm sàng.',
       );
     }
 

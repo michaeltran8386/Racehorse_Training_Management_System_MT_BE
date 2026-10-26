@@ -1,12 +1,13 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OtpPurpose, Role, UserStatus } from '@prisma/client';
+import { NotificationCategory, OtpPurpose, Role, UserStatus } from '@prisma/client';
 import { AccountsService } from './accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { OtpService } from '../auth/otp.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 describe('AccountsService', () => {
   const manager = {
@@ -39,6 +40,7 @@ describe('AccountsService', () => {
   const mockAudit = { record: jest.fn() };
   const mockAuth = { revokeAllTokens: jest.fn() };
   const mockOtp = { issue: jest.fn(), assertCooldown: jest.fn() };
+  const mockNotifications = { notifyUsers: jest.fn().mockResolvedValue(undefined) };
   const config = { get: jest.fn() } as unknown as ConfigService;
   let target: Record<string, unknown>;
   let service: AccountsService;
@@ -57,6 +59,7 @@ describe('AccountsService', () => {
       mockAuth as unknown as AuthService,
       mockOtp as unknown as OtpService,
       config,
+      mockNotifications as unknown as NotificationsService,
     );
   });
 
@@ -65,7 +68,7 @@ describe('AccountsService', () => {
     mockPrisma.user.findUnique.mockResolvedValue(t);
   };
 
-  it('should approve a pending request, mail the owner and keep sessions', async () => {
+  it('should approve a pending request, mail the owner, notify target user and keep sessions', async () => {
     withTarget({
       ...manager,
       id: 'anh',
@@ -78,6 +81,45 @@ describe('AccountsService', () => {
     expect(updated.status).toBe(UserStatus.ACTIVE);
     expect(mockMail.send).toHaveBeenCalled();
     expect(mockAuth.revokeAllTokens).not.toHaveBeenCalled();
+    expect(mockNotifications.notifyUsers).toHaveBeenCalledWith(
+      ['anh'],
+      expect.objectContaining({
+        type: 'ACCOUNT_STATUS_CHANGED',
+        category: NotificationCategory.ACCOUNT,
+        title: 'Tài khoản đã được phê duyệt',
+      }),
+      'viet',
+    );
+  });
+
+  it('should notify target user on unlock and reactivate, but not on lock', async () => {
+    withTarget({ ...manager, id: 'binh', role: Role.GROOM, status: UserStatus.LOCKED });
+    await service.changeStatus(actor, 'binh', 'unlock', {});
+    expect(mockNotifications.notifyUsers).toHaveBeenCalledWith(
+      ['binh'],
+      expect.objectContaining({
+        type: 'ACCOUNT_STATUS_CHANGED',
+        title: 'Tài khoản đã được mở khóa',
+      }),
+      'viet',
+    );
+
+    mockNotifications.notifyUsers.mockClear();
+    withTarget({ ...manager, id: 'binh', role: Role.GROOM, status: UserStatus.INACTIVE });
+    await service.changeStatus(actor, 'binh', 'reactivate', {});
+    expect(mockNotifications.notifyUsers).toHaveBeenCalledWith(
+      ['binh'],
+      expect.objectContaining({
+        type: 'ACCOUNT_STATUS_CHANGED',
+        title: 'Tài khoản đã được kích hoạt lại',
+      }),
+      'viet',
+    );
+
+    mockNotifications.notifyUsers.mockClear();
+    withTarget({ ...manager, id: 'binh', role: Role.GROOM, status: UserStatus.ACTIVE });
+    await service.changeStatus(actor, 'binh', 'lock', { reason: 'Policy breach' });
+    expect(mockNotifications.notifyUsers).not.toHaveBeenCalled();
   });
 
   it('should lock an active account with a reason and sign it out everywhere', async () => {
@@ -158,6 +200,15 @@ describe('AccountsService', () => {
       'nam',
       expect.objectContaining({ oldValues: expect.any(Object), newValues: expect.any(Object) }),
       mockPrisma,
+    );
+    expect(mockNotifications.notifyUsers).toHaveBeenCalledWith(
+      ['nam'],
+      expect.objectContaining({
+        type: 'ACCOUNT_PERMISSIONS_CHANGED',
+        category: NotificationCategory.ACCOUNT,
+        params: { granted: 1, revoked: 1 },
+      }),
+      'viet',
     );
   });
 

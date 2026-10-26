@@ -1,18 +1,28 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Reflector } from '@nestjs/core';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
 import { UserRole } from '../common/enums/role.enum';
+import { ROLES_KEY } from '../common/decorators/roles.decorator';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 
 describe('InventoryController', () => {
   let controller: InventoryController;
   let service: InventoryService;
+  let reflector: Reflector;
 
   const mockUser: CurrentUserPayload = {
     userId: 'user-cm-1',
     email: 'manager@equiflow.com',
     role: UserRole.CLUB_MANAGER,
     fullName: 'Club Manager',
+  };
+
+  const mockGroomUser: CurrentUserPayload = {
+    userId: 'user-groom-1',
+    email: 'groom@equiflow.com',
+    role: UserRole.GROOM,
+    fullName: 'Barn Groom',
   };
 
   const mockService = {
@@ -26,6 +36,8 @@ describe('InventoryController', () => {
   };
 
   beforeEach(async () => {
+    reflector = new Reflector();
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [InventoryController],
       providers: [
@@ -44,61 +56,92 @@ describe('InventoryController', () => {
     expect(controller).toBeDefined();
   });
 
-  it('should delegate findAllStock to service', async () => {
-    const query = { zoneId: 'zone-1' };
-    const res = await controller.findAllStock(query, mockUser);
-    expect(service.findAllStock).toHaveBeenCalledWith(query, mockUser);
-    expect(res).toBeDefined();
+  describe('Role & Guard Boundary Metadata (ADR-004 / CR-002)', () => {
+    const managerOnlyHandlers = ['adjustStock', 'reviewRestockRequest', 'deliverRestockRequest'];
+
+    it.each(managerOnlyHandlers)(
+      '%s must be strictly guarded with @Roles(UserRole.CLUB_MANAGER)',
+      (handlerName) => {
+        const handler = (controller as any)[handlerName];
+        expect(handler).toBeDefined();
+
+        const roles = reflector.get<string[]>(ROLES_KEY, handler);
+        expect(roles).toEqual([UserRole.CLUB_MANAGER]);
+        expect(roles).not.toContain(UserRole.GROOM);
+        expect(roles).not.toContain(UserRole.HORSE_OWNER);
+      },
+    );
   });
 
-  it('should delegate adjustStock to service', async () => {
-    const dto = {
-      zoneId: 'zone-1',
-      supplyId: 's1',
-      actualQuantity: 50,
-      reason: 'Physical inventory audit',
-    };
-    const res = await controller.adjustStock(dto, mockUser);
-    expect(service.adjustStock).toHaveBeenCalledWith(dto, mockUser);
-    expect(res).toBeDefined();
-  });
+  describe('Handler Delegation', () => {
+    it('should delegate findAllStock to service', async () => {
+      const query = { zoneId: 'zone-1' };
+      const res = await controller.findAllStock(query, mockUser);
+      expect(service.findAllStock).toHaveBeenCalledWith(query, mockUser);
+      expect(res).toBeDefined();
+    });
 
-  it('should delegate findAllRestockRequests to service', async () => {
-    const query = { zoneId: 'zone-1' };
-    const res = await controller.findAllRestockRequests(query, mockUser);
-    expect(service.findAllRestockRequests).toHaveBeenCalledWith(query, mockUser);
-    expect(res).toBeDefined();
-  });
+    it('should delegate adjustStock to service', async () => {
+      const dto = {
+        zoneId: 'zone-1',
+        supplyId: 's1',
+        actualQuantity: 50,
+        reason: 'Physical inventory audit',
+      };
+      const res = await controller.adjustStock(dto, mockUser);
+      expect(service.adjustStock).toHaveBeenCalledWith(dto, mockUser);
+      expect(res).toBeDefined();
+    });
 
-  it('should delegate findOneRestockRequest to service', async () => {
-    const res = await controller.findOneRestockRequest('req-1');
-    expect(service.findOneRestockRequest).toHaveBeenCalledWith('req-1');
-    expect(res).toBeDefined();
-  });
+    it('should delegate findAllRestockRequests to service', async () => {
+      const query = { zoneId: 'zone-1' };
+      const res = await controller.findAllRestockRequests(query, mockUser);
+      expect(service.findAllRestockRequests).toHaveBeenCalledWith(query, mockUser);
+      expect(res).toBeDefined();
+    });
 
-  it('should delegate createRestockRequest to service', async () => {
-    const dto = {
-      zoneId: 'zone-1',
-      supplyId: 's1',
-      requestedQuantity: 20,
-      urgencyReason: 'Low stock',
-    };
-    const res = await controller.createRestockRequest(dto, mockUser);
-    expect(service.createRestockRequest).toHaveBeenCalledWith(dto, mockUser);
-    expect(res).toBeDefined();
-  });
+    it('should delegate findOneRestockRequest to service', async () => {
+      const res = await controller.findOneRestockRequest('req-1');
+      expect(service.findOneRestockRequest).toHaveBeenCalledWith('req-1');
+      expect(res).toBeDefined();
+    });
 
-  it('should delegate reviewRestockRequest to service', async () => {
-    const dto = { action: 'APPROVE' as const, approvedQuantity: 20 };
-    const res = await controller.reviewRestockRequest('req-1', dto, mockUser);
-    expect(service.reviewRestockRequest).toHaveBeenCalledWith('req-1', dto, mockUser);
-    expect(res).toBeDefined();
-  });
+    it('should delegate createRestockRequest to service for Club Manager', async () => {
+      const dto = {
+        zoneId: 'zone-1',
+        supplyId: 's1',
+        requestedQuantity: 20,
+        urgencyReason: 'Low stock',
+      };
+      const res = await controller.createRestockRequest(dto, mockUser);
+      expect(service.createRestockRequest).toHaveBeenCalledWith(dto, mockUser);
+      expect(res).toBeDefined();
+    });
 
-  it('should delegate deliverRestockRequest to service', async () => {
-    const dto = { actualReceivedQuantity: 20, deliveryNotes: 'Received in good condition' };
-    const res = await controller.deliverRestockRequest('req-1', dto, mockUser);
-    expect(service.deliverRestockRequest).toHaveBeenCalledWith('req-1', dto, mockUser);
-    expect(res).toBeDefined();
+    it('should delegate createRestockRequest to service for Groom', async () => {
+      const dto = {
+        zoneId: 'zone-1',
+        supplyId: 's1',
+        requestedQuantity: 15,
+        urgencyReason: 'Groom replenishing depleted feed in assigned zone',
+      };
+      const res = await controller.createRestockRequest(dto, mockGroomUser);
+      expect(service.createRestockRequest).toHaveBeenCalledWith(dto, mockGroomUser);
+      expect(res).toBeDefined();
+    });
+
+    it('should delegate reviewRestockRequest to service', async () => {
+      const dto = { action: 'APPROVE' as const, approvedQuantity: 20 };
+      const res = await controller.reviewRestockRequest('req-1', dto, mockUser);
+      expect(service.reviewRestockRequest).toHaveBeenCalledWith('req-1', dto, mockUser);
+      expect(res).toBeDefined();
+    });
+
+    it('should delegate deliverRestockRequest to service', async () => {
+      const dto = { actualReceivedQuantity: 20, deliveryNotes: 'Received in good condition' };
+      const res = await controller.deliverRestockRequest('req-1', dto, mockUser);
+      expect(service.deliverRestockRequest).toHaveBeenCalledWith('req-1', dto, mockUser);
+      expect(res).toBeDefined();
+    });
   });
 });

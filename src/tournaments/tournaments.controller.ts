@@ -36,8 +36,8 @@ export class TournamentsController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Xem chi tiết giải đua và danh sách đăng ký / kết quả (SC-5.01)' })
-  async findOne(@Param('id') id: string) {
-    return this.tournamentsService.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
+    return this.tournamentsService.findOne(id, user);
   }
 
   @Get(':id/eligibility')
@@ -127,7 +127,7 @@ export class TournamentsController {
     @Query('reason') reason: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.tournamentsService.cancelRegistration(id, regId, reason || 'Trainer scratch', {
+    return this.tournamentsService.cancelRegistration(id, regId, reason, {
       id: user.userId,
       name: user.fullName || user.email,
       role: user.role,
@@ -135,8 +135,8 @@ export class TournamentsController {
   }
 
   @Post(':id/results')
-  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER)
-  @ApiOperation({ summary: 'Nhập kết quả thi đấu (SC-5.03: Trainer / CM)' })
+  @Roles(UserRole.CLUB_MANAGER)
+  @ApiOperation({ summary: 'Nhập/sửa kết quả thi đấu (SC-5.03: Chỉ Club Manager)' })
   async recordResults(
     @Param('id') id: string,
     @Body() dto: BatchRecordResultsDto,
