@@ -1,6 +1,6 @@
 # Architecture Decision Log
 
-> Plan revision hiện hành là v1-approved-r11, approved by `APPROVE PLAN v1` and amended through approved CR-012 on 2026-10-25. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
+> Plan revision hiện hành là v1-approved-r12, approved by `APPROVE PLAN v1` and amended through approved CR-013 on 2026-10-26. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
 
 ## ADR-001 — Backend là system of record
 - **Date:** 2026-10-23
@@ -143,6 +143,15 @@
 - **CI boundary:** build artifact phải real-only và không có `VITE_USE_MOCK`. Standalone FE CI không có Backend/PostgreSQL phải công khai defer integration Playwright; không được bật mock để tạo kết quả pass giả. Local real-stack Playwright và manual QA vẫn bắt buộc.
 - **Data safety:** cleanup QA chỉ dùng các ID đã capture, thực hiện atomically, khôi phục trạng thái ngựa ban đầu và xác nhận không còn target residue.
 - **Impacted task:** TASK-010.
+
+## ADR-020 — Dataset manual-QA là additive, deterministic và local-only
+- **Date:** 2026-10-26
+- **Status:** ACCEPTED by `APPROVE CR-013` on 2026-10-26
+- **Decision:** thêm TASK-020 sau TASK-011 và trước TASK-012 để tạo dữ liệu QA phong phú trong PostgreSQL local hiện có bằng một script riêng. Không tạo database/schema thứ hai và không sửa seed baseline hiện tại.
+- **Safety boundary:** script bắt buộc nhận `--confirm-local-qa`, từ chối production, in rõ target database, dùng identity/code có tiền tố QA và chỉ upsert dữ liệu thuộc QA. Cấm delete/truncate hoặc sửa bản ghi không thuộc QA.
+- **Acceptance:** chạy hai lần phải idempotent; non-QA counts/fingerprints bất biến; kiểm tra năm role qua NestJS API thật và xác nhận persistence sau restart. Runtime mock/fallback không được dùng.
+- **Sequence:** TASK-012 phụ thuộc TASK-020. Approval CR không tự chạy seed; TASK-020 cần lệnh `START TASK-020` riêng.
+- **Impacted tasks:** TASK-020, TASK-012, TASK-019.
 
 Do not silently amend accepted decisions; create an ADR and/or CR entry and request approval where scope changes.
 

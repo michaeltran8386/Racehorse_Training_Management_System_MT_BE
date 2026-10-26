@@ -1,6 +1,6 @@
-# Task Breakdown — Plan v1-approved-r11
+# Task Breakdown — Plan v1-approved-r12
 
-> Approved specification with CR-005 through CR-012 incorporated. AGY may edit execution status/evidence only after `STATE.md` names the task as `next_task` and the human separately sends `START TASK-XXX`. One task per run.
+> Approved specification with CR-005 through CR-013 incorporated. AGY may edit execution status/evidence only after `STATE.md` names the task as `next_task` and the human separately sends `START TASK-XXX`. One task per run.
 
 | ID | Goal | Depends on | Status |
 | --- | --- | --- | --- |
@@ -15,14 +15,15 @@
 | TASK-009 | Implement incident audience and 3-hour escalation | 008 | DONE |
 | TASK-010 | Align Medical Lock notifications and ownership | 008, 009 | DONE |
 | TASK-011 | Transplant REST/session packet contract into canonical SIM | 010 | DONE |
-| TASK-012 | Reconcile SIM realtime engine and transport | 011 | TODO |
+| TASK-020 | Expand controlled Web manual-QA dataset | 011 | DONE |
+| TASK-012 | Reconcile SIM realtime engine and transport | 020 | TODO |
 | TASK-013 | Wire canonical SIM UI with session bootstrap, no login | 012 | TODO |
 | TASK-014 | Switch launcher to canonical SIM repo | 013 | TODO |
 | TASK-015 | Complete horse/stall Web→SIM data flow | 002, 006, 007, 014 | TODO |
 | TASK-016 | Complete trial session realtime flow | 004, 015 | TODO |
 | TASK-017 | Complete incident→Vet→Lock round trip | 005, 009, 016 | TODO |
 | TASK-018 | Complete supply request/delivery simulation | 006, 015 | TODO |
-| TASK-019 | Full system acceptance and evidence | 010, 014–018 | TODO |
+| TASK-019 | Full system acceptance and evidence | 010, 014–018, 020 | TODO |
 
 ## TASK-001 — FE/BE permission contract alignment
 
@@ -169,10 +170,25 @@
 - **Manual QA:** inspect a known Backend session request; confirm no login UI was introduced; verify Backend error envelope surfacing.
 - **Scope:** M (4 files).
 
+## TASK-020 — Controlled Web manual-QA dataset expansion
+
+- **Status:** DONE
+- **Objective:** Add abundant, reproducible manual-QA fixtures to the existing local PostgreSQL database without creating another database/schema or mutating non-QA records.
+- **Dependencies:** TASK-011.
+- **Included:** deterministic QA-only users and cross-owner horses; stalls/assignments; training/workouts; medical/injury/lock/preventive data; tournaments/registrations/results; invoices/notifications/permission requests; incidents; supply stock/restock lifecycle; nutrition, daily-care/grooming, shifts and simulator-session history.
+- **Excluded:** Prisma schema/migration, application behavior, production data, deletion/truncation, edits to the existing comprehensive seed, Frontend/Simulator changes and TASK-012 pre-work.
+- **Authorized files:** BE `prisma/seed-manual-qa.ts`, BE `package.json`.
+- **Safety:** require an explicit local-QA CLI confirmation; refuse `NODE_ENV=production`; print the target host/database before mutation; use stable valid IDs plus `QA-` codes/emails; upsert only QA-owned records; never `delete`, `deleteMany`, truncate or update a non-QA record.
+- **Minimum QA dataset:** at least 12 QA users across all five roles/lifecycle cases; 24 QA horses across all horse statuses and at least three owners/four grooms; 24 QA stalls/allocations; 12 training plans and 48 workouts across lifecycle states; 12 medical records, 8 injuries, 6 lock histories and preventive schedules; 12 incidents across severity/review states; 12 tournaments across all statuses with at least 30 registrations and 12 results; 16 invoices and 30 notifications; stock balances for every seeded supply plus at least 12 restock requests across request states; 12 nutrition plans, 28 daily-care tasks and representative grooming/shift/simulator-session history.
+- **Acceptance:** first run reaches every minimum count; second identical run creates zero additional QA rows; captured non-QA counts and stable row fingerprints are unchanged; real NestJS API/PostgreSQL checks prove five-role ownership/RBAC and list/filter/pagination usability; data persists after Backend restart; no mock/fallback is used.
+- **Automated:** BE typecheck/lint; existing full BE unit baseline with the accepted medical E2E waiver unchanged; `npm run db:seed:manual-qa -- --confirm-local-qa` twice; inline Prisma verifier for minimum counts, idempotency and non-QA invariants; `git diff --check`.
+- **Manual QA:** sign in as CM, HT, Vet, two Grooms and at least three Owners; inspect long lists and cross-owner boundaries across horse, training, medical, incident, tournament, finance, notification, supply/restock and daily-care screens; restart Backend and recheck representative records.
+- **Scope:** S (exactly 2 application/tooling files). Canonical coordination/report files do not expand application scope. Any third application/tooling file requires a new CR.
+
 ## TASK-012 — Realtime engine and transport reconciliation
 
 - **Objective:** Bring canonical SIM packet emission/ACK behavior to `_v3` parity without overwriting newer canonical rules.
-- **Dependencies:** TASK-011.
+- **Dependencies:** TASK-020.
 - **Included:** 1 Hz emission, ACK/retry/idempotent event id, disconnect state, finished/incident packets.
 - **Excluded:** React screens and Backend changes.
 - **Files likely touched:** SIM `src/sim/packets.ts`, `src/sim/engine.ts`, `src/sim/engine.test.ts`, `src/sim/socketTransport.ts`, `src/sim/socketTransport.test.ts`.

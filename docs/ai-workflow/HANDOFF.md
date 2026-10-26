@@ -2,14 +2,21 @@
 
 ## Gate state
 
-- **Plan:** v1-approved-r11 — approved Plan v1 with CR-005 through CR-012 incorporated.
-- **Last completed task:** TASK-011 — DONE and human-approved on 2026-10-26.
+- **Plan:** v1-approved-r12 — approved Plan v1 with CR-005 through CR-013 incorporated.
+- **Last completed task:** TASK-020 — DONE and human-approved on 2026-10-26.
 - **Active task:** NONE.
 - **Active task status:** IDLE.
 - **Next eligible task:** TASK-012.
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Execution is IDLE awaiting explicit authorization or start for TASK-012. Do not start TASK-012 until authorized.
+- **Do now:** Await human's explicit START TASK-012 command. Do not execute pre-work, commit, push, or start coding.
+
+## Approved CR-013 dataset boundary
+
+- TASK-020 is an additive local manual-QA dataset checkpoint after TASK-011 and before TASK-012; TASK-012 now depends on TASK-020.
+- Authorized application/tooling scope is exactly BE `prisma/seed-manual-qa.ts` and `package.json`; no schema, migration, existing `prisma/seed.ts`, Frontend or Simulator change.
+- The seed must require `--confirm-local-qa`, reject production, use deterministic QA identities and upsert only QA-owned records. Delete/truncate and non-QA mutation are forbidden.
+- Acceptance requires minimum domain counts, two-run idempotency, invariant non-QA snapshot, five-role real API checks and persistence after Backend restart.
 
 ## Approved CR-012 execution boundary
 
@@ -49,4 +56,4 @@
 - Retain the verified R-1/R-2/R-3/R-4 protections.
 - CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`. In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
 
-CR-012 is approved and incorporated into v1-approved-r11. TASK-001 through TASK-011 are DONE and human-approved. Execution is IDLE awaiting explicit authorization or start for TASK-012; TASK-012 remains unauthorized.
+CR-013 is approved and incorporated into v1-approved-r12. TASK-001 through TASK-011 and TASK-020 are DONE and human-approved. Execution is IDLE; next_task is TASK-012 awaiting explicit human START TASK-012.

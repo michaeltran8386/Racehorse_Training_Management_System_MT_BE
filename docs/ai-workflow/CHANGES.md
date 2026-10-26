@@ -324,3 +324,19 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
   - Main Web tiếp tục tồn tại các nhánh rẽ mock ẩn; bản build Docker và CI có thể kích hoạt lại mock data; `AGENTS.md` tiếp tục hướng dẫn sai lệch; nghiệm thu real-only không được khép kín.
 
 - **Target plan version:** v1-approved-r11.
+
+## CR-013 — Controlled Web manual-QA dataset expansion
+
+- **State:** APPROVED by exact human command `APPROVE CR-013` on 2026-10-26.
+- **Raised by:** Human request to provide abundant data for manual Web QA after TASK-011.
+- **Related plan:** v1-approved-r11 after TASK-011; incorporated into Plan v1-approved-r12.
+- **Problem:** the baseline seed covers core accounts, horses, stalls and selected domain records, but does not provide enough deterministic cross-role/lifecycle volume for broad Web manual QA. Editing the baseline seed or ad-hoc live rows would make reruns and cleanup unsafe.
+- **Approved change:**
+  1. Insert `TASK-020 — Controlled Web manual-QA dataset expansion` after TASK-011 and make TASK-012 depend on it; keep existing TASK-012–019 IDs unchanged.
+  2. Add exactly two Backend tooling files to task scope: `prisma/seed-manual-qa.ts` and `package.json`.
+  3. Seed deterministic QA-only records into the existing local PostgreSQL database with stable QA IDs/codes/emails and idempotent upserts.
+  4. Cover all Web-facing domains and role/ownership boundaries with the minimum counts specified in TASK-020.
+- **Safety:** explicit `--confirm-local-qa` is required; production is rejected; target host/database is printed before mutation; no schema/migration, second database, delete/truncate, baseline `prisma/seed.ts` edit or non-QA mutation is authorized.
+- **Acceptance:** two identical runs create no duplicates; non-QA counts and fingerprints remain unchanged; real NestJS/PostgreSQL five-role checks and restart persistence pass; no mock/fallback.
+- **Human-gate result:** execution remains `IDLE`. This CR approval does not run the seed, start TASK-020, commit, push or authorize TASK-012. A separate exact `START TASK-020` is required.
+- **Target plan version:** v1-approved-r12.

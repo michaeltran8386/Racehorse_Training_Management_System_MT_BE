@@ -1,6 +1,6 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r11
+**Version:** v1-approved-r12
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
@@ -16,6 +16,8 @@ Revision r9 incorporates approved CR-010: runtime, manual QA, integration tests 
 Revision r10 incorporates approved CR-011: TASK-007 expands to exactly seven application/test files to close the verified Horse Owner tournament race-data and foreign-owner PII leak. Authenticated tournament detail reads must pass the caller to the service; Horse Owner registrations/results are constrained by ownership in the Prisma query, while existing non-owner-role behavior remains unchanged.
 
 Revision r11 incorporates approved CR-012: TASK-010 remains one human-gated task but is executed as two sequential M-size slices. Slice A preserves the five existing Medical Lock/runtime changes; Slice B authorizes exactly five corrective FE runtime/config/governance files to complete the Main Web real-only cutover. TASK-010 may be approved only after combined real-stack acceptance for both slices; standalone FE CI must not report mock-backed browser integration as passing.
+
+Revision r12 incorporates approved CR-013: add TASK-020 as an additive, deterministic Web manual-QA dataset checkpoint after TASK-011 and before TASK-012. It creates only clearly identified QA fixtures in the existing local PostgreSQL database, never a second database/schema, and must not delete or overwrite non-QA records.
 
 > Không task nào được triển khai trước `APPROVE PLAN v1` và một lệnh `START TASK-XXX` riêng trong phiên AGY.
 
@@ -139,7 +141,8 @@ Action matrix: `UPCOMING` chưa nhận đăng ký; `OPEN_REGISTRATION` cho HT/CM
 ## 7. Phases — thứ tự bắt buộc WEB → SIM → ĐỒNG BỘ
 
 - **Phase A — WEB / TASK-001–010:** permission contract; Club Manager; tournament; Head Trainer; Vet; Groom; Horse Owner; notification; incident reminder; Medical Lock notification; đóng Web runtime mock tại checkpoint.
-- **Phase B — SIM / TASK-011–014:** REST/session packet contract; realtime engine/transport; UI session bootstrap real-only; launcher chuyển sang Git Simulator và khởi động real stack.
+- **Phase A.5 — QA DATA / TASK-020:** bổ sung dataset Web thủ công có định danh QA, idempotent và local-only sau khi TASK-011 hoàn tất; TASK-012 chờ checkpoint này.
+- **Phase B — SIM / TASK-011–014:** REST/session packet contract; sau TASK-020 tiếp tục realtime engine/transport, UI session bootstrap real-only và launcher chuyển sang Git Simulator.
 - **Phase C — ĐỒNG BỘ / TASK-015–018:** horse/stall data flow; trial realtime; incident→Vet→lock; supplies delivery.
 - **Phase D — ACCEPTANCE / TASK-019:** full system acceptance, không mở rộng scope.
 
@@ -157,6 +160,7 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - Backend per task: focused Jest, `npm run typecheck`, `npm run lint`; migration thêm Prisma validation và rollback rehearsal trên DB test.
 - Frontend per task: `npm run typecheck`, `npm run lint`; UI integration/E2E chạy với Backend và PostgreSQL thật. Mock/fake chỉ dùng trong unit test cô lập và không được tính là integration evidence.
 - Simulator per task: `npm run typecheck`, `npm test`, `npm run build`; `verify:map` chỉ khi sửa map/assets.
+- Manual-QA seed task: chạy seed hai lần để chứng minh idempotency; so sánh non-QA snapshot trước/sau; kiểm tra count, RBAC/ownership qua NestJS API thật và persistence sau Backend restart.
 - Mỗi task ghi revision, command, exit code, acceptance evidence và manual QA vào `reports/TASK-XXX.md`.
 - Live evidence phải chỉ ra request Web/SIM tới Backend, bản ghi PostgreSQL trước/sau và persistence sau restart; Backend/DB unavailable phải fail visibly, không fallback mock.
 - Final gate: full BE unit/e2e; full FE Playwright real-stack; full SIM test/build + live integration; benchmark 1 Hz; regression Medical Lock, withdrawal, RBAC scope, inventory/tournament transactions, duplicate events, disconnect 15s và timeout 5 phút.
@@ -183,6 +187,7 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 | Tournament hard delete mất audit | Cao | CANCELLED/CLOSED; delete chỉ unused record |
 | Stale test claims | Trung bình | rerun và ghi revision/exit code |
 | Mock runtime che giấu lỗi API/DB | Cao | loại runtime mock switch/import; real-stack QA/E2E và persistence-after-restart evidence |
+| Seed QA làm bẩn hoặc ghi đè dữ liệu thật | Cao | script riêng, deterministic QA identity, local-only confirmation, upsert QA records, cấm delete/truncate và kiểm chứng non-QA snapshot bất biến |
 
 ## 12. Trạng thái quyết định và execution gate
 
@@ -193,6 +198,7 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - **CR-010 đã duyệt và hợp nhất:** runtime/manual QA/integration/final acceptance chỉ dùng API và PostgreSQL thật; không fallback mock; mock chỉ trong unit test cô lập.
 - **CR-011 đã duyệt và hợp nhất:** TASK-007 có phạm vi chính xác bảy tệp để lọc race registrations/results của Horse Owner theo ownership tại truy vấn Backend và không trả PII của chủ khác.
 - **CR-012 đã duyệt và hợp nhất:** TASK-010 dùng hai slice tuần tự, tổng cộng đúng mười tệp đã liệt kê; Slice B loại các đường dẫn cấu hình/runtime mock còn lại và CI không được dùng mock để giả lập integration pass.
+- **CR-013 đã duyệt và hợp nhất:** TASK-020 tạo dataset manual-QA additive trong PostgreSQL hiện có bằng hai file Backend tooling; TASK-012 phụ thuộc TASK-020 để giữ thứ tự human-gated mà không đánh lại số TASK-012–019.
 
-Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-012. Approval of a Plan/CR never starts or approves a task. TASK-001 through TASK-010 are DONE and human-approved; execution is IDLE; TASK-011 is next eligible but remains unauthorized and requires a separate direct `START TASK-011`.
+Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-013. TASK-001 through TASK-011 are DONE and human-approved. Execution is IDLE; TASK-020 is next eligible but remains unauthorized and requires a separate direct `START TASK-020`. CR approval does not execute seed data, commit, push, merge or start TASK-012.
 
