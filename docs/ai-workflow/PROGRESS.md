@@ -2,8 +2,8 @@
 
 **Plan:** v1-approved-r12
 **Plan approval:** APPROVED — explicit `APPROVE PLAN v1` recorded 2026-10-24  
-**Active task:** TASK-020
-**Next eligible task:** TASK-020
+**Active task:** NONE
+**Next eligible task:** TASK-012
 **Planned first task:** TASK-001  
 **Last updated:** 2026-10-26 (Asia/Bangkok)
 
