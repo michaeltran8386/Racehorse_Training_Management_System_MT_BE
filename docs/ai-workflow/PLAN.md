@@ -1,6 +1,6 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r13
+**Version:** v1-approved-r18
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
@@ -20,6 +20,16 @@ Revision r11 incorporates approved CR-012: TASK-010 remains one human-gated task
 Revision r12 incorporates approved CR-013: add TASK-020 as an additive, deterministic Web manual-QA dataset checkpoint after TASK-011 and before TASK-012. It creates only clearly identified QA fixtures in the existing local PostgreSQL database, never a second database/schema, and must not delete or overwrite non-QA records.
 
 Revision r13 incorporates approved CR-014: the canonical Git repository `Racehorse_Simulator_Web/` remains the sole v3 product source; TASK-013 removes the secondary Simulator login and binds REST/Socket.IO runtime identity to the Main-Web-issued simulator session. It is executed as two sequential slices covering Backend session validation/transport and canonical v3 UI bootstrap. Root `.bat` launcher work remains isolated in TASK-014 and is deferred until separately started.
+
+Revision r14 incorporates approved CR-015 after real browser QA rejected TASK-013. TASK-013 gains two corrective slices that replace hash/default horse master data with PostgreSQL session context, complete the Veterinarian EXAM result path, provide an eligible QA trial, and require Playwright/Chromium evidence against the already-running real stack. API-only verification cannot substitute for browser acceptance. TASK-015 retains the later broader cross-role horse/stall synchronization scope and must not reintroduce a Simulator-side source of truth.
+
+Revision r15 incorporates approved CR-016 after human manual QA rejected TASK-013 again. TASK-013 gains corrective Slice E: a Main-Web-issued workout must use the prescribed configuration, stop visibly at completion and emit one finish; an EXAM skips the decorative intro, emits one completion, and lets Main Web auto-load the acknowledged result on tab focus; vital-sign badges describe numeric reference ranges rather than the horse's overall injury state. Trial-result formatting/live monitoring remains TASK-016.
+
+Revision r16 incorporates approved CR-017 after the next Human Manual QA found a terminal workout relaunch, a missing-weight EXAM validation failure and UUID-only horse identity in the medical-record list. TASK-013 gains corrective Slice F, five exact additional files and deterministic `QA T013` fixtures so the human can test by reload and searchable names without database surgery. Reusing a terminal session for the same workout must fail clearly; no master weight may be fabricated.
+
+Revision r17 incorporates approved CR-018 after Human Manual QA found that 60× playback produced too few chart samples to communicate simulated variation and that the Trial Runs scheduling entry point defaulted to `CANTER`. TASK-013 gains corrective Slice G: retain 1 Hz real-time Socket.IO transport while sampling the visual chart by simulated time, and preselect `TRIAL` in the existing scheduling dialog. For this continuation only, Codex may replace AGY after a separate direct `START TASK-013 CODEX`; TASK-014 and later tasks retain the default AGY executor.
+
+Revision r18 incorporates approved CR-019 after Human Manual QA found that future scheduled trials looked unavailable without a visible reason and that an already-open result form did not refresh or identify Simulator-imported values on focus. TASK-013 gains corrective Slice H in exactly one additional FE application file plus two already-authorized files; scheduled-time authority remains server-enforced and subjective trainer fields are never fabricated.
 
 > Không task nào được triển khai trước `APPROVE PLAN v1` và một lệnh `START TASK-XXX` riêng trong phiên AGY.
 
@@ -203,6 +213,11 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - **CR-012 đã duyệt và hợp nhất:** TASK-010 dùng hai slice tuần tự, tổng cộng đúng mười tệp đã liệt kê; Slice B loại các đường dẫn cấu hình/runtime mock còn lại và CI không được dùng mock để giả lập integration pass.
 - **CR-013 đã duyệt và hợp nhất:** TASK-020 tạo dataset manual-QA additive trong PostgreSQL hiện có bằng hai file Backend tooling; TASK-012 phụ thuộc TASK-020 để giữ thứ tự human-gated mà không đánh lại số TASK-012–019.
 - **CR-014 đã duyệt và hợp nhất:** canonical Git Simulator vẫn là sản phẩm v3 duy nhất; TASK-013 dùng hai slice tuần tự để loại secondary login, xác thực context/Socket.IO bằng session do Main Web cấp và xóa fallback actor mặc định. TASK-014 giữ riêng launcher `.bat` và chưa được thực thi.
+- **CR-015 đã duyệt và hợp nhất:** TASK-013 dùng PostgreSQL master data, hoàn thiện EXAM result path, QA trial và real-browser acceptance.
+- **CR-016 đã duyệt và hợp nhất:** TASK-013 hoàn tất prescribed workout, exactly-once finish, streamlined EXAM handoff và nhãn vital theo dải tham chiếu.
+- **CR-017 đã duyệt và hợp nhất:** TASK-013 thêm Slice F để chặn terminal-session relaunch, giữ missing weight là unavailable, hiển thị tên/mã ngựa trong medical-record list và chuẩn hóa fixture `QA T013` idempotent.
+- **CR-018 đã duyệt và hợp nhất:** TASK-013 thêm Slice G để tách biểu đồ theo thời gian mô phỏng khỏi telemetry 1 Hz thời gian thực, mặc định đúng loại `TRIAL` khi tạo lịch từ Trial Runs, và cho phép Codex thực thi riêng continuation này sau lệnh `START TASK-013 CODEX`.
+- **CR-019 đã duyệt và hợp nhất:** TASK-013 thêm Slice H để hiển thị rõ thời điểm được phép chạy, refresh/import draft kết quả Simulator khi mount/focus/retry và phân biệt dữ liệu khách quan với đánh giá bắt buộc của Head Trainer.
 
-Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-014. TASK-001 through TASK-011 and TASK-020 are DONE and human-approved. TASK-012 remains `AWAITING_USER_QA`; TASK-013 is unauthorized. CR-014 approval does not approve/commit TASK-012, modify application code, start TASK-013, or authorize TASK-014.
+Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-019 as v1-approved-r18. TASK-001 through TASK-012 and TASK-020 are DONE and human-approved. TASK-013 corrective Slice H is active under exact `START TASK-013 CODEX`; this does not approve or commit TASK-013 and does not authorize TASK-014.
 

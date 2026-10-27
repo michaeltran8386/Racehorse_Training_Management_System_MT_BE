@@ -161,5 +161,52 @@
 - **Runtime boundary:** giai đoạn TASK-013 dùng khởi động Docker/npm thủ công. `.bat` vẫn thuộc TASK-014, giữ TODO và cần lệnh `START TASK-014` riêng.
 - **Impacted tasks:** TASK-013, TASK-014, TASK-015–019.
 
+## ADR-022 — Browser real-stack là gate và master data trong Simulator phải đến từ PostgreSQL
+
+- **Date:** 2026-10-27
+- **Status:** ACCEPTED by `APPROVE CR-015` on 2026-10-27
+- **Decision:** TASK-013 chỉ được quay lại Human Manual QA sau khi Head Trainer và Veterinarian hoàn thành các luồng UI thật trên Main Web và canonical Simulator bằng Playwright/Chromium, NestJS, Socket.IO và PostgreSQL. API-only verifier không thay thế browser gate. Mọi trường horse master data đã tồn tại trong PostgreSQL phải đi qua session context và khớp DB; hash/default không được trình bày như dữ liệu thật. Chỉ số do engine tạo phải được phân loại rõ là kết quả mô phỏng.
+- **EXAM consequence:** UI EXAM phải phát hợp đồng `sim:exam_finished` hiện có, nhận ACK, lưu đúng một kết quả và cho Main Web tải kết quả mới nhất sau reload. Không có kết quả thì phải báo không có dữ liệu; không giữ giá trị mặc định 480 kg như thể đã đo.
+- **Operational consequence:** AGY tái sử dụng stack Docker/npm đang chạy khi healthy, chuẩn bị một QA trial đủ điều kiện và để Human chỉ reload trang để kiểm tra. Không sửa `.bat`, `_v3`, schema/migration hoặc tự khởi chạy TASK-014.
+- **Impacted tasks:** TASK-013; TASK-015 tái sử dụng baseline real horse/stall này cho phần cross-role rộng hơn.
+
+## ADR-023 — Main-Web-issued simulation is prescribed; EXAM handoff minimizes manual steps
+
+- **Date:** 2026-10-27
+- **Status:** ACCEPTED by `APPROVE CR-016` on 2026-10-27
+- **Workout decision:** a workout launched from Main Web is execution of the approved workout, not a Simulator authoring screen. Surface, distance and intensity are immutable. Obstacles are shown only when a future authoritative contract supplies them; absence means no prescribed obstacles, not permission to invent them. The runner stops at the prescribed distance and one logical finish is emitted/persisted.
+- **Phase boundary:** TASK-013 owns correct Simulator completion semantics. TASK-016 continues to own Main Web trial-result formatting, live monitoring, disconnect/timeout handling and the complete Web-created trial round trip.
+- **EXAM decision:** a session-bound EXAM skips the decorative intro, opens the Vet workflow directly, completes once with ACK and lets Main Web auto-load the latest result on focus. Manual load remains a recovery path. Vet remains the human decision-maker; Simulator does not automatically diagnose, create/finalize the medical record, apply horse status or mutate Medical Lock.
+- **Clinical semantics:** `Within reference range` describes only a measured vital. Horse injury status and Medical Lock are separate persisted states and must be displayed separately rather than inferred from normal-range vitals.
+- **Impacted tasks:** TASK-013; TASK-016 retains trial result/live-monitor completion; TASK-017 retains incident-to-Vet-to-lock synchronization.
+
+## ADR-024 — Terminal simulation history stays terminal; incomplete clinical measurements stay truthful
+
+- **Date:** 2026-10-27
+- **Status:** ACCEPTED by `APPROVE CR-017` on 2026-10-27
+- **Terminal-session decision:** a completed or injury-aborted SimulatorSession is immutable history. Starting the same workout again returns 409 `SIMULATOR_SESSION_FINISHED`; it must not return a launch URL or silently reopen/create replacement history. A fresh manual-QA run uses a freshly prepared deterministic QA workout/session.
+- **Clinical measurement decision:** missing horse master weight remains unavailable through Simulator packet, Backend validation/result storage and Main-Web form loading. The system may persist the other available measurements but must never fabricate a weight.
+- **Identity decision:** medical-record list contracts expose and render the real horse name and horse code as the primary identity. UUID remains an internal identifier, not the primary human label.
+- **QA operability:** TASK-013 uses deterministic `QA T013` names/markers, idempotent local-only preparation and exact-target cleanup so the human needs only reload, login, search and action. No new database/schema and no non-QA mutation are allowed.
+- **Impacted task:** TASK-013 corrective Slice F; TASK-014 remains unauthorized.
+
+## ADR-025 — Simulated-time charting stays separate from real-time transport
+
+- **Date:** 2026-10-27
+- **Status:** ACCEPTED by `APPROVE CR-018` on 2026-10-27
+- **Playback decision:** playback speed changes wall-clock viewing duration, not model semantics. Socket.IO telemetry remains 1 Hz real time, while the trial chart samples against simulated elapsed time so accelerated playback remains readable and deterministic.
+- **Scheduling decision:** the Trial Runs scheduling entry point initializes the existing workout dialog as `TRIAL`; existing Backend validation remains authoritative.
+- **Executor exception:** Codex may execute only the approved TASK-013 Slice G continuation after direct `START TASK-013 CODEX`; AGY remains the default executor for later tasks.
+- **Boundary:** no Backend/schema/migration, new dependency, database recreation, broad data deletion or downstream TASK-016–018 implementation is included.
+- **Impacted task:** TASK-013 corrective Slice G; TASK-014 remains unauthorized.
+
 Do not silently amend accepted decisions; create an ADR and/or CR entry and request approval where scope changes.
+
+## CR-019 — Trial timing and result-draft authority
+
+- Future workouts remain non-launchable until their scheduled time; Main Web must show that reason and exact time visibly, while Backend remains authoritative.
+- Simulator result draft loading is permitted on result-page mount, focus and explicit retry until a persisted Head Trainer result exists.
+- Objective Simulator values may hydrate the draft. Completion may be derived only from terminal status plus completed versus prescribed distance. Recovery HR, performance score, professional comment and abnormal-sign judgment are never fabricated.
+- This limited hydration/visibility slice moves into TASK-013; final trainer-approved persistence and broader live-monitor workflow remain TASK-016.
+- Accepted limitation: after the Head Trainer edits imported result fields in `SessionResultPage.tsx`, the Simulator reload button (`Tải chỉ số từ Simulator` / `Tải lại`) becomes disabled until the page is reloaded or edits are discarded, preventing unintended overwrite of in-progress trainer manual edits.
 

@@ -287,42 +287,42 @@ async function main() {
   console.log('[3/15] Upserting 24 QA Horses...');
   const horseConfigs = [
     // 1-5: ACTIVE (Owner 1 & Owner 2)
-    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA01', name: 'QA Zephyr Wind', breed: 'Thoroughbred', color: 'Bay', gender: 'Colt' },
-    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA02', name: 'QA Stellar Flash', breed: 'Thoroughbred', color: 'Chestnut', gender: 'Filly' },
-    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA03', name: 'QA Desert Storm', breed: 'Arabian', color: 'Grey', gender: 'Stallion' },
-    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA04', name: 'QA Silver Bullet', breed: 'Quarter Horse', color: 'Palomino', gender: 'Gelding' },
-    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA05', name: 'QA Golden Sovereign', breed: 'Thoroughbred', color: 'Black', gender: 'Colt' },
+    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA01', name: 'QA Zephyr Wind', breed: 'Thoroughbred', color: 'Bay', gender: 'Colt', weightKg: 490 },
+    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA02', name: 'QA Stellar Flash', breed: 'Thoroughbred', color: 'Chestnut', gender: 'Filly', weightKg: 480 },
+    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA03', name: 'QA Desert Storm', breed: 'Arabian', color: 'Grey', gender: 'Stallion', weightKg: 475 },
+    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA04', name: 'QA Silver Bullet', breed: 'Quarter Horse', color: 'Palomino', gender: 'Gelding', weightKg: 510 },
+    { status: HorseStatus.ACTIVE, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA05', name: 'QA Golden Sovereign', breed: 'Thoroughbred', color: 'Black', gender: 'Colt', weightKg: 505 },
 
     // 6-10: IN_TRAINING (Owner 1 & Owner 2)
-    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA06', name: 'QA Iron Heart', breed: 'Thoroughbred', color: 'Bay Dark', gender: 'Stallion' },
-    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA07', name: 'QA Phoenix Blaze', breed: 'Thoroughbred', color: 'Chestnut', gender: 'Filly' },
-    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA08', name: 'QA Northern Light', breed: 'Standardbred', color: 'Black', gender: 'Gelding' },
-    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA09', name: 'QA Valkyrie Song', breed: 'Warmblood', color: 'Bay', gender: 'Mare' },
-    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA10', name: 'QA Shadow Runner', breed: 'Thoroughbred', color: 'Grey', gender: 'Colt' },
+    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA06', name: 'QA Iron Heart', breed: 'Thoroughbred', color: 'Bay Dark', gender: 'Stallion', weightKg: 495 },
+    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner1@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA07', name: 'QA Phoenix Blaze', breed: 'Thoroughbred', color: 'Chestnut', gender: 'Filly', weightKg: 470 },
+    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA08', name: 'QA Northern Light', breed: 'Standardbred', color: 'Black', gender: 'Gelding', weightKg: 515 },
+    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA09', name: 'QA Valkyrie Song', breed: 'Warmblood', color: 'Bay', gender: 'Mare', weightKg: 520 },
+    { status: HorseStatus.IN_TRAINING, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA10', name: 'QA Shadow Runner', breed: 'Thoroughbred', color: 'Grey', gender: 'Colt', weightKg: 485 },
 
     // 11-13: UNDER_OBSERVATION (Owner 2 & Owner 3)
-    { status: HorseStatus.UNDER_OBSERVATION, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA11', name: 'QA Mystic Mirage', breed: 'Arabian', color: 'Gray Roaming', gender: 'Mare' },
-    { status: HorseStatus.UNDER_OBSERVATION, isLocked: false, owner: 'qa-owner3@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA12', name: 'QA Amber Sunrise', breed: 'Quarter Horse', color: 'Chestnut', gender: 'Filly' },
-    { status: HorseStatus.UNDER_OBSERVATION, isLocked: false, owner: 'qa-owner3@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA13', name: 'QA Cobalt Frost', breed: 'Standardbred', color: 'Bay', gender: 'Gelding' },
+    { status: HorseStatus.UNDER_OBSERVATION, isLocked: false, owner: 'qa-owner2@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA11', name: 'QA Mystic Mirage', breed: 'Arabian', color: 'Gray Roaming', gender: 'Mare', weightKg: 460 },
+    { status: HorseStatus.UNDER_OBSERVATION, isLocked: false, owner: 'qa-owner3@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA12', name: 'QA Amber Sunrise', breed: 'Quarter Horse', color: 'Chestnut', gender: 'Filly', weightKg: 465 },
+    { status: HorseStatus.UNDER_OBSERVATION, isLocked: false, owner: 'qa-owner3@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA13', name: 'QA Cobalt Frost', breed: 'Standardbred', color: 'Bay', gender: 'Gelding', weightKg: 500 },
 
     // 14-16: INJURED (Medical Locked) (Owner 3)
-    { status: HorseStatus.INJURED, isLocked: true, owner: 'qa-owner3@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA14', name: 'QA Crimson Falcon', breed: 'Thoroughbred', color: 'Bay Dark', gender: 'Colt' },
-    { status: HorseStatus.INJURED, isLocked: true, owner: 'qa-owner3@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA15', name: 'QA Obsidian King', breed: 'Thoroughbred', color: 'Black', gender: 'Stallion' },
-    { status: HorseStatus.INJURED, isLocked: true, owner: 'qa-owner3@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA16', name: 'QA Diamond Spark', breed: 'Warmblood', color: 'Grey', gender: 'Mare' },
+    { status: HorseStatus.INJURED, isLocked: true, owner: 'qa-owner3@gmail.com', groom: 'qa-groom3@gmail.com', stall: 'STALL-QA14', name: 'QA Crimson Falcon', breed: 'Thoroughbred', color: 'Bay Dark', gender: 'Colt', weightKg: 490 },
+    { status: HorseStatus.INJURED, isLocked: true, owner: 'qa-owner3@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA15', name: 'QA Obsidian King', breed: 'Thoroughbred', color: 'Black', gender: 'Stallion', weightKg: 510 },
+    { status: HorseStatus.INJURED, isLocked: true, owner: 'qa-owner3@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA16', name: 'QA Diamond Spark', breed: 'Warmblood', color: 'Grey', gender: 'Mare', weightKg: 495 },
 
     // 17-19: ISOLATED (Medical Locked) (Owner 3 & Owner 4)
-    { status: HorseStatus.ISOLATED, isLocked: true, owner: 'qa-owner3@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA17', name: 'QA Lunar Eclipse', breed: 'Thoroughbred', color: 'Chestnut', gender: 'Filly' },
-    { status: HorseStatus.ISOLATED, isLocked: true, owner: 'qa-owner4@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA18', name: 'QA Solstice Ray', breed: 'Arabian', color: 'Bay', gender: 'Gelding' },
-    { status: HorseStatus.ISOLATED, isLocked: true, owner: 'qa-owner4@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA19', name: 'QA Eclipse Shadow', breed: 'Thoroughbred', color: 'Black', gender: 'Colt' },
+    { status: HorseStatus.ISOLATED, isLocked: true, owner: 'qa-owner3@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA17', name: 'QA Lunar Eclipse', breed: 'Thoroughbred', color: 'Chestnut', gender: 'Filly', weightKg: 475 },
+    { status: HorseStatus.ISOLATED, isLocked: true, owner: 'qa-owner4@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA18', name: 'QA Solstice Ray', breed: 'Arabian', color: 'Bay', gender: 'Gelding', weightKg: 480 },
+    { status: HorseStatus.ISOLATED, isLocked: true, owner: 'qa-owner4@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA19', name: 'QA Eclipse Shadow', breed: 'Thoroughbred', color: 'Black', gender: 'Colt', weightKg: 505 },
 
     // 20-22: RESTING (Owner 4)
-    { status: HorseStatus.RESTING, isLocked: false, owner: 'qa-owner4@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA20', name: 'QA Gentle Meadow', breed: 'Quarter Horse', color: 'Palomino', gender: 'Mare' },
-    { status: HorseStatus.RESTING, isLocked: false, owner: 'qa-owner4@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA21', name: 'QA Tranquil Stream', breed: 'Warmblood', color: 'Bay', gender: 'Gelding' },
-    { status: HorseStatus.RESTING, isLocked: false, owner: 'qa-owner4@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA22', name: 'QA Serene Breeze', breed: 'Thoroughbred', color: 'Chestnut', gender: 'Filly' },
+    { status: HorseStatus.RESTING, isLocked: false, owner: 'qa-owner4@gmail.com', groom: 'qa-groom4@gmail.com', stall: 'STALL-QA20', name: 'QA Gentle Meadow', breed: 'Quarter Horse', color: 'Palomino', gender: 'Mare', weightKg: 470 },
+    { status: HorseStatus.RESTING, isLocked: false, owner: 'qa-owner4@gmail.com', groom: 'qa-groom1@gmail.com', stall: 'STALL-QA21', name: 'QA Tranquil Stream', breed: 'Warmblood', color: 'Bay', gender: 'Gelding', weightKg: 495 },
+    { status: HorseStatus.RESTING, isLocked: false, owner: 'qa-owner4@gmail.com', groom: 'qa-groom2@gmail.com', stall: 'STALL-QA22', name: 'QA Serene Breeze', breed: 'Thoroughbred', color: 'Chestnut', gender: 'Filly', weightKg: 480 },
 
     // 23-24: RETIRED (Owner 1 & Owner 2, no stall)
-    { status: HorseStatus.RETIRED, isLocked: false, owner: 'qa-owner1@gmail.com', groom: null, stall: null, name: 'QA Old Champion', breed: 'Thoroughbred', color: 'Bay', gender: 'Gelding', retireReason: RetireReason.RETIRED },
-    { status: HorseStatus.RETIRED, isLocked: false, owner: 'qa-owner2@gmail.com', groom: null, stall: null, name: 'QA Golden Veteran', breed: 'Standardbred', color: 'Grey', gender: 'Stallion', retireReason: RetireReason.SOLD },
+    { status: HorseStatus.RETIRED, isLocked: false, owner: 'qa-owner1@gmail.com', groom: null, stall: null, name: 'QA Old Champion', breed: 'Thoroughbred', color: 'Bay', gender: 'Gelding', retireReason: RetireReason.RETIRED, weightKg: 520 },
+    { status: HorseStatus.RETIRED, isLocked: false, owner: 'qa-owner2@gmail.com', groom: null, stall: null, name: 'QA Golden Veteran', breed: 'Standardbred', color: 'Grey', gender: 'Stallion', retireReason: RetireReason.SOLD, weightKg: 515 },
   ];
 
   const horseMap: Record<string, string> = {};
@@ -343,6 +343,7 @@ async function main() {
         dob: new Date('2021-03-15T00:00:00.000Z'),
         gender: h.gender,
         color: h.color,
+        weightKg: h.weightKg,
         status: h.status,
         isMedicalLocked: h.isLocked,
         ownerId: userMap[h.owner],
@@ -358,6 +359,7 @@ async function main() {
         dob: new Date('2021-03-15T00:00:00.000Z'),
         gender: h.gender,
         color: h.color,
+        weightKg: h.weightKg,
         status: h.status,
         isMedicalLocked: h.isLocked,
         ownerId: userMap[h.owner],
@@ -501,6 +503,9 @@ async function main() {
   interface WorkoutDef {
     status: WorkoutStatus;
     scheduledDate: string;
+    workoutType?: string;
+    intensity?: string;
+    trackSurface?: string;
     actualTimeSeconds?: number;
     heartRatePeak?: number;
     heartRateRecovery?: number;
@@ -513,7 +518,14 @@ async function main() {
     // Plan 1 (ACTIVE): 2 COMPLETED (historical), 2 SCHEDULED (future)
     { status: WorkoutStatus.COMPLETED, scheduledDate: '2026-10-05T07:00:00.000Z', actualTimeSeconds: 78.5, heartRatePeak: 180, heartRateRecovery: 95, performanceScore: 88.0, trainerNotes: 'Buổi tập đạt tiêu chuẩn thể lực' },
     { status: WorkoutStatus.COMPLETED, scheduledDate: '2026-10-12T07:00:00.000Z', actualTimeSeconds: 77.8, heartRatePeak: 182, heartRateRecovery: 92, performanceScore: 90.0, trainerNotes: 'Nâng cao tốc độ nước rút' },
-    { status: WorkoutStatus.SCHEDULED, scheduledDate: '2026-11-05T07:00:00.000Z' },
+    {
+      status: WorkoutStatus.SCHEDULED,
+      scheduledDate: '2026-10-27T00:00:00.000Z',
+      workoutType: 'TRIAL',
+      intensity: 'MODERATE',
+      trackSurface: 'TURF',
+      trainerNotes: 'Deterministic QA Head Trainer Trial Run',
+    },
     { status: WorkoutStatus.SCHEDULED, scheduledDate: '2026-11-12T07:00:00.000Z' },
 
     // Plan 2 (ACTIVE): 1 COMPLETED, 1 MISSED (historical), 1 BLOCKED, 1 SCHEDULED (future)
@@ -604,6 +616,9 @@ async function main() {
           repetitions: 2,
           targetSpeedKmh: 54.0,
           status: def.status,
+          workoutType: def.workoutType ?? (w === 3 && p === 1 ? 'TRIAL' : 'CANTER'),
+          intensity: def.intensity ?? 'MODERATE',
+          trackSurface: def.trackSurface ?? 'TURF',
           statusReason: def.statusReason ?? null,
           actualTimeSeconds: def.actualTimeSeconds ?? null,
           heartRatePeak: def.heartRatePeak ?? null,
@@ -621,6 +636,9 @@ async function main() {
           repetitions: 2,
           targetSpeedKmh: 54.0,
           status: def.status,
+          workoutType: def.workoutType ?? (w === 3 && p === 1 ? 'TRIAL' : 'CANTER'),
+          intensity: def.intensity ?? 'MODERATE',
+          trackSurface: def.trackSurface ?? 'TURF',
           statusReason: def.statusReason ?? null,
           actualTimeSeconds: def.actualTimeSeconds ?? null,
           heartRatePeak: def.heartRatePeak ?? null,
@@ -1480,6 +1498,238 @@ async function main() {
       },
     });
   }
+
+  // --------------------------------------------------------------------------
+  // [14b/15] TASK-013 DETERMINISTIC MANUAL-QA FIXTURES (CR-017)
+  // --------------------------------------------------------------------------
+  console.log('[14b/15] Upserting TASK-013 Deterministic Manual-QA Fixtures...');
+  const trialHorseId = '00000000-0000-4000-a013-000000000001';
+  const examHorseId = '00000000-0000-4000-a013-000000000002';
+  const trialPlanId = '00000000-0000-4000-a013-000000000011';
+  const trialWorkoutId = '00000000-0000-4000-a013-000000000021';
+  const examRecId = '00000000-0000-4000-a013-000000000031';
+
+  // 1. QA T013 Trial Horse
+  await prisma.horse.upsert({
+    where: { horseCode: 'QA-T013-HORSE-001' },
+    update: {
+      name: 'QA T013 Trial Horse',
+      breed: 'Thoroughbred',
+      color: 'Bay',
+      gender: 'STALLION',
+      dob: new Date('2021-04-15'),
+      weightKg: 495,
+      status: HorseStatus.ACTIVE,
+      isMedicalLocked: false,
+      ownerId: userMap['qa-owner1@gmail.com'],
+    },
+    create: {
+      id: trialHorseId,
+      horseCode: 'QA-T013-HORSE-001',
+      name: 'QA T013 Trial Horse',
+      microchip: '985141099013001',
+      microchipRfid: '985141099013001',
+      breed: 'Thoroughbred',
+      color: 'Bay',
+      gender: 'STALLION',
+      dob: new Date('2021-04-15'),
+      weightKg: 495,
+      status: HorseStatus.ACTIVE,
+      isMedicalLocked: false,
+      ownerId: userMap['qa-owner1@gmail.com'],
+    },
+  });
+
+  // 2. QA T013 Trial Plan
+  await prisma.trainingPlan.upsert({
+    where: { planCode: 'QA-T013-PLAN-001' },
+    update: {
+      horseId: trialHorseId,
+      trainerUserId: userMap['qa-trainer1@gmail.com'],
+      status: PlanStatus.ACTIVE,
+      startDate: new Date(Date.now() - 7 * 24 * 3600 * 1000),
+      endDate: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+      phaseName: 'Giai đoạn thử tải nâng cao',
+      objective: 'Chạy thử mô phỏng kiểm chuẩn TASK-013',
+      notes: '[TASK-013-MANUAL-QA] Deterministic QA trial training plan',
+    },
+    create: {
+      id: trialPlanId,
+      planCode: 'QA-T013-PLAN-001',
+      horseId: trialHorseId,
+      trainerUserId: userMap['qa-trainer1@gmail.com'],
+      status: PlanStatus.ACTIVE,
+      startDate: new Date(Date.now() - 7 * 24 * 3600 * 1000),
+      endDate: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+      phaseName: 'Giai đoạn thử tải nâng cao',
+      objective: 'Chạy thử mô phỏng kiểm chuẩn TASK-013',
+      notes: '[TASK-013-MANUAL-QA] Deterministic QA trial training plan',
+    },
+  });
+
+  // Clean up any existing session for the trial workouts and deterministic QA horses so they start in clean SCHEDULED / launchable state
+  const zephyrWorkoutId = toUuid(DOMAIN.WORKOUT_SESSION, 3);
+  await prisma.simulatorSession.deleteMany({
+    where: {
+      OR: [
+        { workoutSessionId: trialWorkoutId },
+        { workoutSessionId: zephyrWorkoutId },
+        { horseIds: { has: trialHorseId } },
+        { horseIds: { has: examHorseId } },
+        { horseIds: { has: horseMap['QA-HR-000001'] } },
+      ],
+    },
+  });
+
+  // 3. QA-T013-TRIAL-001 Workout
+  await prisma.workoutSession.upsert({
+    where: { id: trialWorkoutId },
+    update: {
+      trainingPlanId: trialPlanId,
+      horseId: trialHorseId,
+      assignedStaffUserId: userMap['qa-trainer1@gmail.com'],
+      scheduledDate: new Date(Date.now() - 3600 * 1000),
+      distanceMeters: 1800,
+      repetitions: 1,
+      targetSpeedKmh: 54.0,
+      status: WorkoutStatus.SCHEDULED,
+      workoutType: 'TRIAL',
+      intensity: 'MODERATE',
+      trackSurface: 'TURF',
+      trainerNotes: '[TASK-013-MANUAL-QA] QA-T013-TRIAL-001: 1800m TURF MODERATE deterministic trial',
+      statusReason: null,
+      actualTimeSeconds: null,
+      actualDistanceMeters: null,
+      averageSpeedKmh: null,
+      topSpeedKmh: null,
+      actualSurface: null,
+      trackCondition: null,
+      completionLevel: null,
+      resultRecordedAt: null,
+      resultRecordedById: null,
+      resultUpdatedAt: null,
+      resultUpdatedById: null,
+      resultNotes: null,
+      abnormalSigns: false,
+      abnormalSignTypes: [],
+      abnormalNotes: null,
+      heartRatePeak: null,
+      heartRateRecovery: null,
+      performanceScore: null,
+    },
+    create: {
+      id: trialWorkoutId,
+      trainingPlanId: trialPlanId,
+      horseId: trialHorseId,
+      assignedStaffUserId: userMap['qa-trainer1@gmail.com'],
+      scheduledDate: new Date(Date.now() - 3600 * 1000),
+      distanceMeters: 1800,
+      repetitions: 1,
+      targetSpeedKmh: 54.0,
+      status: WorkoutStatus.SCHEDULED,
+      workoutType: 'TRIAL',
+      intensity: 'MODERATE',
+      trackSurface: 'TURF',
+      trainerNotes: '[TASK-013-MANUAL-QA] QA-T013-TRIAL-001: 1800m TURF MODERATE deterministic trial',
+    },
+  });
+
+  // Clean Zephyr workout result residue if it was previously simulated
+  await prisma.workoutSession.update({
+    where: { id: zephyrWorkoutId },
+    data: {
+      status: WorkoutStatus.SCHEDULED,
+      actualTimeSeconds: null,
+      actualDistanceMeters: null,
+      averageSpeedKmh: null,
+      topSpeedKmh: null,
+      actualSurface: null,
+      trackCondition: null,
+      completionLevel: null,
+      resultRecordedAt: null,
+      resultRecordedById: null,
+      resultUpdatedAt: null,
+      resultUpdatedById: null,
+      resultNotes: null,
+      abnormalSigns: false,
+      abnormalSignTypes: [],
+      abnormalNotes: null,
+      heartRatePeak: null,
+      heartRateRecovery: null,
+      performanceScore: null,
+    },
+  });
+
+  // 4. QA T013 Exam Horse (weightKg explicitly NULL for R-12 deterministic test)
+  await prisma.horse.upsert({
+    where: { horseCode: 'QA-T013-EXAM-001' },
+    update: {
+      name: 'QA T013 Exam Horse',
+      breed: 'Thoroughbred',
+      color: 'Chestnut',
+      gender: 'MARE',
+      dob: new Date('2021-06-20'),
+      weightKg: null,
+      status: HorseStatus.UNDER_OBSERVATION,
+      isMedicalLocked: false,
+      ownerId: userMap['qa-owner1@gmail.com'],
+    },
+    create: {
+      id: examHorseId,
+      horseCode: 'QA-T013-EXAM-001',
+      name: 'QA T013 Exam Horse',
+      microchip: '985141099013002',
+      microchipRfid: '985141099013002',
+      breed: 'Thoroughbred',
+      color: 'Chestnut',
+      gender: 'MARE',
+      dob: new Date('2021-06-20'),
+      weightKg: null,
+      status: HorseStatus.UNDER_OBSERVATION,
+      isMedicalLocked: false,
+      ownerId: userMap['qa-owner1@gmail.com'],
+    },
+  });
+
+  // Clean up any existing exam simulator sessions for exam horse so it starts clean
+  await prisma.simulatorSession.deleteMany({
+    where: {
+      type: SimulatorSessionType.EXAM,
+      horseIds: { has: examHorseId },
+    },
+  });
+
+  // 5. QA-T013-REC-001 Medical Record
+  await prisma.medicalRecord.upsert({
+    where: { id: examRecId },
+    update: {
+      recordNumber: 'QA-T013-REC-001',
+      horseId: examHorseId,
+      veterinarianUserId: userMap['qa-vet1@gmail.com'],
+      examinationDate: new Date(),
+      examinationType: 'Routine Clinical',
+      status: MedicalRecordStatus.OPEN,
+      clinicalExamination: '[TASK-013-MANUAL-QA] Clinical examination baseline',
+      clinicalDiagnosis: 'Khám định kỳ tổng quát',
+      symptoms: 'QA-T013-EXAM-001',
+      treatmentProtocol: 'Theo dõi sinh hiệu thường quy',
+      discoverySource: 'VET Self-Discovered',
+    },
+    create: {
+      id: examRecId,
+      recordNumber: 'QA-T013-REC-001',
+      horseId: examHorseId,
+      veterinarianUserId: userMap['qa-vet1@gmail.com'],
+      examinationDate: new Date(),
+      examinationType: 'Routine Clinical',
+      status: MedicalRecordStatus.OPEN,
+      clinicalExamination: '[TASK-013-MANUAL-QA] Clinical examination baseline',
+      clinicalDiagnosis: 'Khám định kỳ tổng quát',
+      symptoms: 'QA-T013-EXAM-001',
+      treatmentProtocol: 'Theo dõi sinh hiệu thường quy',
+      discoverySource: 'VET Self-Discovered',
+    },
+  });
 
   // --------------------------------------------------------------------------
   // [15/15] VERIFICATION SUMMARY

@@ -76,6 +76,8 @@ export interface WorkoutSimulationContext {
     color: string;
     status: string;
     isMedicalLocked: boolean;
+    weightKg: number | null;
+    stall: string | null;
   };
   workout: {
     id: string;

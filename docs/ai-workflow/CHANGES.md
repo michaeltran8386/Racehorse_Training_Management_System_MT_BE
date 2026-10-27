@@ -353,3 +353,106 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
 - **Launcher deferral:** root `start.bat` and `stop.bat` remain out of TASK-013 and TASK-014 remains TODO. Until a separate `START TASK-014`, developers start PostgreSQL, Backend, Frontend and canonical Simulator manually through Docker/npm.
 - **Human-gate result:** TASK-012 remains `AWAITING_USER_QA`; CR approval does not approve/commit TASK-012, modify code, start TASK-013, start TASK-014, push or merge.
 - **Target plan version:** v1-approved-r13.
+
+## CR-015 — Complete TASK-013 with PostgreSQL-backed session data, Vet EXAM flow and real-browser acceptance
+
+- **State:** APPROVED by exact human command `APPROVE CR-015` on 2026-10-27.
+- **Raised by:** Human browser QA after TASK-013 returned `AWAITING_USER_QA`.
+- **Related plan:** v1-approved-r13 / TASK-013; incorporated into Plan v1-approved-r14.
+- **Verified browser failures:** Chromium against the live ports showed that Head Trainer Trial Runs returned an empty real API result and no launch action; PostgreSQL horse `Test Victory 2562` had `weightKg=490` while Simulator displayed 535 kg from `450 + hash % 100` and Main Web initialized 480 kg; a valid Vet EXAM session loaded one real horse and connected to NestJS Socket.IO, but the UI exposed no action that publishes `sim:exam_finished`, so `/exams/latest` returned 404. Direct access, `?dev`, invalid-session failure, session context loading and reload were verified fail-closed/real-stack.
+- **Approved change:** retain the existing TASK-013 Slices A/B and add corrective Slices C/D. Slice C propagates PostgreSQL horse weight and active-stall truth through the session contract, removes fabricated master-data fallback, completes the existing EXAM packet path from Simulator UI through ACK/persistence to Main Web, and removes the misleading 480 kg form default. Slice D provides an eligible deterministic QA trial and adds a real-stack browser test.
+- **Data boundary:** identity/master fields that exist in PostgreSQL must match PostgreSQL. Values produced by the simulation engine may remain model outputs but must not be presented as persisted master data. Missing master data is unavailable or an explicit error, never a hash/default substitute. Masked microchip data must not be reconstructed.
+- **Exact scope:** TASK-013 is now exactly 19 application/test files: the 11 files already authorized by CR-014; seven additional Slice C files — BE `src/simulator/simulator.types.ts`, `prisma/seed-manual-qa.ts`; SIM `src/api/simulatorApi.ts`, `src/api/simulatorApi.test.ts`, `src/api/horseMapper.ts`, `src/api/horseMapper.test.ts`; FE `src/features/health/pages/RecordFormPage.tsx`; and one Slice D file, FE `tests/e2e/simulator-real-stack.spec.ts`. Slice C may update already-authorized service/spec and UI files. No schema/migration, `.bat`, `_v3`, dependency or twentieth application/test file is authorized.
+- **Browser gate:** Playwright/Chromium must use the live `5173`/`5175` applications, NestJS `3000` and PostgreSQL `5432`, without route interception or runtime mock. It must launch Head Trainer workout and Vet EXAM from Main Web, observe REST and Socket.IO, compare UI/context/result to PostgreSQL, finish EXAM once, reload both apps, verify persistence/refetch, capture screenshots plus sanitized Network/console evidence, and exercise fail-closed cases. API-only verification cannot satisfy Human Manual QA readiness.
+- **Human handoff:** reuse the already-running Docker/npm processes when healthy. Before returning `AWAITING_USER_QA`, AGY leaves a named eligible QA trial and exact non-secret manual steps ready; the human must only reload the open pages and perform the listed UI actions.
+- **Sequence:** approval resets execution to `IDLE`, `next_task: TASK-013`. It does not resume code, approve/commit TASK-013, authorize TASK-014, push or merge. AGY requires a new direct `START TASK-013`.
+- **Downstream impact:** the minimum single-session real horse/stall baseline moves forward from TASK-015 into TASK-013. TASK-015 retains broader cross-role authorization/synchronization verification and must reuse this baseline.
+- **Target plan version:** v1-approved-r14.
+
+## CR-016 — Deterministic workout completion and streamlined EXAM handoff
+
+- **State:** APPROVED by exact human command `APPROVE CR-016` on 2026-10-27.
+- **Raised by:** Human manual QA after TASK-013 returned to `AWAITING_USER_QA` under CR-015.
+- **Related plan:** v1-approved-r14 / TASK-013; incorporated into Plan v1-approved-r15.
+- **Observed failures and ambiguity:** the workout reached its prescribed distance but the runner animation continued; Main-Web-issued workout settings and obstacle authoring remained editable; the workout result was not formatted into Main Web; the EXAM round trip required entering Simulator, waiting/skipping the cloud intro, completing the exam, returning to Main Web and manually loading measurements; vital cards showed `Normal` for in-range measurements on an injured/locked horse, which was easily mistaken for overall health status. Independent review additionally identified two `sim:exam_finished` wire paths; the current uncommitted R-10 correction removes that duplicate path and must be preserved.
+- **Approved TASK-013 correction:** add Slice E. A scheduled Main-Web workout uses immutable prescribed surface/distance/intensity. When no Backend obstacle prescription exists, Simulator hides obstacle authoring and must not fabricate obstacles. Reaching the prescribed distance stops movement, transitions to DONE, displays the summary and emits/persists/broadcasts one logical `sim:session_finished`.
+- **Boundary with TASK-016:** TASK-013 proves Simulator finish semantics and exactly-once persistence only. Formatting/loading the trial result into Main Web and completing the live-monitor workflow remain TASK-016; CR-016 does not pull them forward.
+- **Approved EXAM UX:** a valid Main-Web-issued EXAM bypasses the decorative intro and opens the Vet flow directly. One completion action emits one `sim:exam_finished`, awaits ACK, exposes return/close, and Main Web auto-loads the newest acknowledged result when its tab regains focus. The existing manual load action remains fallback.
+- **Medical wording:** vital cards use `Within reference range` / `Outside reference range` (localized). These labels classify individual measurements only and remain separate from proposed/applied horse status and Medical Lock. No automatic diagnosis, medical-record creation, status application or lock mutation is authorized.
+- **Exact scope:** preserve the existing 19 TASK-013 application/test files and add exactly SIM `src/main.tsx` and FE `src/features/health/components/VitalsDisplay.tsx`, for a total of 21. Already-authorized TASK-013 files may be corrected as specified in TASKS.md. No schema/migration, obstacle API, dependency, `.bat`, `_v3`, TASK-014 or TASK-016 implementation is authorized. A twenty-second application/test file requires a new CR.
+- **Acceptance evidence:** real-stack Playwright must drive the prescribed workout through visible completion, assert a stopped runner/DONE/summary and exactly one outbound finish plus one persisted logical result; prove no unprescribed obstacle editor; prove EXAM has no intro, emits once and auto-populates Main Web after focus/reload; distinguish in-range vitals from injured/locked horse state. Existing security, PostgreSQL master-data, no-login and fail-closed gates remain mandatory.
+- **Sequence:** approval resets execution to `IDLE`, `next_task: TASK-013`. It does not start, approve or commit TASK-013, authorize TASK-014, push or merge. AGY requires a new direct `START TASK-013`.
+- **Target plan version:** v1-approved-r15.
+
+## CR-017 — Finished workout relaunch guard, nullable exam weight contract, and medical record horse identity
+
+- **State:** APPROVED — explicit `APPROVE CR-017` received 2026-10-27 (Asia/Bangkok)
+- **Raised by:** Antigravity IDE following human QA feedback in `helpme-brother.docx` on 2026-10-27.
+- **Related plan:** v1-approved-r15 / TASK-013.
+- **Confirmed root causes:**
+  1. *Finished workout relaunch failure (R-11):* Backend `startWorkout` blindly returned an existing `COMPLETED` session ID instead of rejecting or creating a new eligible session, causing Simulator `context` to immediately reject with 409 `SIMULATOR_SESSION_FINISHED`.
+  2. *Missing master weight in EXAM (R-12):* `ExamFinishedPacketDto` strictly requires `@IsNumber() @Min(200) @Max(800) value: number`. When a horse has no master weight recorded in PostgreSQL (`weightKg: null`), Simulator sending `value: null` causes class-validator failure `INVALID_SIMULATOR_PACKET`.
+  3. *Medical record horse identity (R-13):* Backend `getMedicalRecords` returns nested `horse: { id, name, microchipRfid, status }` without `horseCode` or top-level `horseName`, while `RecordListPage.tsx` renders `<td className="nowrap">{r.horseName || r.horseId}</td>`, causing raw UUID to be displayed as primary visible horse identity.
+  4. *Clinical text integrity (R-14):* Verified no application defect exists. The URL text in record `BA-2610-028` was manually pasted into form fields during testing; form mapping logic only populates numeric vitals and source banner.
+- **Proposed changes & minimal additional file list (5 additional files, expanding TASK-013 to 26 files):**
+  1. **BE `src/simulator/dto/exam-packet.dto.ts`:** Permit `metrics.weight` / `value` to be optional or nullable (`@IsOptional()`) so that examinations for horses without recorded weight validate cleanly.
+  2. **BE `src/medical/medical-records.service.ts`:** In `getMedicalRecords`, select `horseCode` and map `horseName: record.horse?.name` and `horseCode: record.horse?.horseCode`.
+  3. **FE `src/features/health/api.ts`:** In `listRecords`, map `horseName` and `horseCode` from the API response.
+  4. **FE `src/features/health/pages/RecordListPage.tsx`:** Display the horse name and horse code (`r.horse?.name || r.horseName || r.horseId`), never showing raw UUID as the primary visible horse label.
+  5. **SIM `src/sim/packets.ts`:** In `examFinishedPacket`, preserve null/omitted weight when `h.weightKg` is unavailable.
+  6. **Existing approved scope updates:**
+     - BE `src/simulator/simulator.service.ts` & `simulator.service.spec.ts`: Prevent `startWorkout` from returning terminal `COMPLETED`/`ABORTED_INJURY` sessions.
+     - BE `prisma/seed-manual-qa.ts`: Provision deterministic QA fixtures using the exact requested namespace.
+     - FE `src/features/health/pages/RecordFormPage.tsx`, `tests/e2e/simulator-real-stack.spec.ts`, and SIM UI files.
+- **Deterministic QA namespace protocol:**
+  - Horse name: `QA T013 Trial Horse` / Code: `QA-T013-HORSE-001`
+  - Training plan: `QA T013 Trial Plan`
+  - Workout label: `QA-T013-TRIAL-001` (1800m, TURF, SCHEDULED)
+  - EXAM horse: `QA T013 Exam Horse` / Code: `QA-T013-EXAM-001`
+  - Medical record reason: `QA-T013-EXAM-001`
+  - Test-data marker: `TASK-013-MANUAL-QA`
+- **Acceptance criteria:**
+  1. `startWorkout` on a finished or aborted workout session never returns a launch URL for a terminal session; rejects with 409 `SIMULATOR_SESSION_FINISHED` or initiates a clean fresh session.
+  2. Horses without master weight can complete clinical examinations; available measurements are persisted/acknowledged exactly once; missing weight is preserved as explicitly unavailable/null; Main Web auto-loads available vitals on focus.
+  3. Medical record list renders real horse name and horse code, never a raw UUID.
+  4. Deterministic QA fixtures are created and verified idempotent using the exact requested namespace.
+  5. Real-stack Playwright suite passes with no mocks.
+- **Pre-approval human-gate result:** TASK-013 was marked `BLOCKED` and AGY stopped before modifying any out-of-scope file.
+- **Target plan version:** v1-approved-r16.
+- **Approved outcome:** incorporate corrective Slice F and the five listed additional files into TASK-013. A terminal session attached to the same workout must return a clear 409 and must never produce a broken launch URL; a fresh deterministic QA workout/session is prepared by the QA fixture/reset protocol rather than silently reopening terminal history.
+- **Sequence after approval:** clear the blocker and return execution to `IDLE` with `next_task: TASK-013`. AGY still requires a new direct `START TASK-013`; this approval does not approve/commit TASK-013, authorize TASK-014, push or merge.
+
+## CR-018 — Simulation-time chart fidelity, Trial Runs scheduling intent, and temporary TASK-013 executor reassignment
+
+- **State:** APPROVED by exact human command `APPROVE CR-018` on 2026-10-27.
+- **Raised by:** ChatGPT Planner after exact human `REJECT TASK-013` feedback on 2026-10-27.
+- **Related plan:** v1-approved-r16 / TASK-013.
+- **Confirmed root causes:**
+  1. `TrialTab.tsx` advances the model with `dtReal × playbackSpeed`, so the modeled finish time remains correct, but chart points are appended only by the 1 Hz real-clock transport ticker. A 60× playback of a roughly 135-second modeled run therefore exposes only a few chart points and does not communicate the model variation.
+  2. `TrialRunsPage.tsx` opens generic `WorkoutDialog` without a default workout type. `WorkoutDialog` initializes `type` to `CANTER`, so the “Lên lịch chạy thử” entry point can save a valid non-TRIAL workout that does not appear in the Trial Runs list.
+- **Approved design:** preserve 1 Hz real-time Socket.IO telemetry and deterministic model results across 1×/10×/60×, but sample the visual chart on simulated time and label playback versus simulated elapsed time clearly. Make the Trial Runs entry point initialize the existing dialog as `TRIAL`; keep target speed, jockey, groom, medical lock, plan dates, phase dates, slot collision and daily-limit validation unchanged.
+- **Exact approved scope:** add FE `src/features/training/pages/TrialRunsPage.tsx` and `src/features/training/components/WorkoutDialogs.tsx`, expanding TASK-013 from 26 to 28 application/test files. Previously authorized SIM `src/ui/TrialTab.tsx` and FE `tests/e2e/simulator-real-stack.spec.ts` may be corrected for this slice. No new dependency, Backend/schema/migration/database recreation, broad QA-data deletion, `.bat`, `_v3`, TASK-014 or later-task implementation is authorized.
+- **Acceptance:** the same seed/config yields equivalent simulated finish/result at 1×, 10× and 60×; 60× only shortens wall-clock viewing; the chart retains a readable simulation-time curve rather than two or three real-clock samples; transport stays 1 Hz real time; “Lên lịch chạy thử” opens with TRIAL selected and saving a valid distinct slot creates a TRIAL row visible after reload; validation errors remain actionable; the provisionally accepted medical flow passes regression unchanged.
+- **Approved executor exception:** after a separate direct `START TASK-013 CODEX`, Codex may replace AGY as executor for this TASK-013 corrective continuation only. Codex may edit the approved files, run verification and update AGY-owned execution/report fields for this slice, then must stop at `AWAITING_USER_QA`. The default AGY executor rule remains unchanged for TASK-014 and later tasks.
+- **Sequence:** approval produces Plan v1-approved-r17 and resets execution to `IDLE`, `next_task: TASK-013`. Approval alone does not start implementation, approve/commit TASK-013, authorize TASK-014, push or merge.
+- **Target plan version:** v1-approved-r17.
+
+## CR-019 — Trial launch timing clarity and Simulator result draft refresh
+
+- **State:** APPROVED by exact human command `APPROVE CR-019` on 2026-10-27.
+- **Raised by:** Human Manual QA supplied in `trial_runs.docx` on 2026-10-27.
+- **Related plan:** v1-approved-r17 / TASK-013.
+- **Verified findings:**
+  1. The reported different-horse row is scheduled for 2026-10-28 while the QA date is 2026-10-27. `TrialRunsPage.tsx` disables launch when `scheduledAt > now`, and Backend `SimulatorService.startWorkout` independently rejects the same request with `WORKOUT_NOT_STARTED`. The screenshot therefore shows an enforced timing rule, not a missing Simulator connection. The disabled styling/title does not explain that rule clearly enough.
+  2. Both completed QA workouts have real `COMPLETED` `SimulatorSession` rows and result JSON in PostgreSQL. Live `GET /api/simulator/workouts/:id/latest` returns distance, duration, peak heart rate, top speed, surface and condition. Fresh Chromium navigation to each result page already populates those objective fields.
+  3. Recovery heart rate is absent because Slice E ends at the prescribed distance before a recovery measurement exists. Performance score and professional comment are Head Trainer judgments and must not be fabricated. Completion can be derived only from Simulator terminal status plus completed versus prescribed distance.
+  4. A result page that was already open does not refresh its draft when focus returns from Simulator, and imported versus human-entered fields are not visibly distinguished. That UX gap explains why a user can reasonably believe the transfer did not occur.
+- **Proposed corrective Slice H:**
+  1. Preserve the Backend scheduled-time authority. On future Trial Runs, render a visible Vietnamese/English explanation next to the disabled launch action with the exact earliest launch time. Do not silently move the schedule or permit early execution.
+  2. Refactor the existing result-draft fetch in `SessionResultPage.tsx` into one idempotent loader used on initial mount, window focus and an explicit retry button while no persisted Head Trainer result exists.
+  3. Show a clear “Loaded from Simulator” source/status banner and identify unavailable measurements. Populate only objective Simulator values. Derive `ACHIEVED` only for a completed run reaching the prescribed total distance and `PARTIAL` for an injury-aborted/short run; never infer performance score, professional comment, abnormal-sign judgment or unavailable recovery HR.
+  4. Extend the existing real-stack browser test to prove: a future workout remains blocked with a visible reason; returning focus after a completed simulation fills exact PostgreSQL-backed values; reload preserves the same draft source; no duplicate finish packet or automatic final-result submission occurs.
+- **Exact proposed scope:** update already-authorized FE `src/features/training/pages/TrialRunsPage.tsx` and `tests/e2e/simulator-real-stack.spec.ts`; add FE `src/features/training/pages/SessionResultPage.tsx` as the twenty-ninth TASK-013 application/test file. Canonical coordination/report files do not expand application scope.
+- **Downstream boundary:** this pulls only draft hydration/visibility from TASK-016. Persisting the final Head Trainer-approved workout result, live-monitor completion, incident workflow and broader trial realtime flow remain TASK-016. No Backend, schema, migration, seed, dependency, Simulator source, `.bat`, `_v3`, TASK-014 or other later-task work is proposed.
+- **Execution gate:** TASK-013 is `BLOCKED` pending CR-019. Approval would create Plan `v1-approved-r18`, return execution to `IDLE`, retain `next_task: TASK-013`, and require a new exact `START TASK-013 CODEX`. Approval would not approve/commit TASK-013, start TASK-014, push or merge.
+- **Target plan version:** v1-approved-r18.

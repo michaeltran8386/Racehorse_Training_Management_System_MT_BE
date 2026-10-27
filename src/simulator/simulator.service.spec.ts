@@ -36,6 +36,7 @@ describe('SimulatorService', () => {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn(),
       },
       medicalLock: {
         create: jest.fn(),
@@ -67,7 +68,7 @@ describe('SimulatorService', () => {
     await expect(service.startExam('horse-uuid-1', undefined, mockVet)).resolves.toEqual({
       sessionId: 'exam-1',
       status: 'PENDING',
-      launchUrl: 'http://localhost:5175/?sessionId=exam-1',
+      launchUrl: 'http://localhost:5175/?sessionId=exam-1&type=EXAM',
     });
 
     const issued = {
@@ -102,6 +103,82 @@ describe('SimulatorService', () => {
     expect(prisma.medicalRecord.update).not.toHaveBeenCalled();
   });
 
+  it('reissues fresh PENDING session when existing workout session has expired (R-2)', async () => {
+    prisma.workoutSession.findUnique.mockResolvedValue(eligibleWorkout());
+    prisma.simulatorSession.findUnique.mockResolvedValue({
+      id: 'expired-workout-session',
+      status: 'PENDING',
+      createdAt: new Date(Date.now() - 10 * 60 * 1000), // 10 minutes ago
+    });
+    prisma.simulatorSession.create.mockResolvedValue({
+      id: 'fresh-workout-session',
+      status: 'PENDING',
+    });
+
+    const res = await service.startWorkout('workout-1', mockActor);
+
+    expect(prisma.simulatorSession.delete).toHaveBeenCalledWith({
+      where: { id: 'expired-workout-session' },
+    });
+    expect(prisma.simulatorSession.create).toHaveBeenCalled();
+    expect(res.sessionId).toBe('fresh-workout-session');
+    expect(res.status).toBe('PENDING');
+  });
+
+  it('rejects startWorkout with 409 SIMULATOR_SESSION_FINISHED when existing session is COMPLETED (R-11)', async () => {
+    prisma.workoutSession.findUnique.mockResolvedValue(eligibleWorkout());
+    prisma.simulatorSession.findUnique.mockResolvedValue({
+      id: 'completed-workout-session',
+      status: 'COMPLETED',
+      createdAt: new Date(),
+    });
+
+    await expect(service.startWorkout('workout-1', mockActor)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'SIMULATOR_SESSION_FINISHED',
+      },
+    });
+  });
+
+  it('rejects startWorkout with 409 SIMULATOR_SESSION_FINISHED when existing session is ABORTED_INJURY (R-11)', async () => {
+    prisma.workoutSession.findUnique.mockResolvedValue(eligibleWorkout());
+    prisma.simulatorSession.findUnique.mockResolvedValue({
+      id: 'aborted-workout-session',
+      status: 'ABORTED_INJURY',
+      createdAt: new Date(),
+    });
+
+    await expect(service.startWorkout('workout-1', mockActor)).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'SIMULATOR_SESSION_FINISHED',
+      },
+    });
+  });
+
+  it('reissues fresh PENDING session when existing exam session has expired (R-2)', async () => {
+    prisma.horse.findUnique.mockResolvedValue(eligibleWorkout().horse);
+    prisma.simulatorSession.findFirst.mockResolvedValue({
+      id: 'expired-exam-session',
+      status: 'PENDING',
+      createdAt: new Date(Date.now() - 10 * 60 * 1000), // 10 minutes ago
+    });
+    prisma.simulatorSession.create.mockResolvedValue({
+      id: 'fresh-exam-session',
+      status: 'PENDING',
+    });
+
+    const res = await service.startExam('horse-uuid-1', undefined, mockVet);
+
+    expect(prisma.simulatorSession.delete).toHaveBeenCalledWith({
+      where: { id: 'expired-exam-session' },
+    });
+    expect(prisma.simulatorSession.create).toHaveBeenCalled();
+    expect(res.sessionId).toBe('fresh-exam-session');
+    expect(res.status).toBe('PENDING');
+  });
+
   const eligibleWorkout = () => ({
     id: 'workout-1',
     status: 'SCHEDULED',
@@ -127,6 +204,8 @@ describe('SimulatorService', () => {
       status: 'IN_TRAINING',
       isMedicalLocked: false,
       medicalLocks: [],
+      weightKg: 490,
+      stallAllocations: [{ id: 'alloc-1', stall: { id: 'stall-1', code: 'A-01', zone: 'Zone A' } }],
     },
   });
 
@@ -336,6 +415,13 @@ describe('SimulatorService', () => {
       mockActor,
       'SIMULATOR_SESSION_FINISHED',
     ],
+    [
+      'expired PENDING session',
+      issuedSession({ status: 'PENDING', createdAt: new Date(Date.now() - 301_000) }),
+      telemetryTick(),
+      mockActor,
+      'SIMULATOR_SESSION_EXPIRED',
+    ],
   ])('rejects telemetry for %s', async (_name, session, packet, actor, code) => {
     prisma.simulatorSession.findUnique.mockResolvedValue(session);
 
@@ -481,15 +567,109 @@ describe('SimulatorService', () => {
     });
   });
 
-  it('queries only running sessions for live monitoring', async () => {
-    prisma.simulatorSession.findMany.mockResolvedValue([]);
+  describe('getContext', () => {
+    it('returns workout context for valid session without requiring actor parameter', async () => {
+      const session = issuedSession({
+        id: 'sess-workout-1',
+        status: 'PENDING',
+        createdAt: new Date(),
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
 
-    await service.listRecent(20, 'RUNNING');
+      const ctx = await service.getContext('sess-workout-1');
 
-    expect(prisma.simulatorSession.findMany).toHaveBeenCalledWith({
-      where: { status: 'RUNNING' },
-      take: 20,
-      orderBy: { updatedAt: 'desc' },
+      expect(ctx.type).toBe('WORKOUT');
+      expect(ctx.sessionId).toBe('sess-workout-1');
+      expect((ctx as any).horse.name).toBe('Thunder');
+      expect((ctx as any).horse.weightKg).toBe(490);
+      expect((ctx as any).horse.stall).toBe('A-01');
+      expect((ctx as any).workout.id).toBe('workout-1');
+    });
+
+    it('returns exam context for valid exam session', async () => {
+      const examSession = {
+        id: 'sess-exam-1',
+        type: 'EXAM',
+        status: 'PENDING',
+        createdAt: new Date(),
+        horseIds: ['horse-uuid-1'],
+        actorUserId: mockVet.userId,
+        medicalRecordId: 'rec-1',
+        workoutSession: null,
+      };
+      prisma.simulatorSession.findUnique.mockResolvedValue(examSession);
+      prisma.horse.findUnique.mockResolvedValue(eligibleWorkout().horse);
+
+      const ctx = await service.getContext('sess-exam-1');
+
+      expect(ctx.type).toBe('EXAM');
+      expect(ctx.sessionId).toBe('sess-exam-1');
+      expect((ctx as any).horse.name).toBe('Thunder');
+      expect((ctx as any).horse.weightKg).toBe(490);
+      expect((ctx as any).horse.stall).toBe('A-01');
+      expect((ctx as any).medicalRecordId).toBe('rec-1');
+    });
+
+    it('rejects getContext when session is not found', async () => {
+      prisma.simulatorSession.findUnique.mockResolvedValue(null);
+
+      await expect(service.getContext('non-existent')).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'SIMULATOR_SESSION_NOT_FOUND' }),
+      });
+    });
+
+    it('rejects getContext when session is already COMPLETED or ABORTED', async () => {
+      const session = issuedSession({ status: 'COMPLETED' });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      await expect(service.getContext('sess-completed')).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'SIMULATOR_SESSION_FINISHED' }),
+      });
+    });
+
+    it('rejects getContext when PENDING session is expired (> 5 minutes)', async () => {
+      const session = issuedSession({
+        status: 'PENDING',
+        createdAt: new Date(Date.now() - 301_000),
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      await expect(service.getContext('sess-expired')).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'SIMULATOR_SESSION_EXPIRED' }),
+      });
+    });
+
+    it('rejects getContext on cross-actor mismatch for workout session', async () => {
+      const session = issuedSession({
+        actorUserId: 'trainer-owner-1',
+        workoutSession: {
+          ...eligibleWorkout(),
+          trainingPlan: { trainerUserId: 'trainer-owner-1' },
+        },
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      await expect(service.getContext('sess-workout-1', mockActor)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'SIMULATOR_SESSION_FORBIDDEN' }),
+      });
+    });
+
+    it('rejects getContext on cross-actor mismatch for exam session', async () => {
+      const examSession = {
+        id: 'sess-exam-1',
+        type: 'EXAM',
+        status: 'PENDING',
+        createdAt: new Date(),
+        horseIds: ['horse-uuid-1'],
+        actorUserId: 'vet-owner-1',
+        medicalRecordId: null,
+        workoutSession: null,
+      };
+      prisma.simulatorSession.findUnique.mockResolvedValue(examSession);
+
+      await expect(service.getContext('sess-exam-1', mockVet)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'SIMULATOR_SESSION_FORBIDDEN' }),
+      });
     });
   });
 });

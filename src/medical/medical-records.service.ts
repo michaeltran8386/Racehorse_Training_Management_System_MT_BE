@@ -195,7 +195,7 @@ export class MedicalRecordsService {
         orderBy: { examinationDate: 'desc' },
         include: {
           horse: {
-            select: { id: true, name: true, microchipRfid: true, status: true },
+            select: { id: true, name: true, horseCode: true, microchipRfid: true, status: true },
           },
           veterinarian: {
             select: { id: true, fullName: true, email: true },
@@ -207,10 +207,14 @@ export class MedicalRecordsService {
 
     // Mask sensitive details for HORSE_OWNER if needed
     const mappedRecords = records.map((record) => {
+      const horseName = record.horse?.name ?? null;
+      const horseCode = (record.horse as any)?.horseCode ?? null;
       if (currentUser.role === Role.HORSE_OWNER) {
         return {
           id: record.id,
           horseId: record.horseId,
+          horseName,
+          horseCode,
           horse: record.horse,
           examinationDate: record.examinationDate,
           symptoms: record.symptoms,
@@ -220,7 +224,11 @@ export class MedicalRecordsService {
           createdAt: record.createdAt,
         };
       }
-      return record;
+      return {
+        ...record,
+        horseName,
+        horseCode,
+      };
     });
 
     return {

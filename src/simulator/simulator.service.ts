@@ -105,6 +105,39 @@ export class SimulatorService {
         );
       }
 
+      const existing = await tx.simulatorSession.findUnique({
+        where: { workoutSessionId: workout.id },
+      });
+
+      if (
+        existing &&
+        (existing.status === SimulatorSessionStatus.COMPLETED ||
+          existing.status === SimulatorSessionStatus.ABORTED_INJURY)
+      ) {
+        throw apiError(
+          HttpStatus.CONFLICT,
+          'SIMULATOR_SESSION_FINISHED',
+          'This workout session has already been simulated and finished.',
+        );
+      }
+
+      if (existing && existing.status === SimulatorSessionStatus.PENDING) {
+        const isExpired = Date.now() - new Date(existing.createdAt).getTime() > 5 * 60 * 1000;
+        if (isExpired) {
+          await tx.simulatorSession.delete({ where: { id: existing.id } });
+          return tx.simulatorSession.create({
+            data: {
+              id: randomUUID(),
+              type: SimulatorSessionType.WORKOUT,
+              status: SimulatorSessionStatus.PENDING,
+              workoutSessionId: workout.id,
+              horseIds: [workout.horse.id],
+              actorUserId: actor.userId,
+            },
+          });
+        }
+      }
+
       return tx.simulatorSession.upsert({
         where: { workoutSessionId: workout.id },
         update: {},
@@ -166,7 +199,26 @@ export class SimulatorService {
         },
         orderBy: { updatedAt: 'desc' },
       });
-      if (existing) return existing;
+
+      if (existing) {
+        if (existing.status === SimulatorSessionStatus.PENDING) {
+          const isExpired = Date.now() - new Date(existing.createdAt).getTime() > 5 * 60 * 1000;
+          if (isExpired) {
+            await tx.simulatorSession.delete({ where: { id: existing.id } });
+            return tx.simulatorSession.create({
+              data: {
+                id: randomUUID(),
+                type: SimulatorSessionType.EXAM,
+                status: SimulatorSessionStatus.PENDING,
+                horseIds: [horseId],
+                actorUserId: actor.userId,
+                medicalRecordId,
+              },
+            });
+          }
+        }
+        return existing;
+      }
 
       return tx.simulatorSession.create({
         data: {
@@ -186,7 +238,7 @@ export class SimulatorService {
     return {
       sessionId: session.id,
       status: session.status,
-      launchUrl: `${baseUrl}/?sessionId=${encodeURIComponent(session.id)}`,
+      launchUrl: `${baseUrl}/?sessionId=${encodeURIComponent(session.id)}&type=EXAM`,
     };
   }
 
@@ -232,7 +284,15 @@ export class SimulatorService {
       include: {
         workoutSession: {
           include: {
-            horse: true,
+            horse: {
+              include: {
+                stallAllocations: {
+                  where: { isActive: true },
+                  include: { stall: true },
+                  take: 1,
+                },
+              },
+            },
             trainingPlan: { select: { trainerUserId: true } },
           },
         },
@@ -245,6 +305,39 @@ export class SimulatorService {
         'Simulation session not found.',
       );
     }
+
+    if (
+      session.status === SimulatorSessionStatus.COMPLETED ||
+      session.status === SimulatorSessionStatus.ABORTED_INJURY
+    ) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'SIMULATOR_SESSION_FINISHED',
+        'Simulation session has already finished.',
+      );
+    }
+
+    if (
+      session.status === SimulatorSessionStatus.PENDING &&
+      Date.now() - new Date(session.createdAt).getTime() > 5 * 60 * 1000
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'SIMULATOR_SESSION_EXPIRED',
+        'Simulation session launch window has expired.',
+      );
+    }
+
+    if (
+      session.status !== SimulatorSessionStatus.PENDING &&
+      session.status !== SimulatorSessionStatus.RUNNING
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'SIMULATOR_SESSION_INVALID',
+        'Simulation session is not eligible.',
+      );
+    }
     if (session.type === SimulatorSessionType.EXAM) {
       if (actor && (actor.role !== UserRole.VETERINARIAN || session.actorUserId !== actor.userId)) {
         throw apiError(
@@ -253,7 +346,16 @@ export class SimulatorService {
           'This examination simulation belongs to another veterinarian.',
         );
       }
-      const horse = await this.prisma.horse.findUnique({ where: { id: session.horseIds[0] } });
+      const horse = await this.prisma.horse.findUnique({
+        where: { id: session.horseIds[0] },
+        include: {
+          stallAllocations: {
+            where: { isActive: true },
+            include: { stall: true },
+            take: 1,
+          },
+        },
+      });
       if (!horse) {
         throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', 'Horse not found.');
       }
@@ -273,6 +375,8 @@ export class SimulatorService {
           color: horse.color,
           status: horse.status,
           isMedicalLocked: horse.isMedicalLocked,
+          weightKg: horse.weightKg ?? null,
+          stall: horse.stallAllocations?.[0]?.stall?.code ?? null,
         },
       };
     }
@@ -318,6 +422,8 @@ export class SimulatorService {
         color: workout.horse.color,
         status: workout.horse.status,
         isMedicalLocked: workout.horse.isMedicalLocked,
+        weightKg: workout.horse.weightKg ?? null,
+        stall: workout.horse.stallAllocations?.[0]?.stall?.code ?? null,
       },
       workout: {
         id: workout.id,
@@ -595,6 +701,16 @@ export class SimulatorService {
         'Simulation session has already finished.',
       );
     }
+    if (
+      session.status === SimulatorSessionStatus.PENDING &&
+      Date.now() - new Date(session.createdAt).getTime() > 5 * 60 * 1000
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'SIMULATOR_SESSION_EXPIRED',
+        'Simulation session launch window has expired.',
+      );
+    }
     return session;
   }
 
@@ -675,10 +791,10 @@ export class SimulatorService {
       status: session.status,
       resultDraft: value
         ? {
-            temperature: value.metrics.temperature.value,
-            restingHeartRate: value.metrics.resting_heart_rate.value,
-            respiratoryRate: value.metrics.respiratory_rate.value,
-            weightKg: value.metrics.weight.value,
+            temperature: value.metrics?.temperature?.value ?? null,
+            restingHeartRate: value.metrics?.resting_heart_rate?.value ?? null,
+            respiratoryRate: value.metrics?.respiratory_rate?.value ?? null,
+            weightKg: value.metrics?.weight?.value ?? null,
             capturedAt: value.capturedAt,
             modelVersion: value.modelVersion,
             source: value.source,

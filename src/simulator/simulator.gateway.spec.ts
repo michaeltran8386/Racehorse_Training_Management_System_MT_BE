@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { Role, SeverityLevel } from '@prisma/client';
+import { Role, SeverityLevel, SimulatorSessionType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { IncidentsService } from '../incidents/incidents.service';
@@ -16,6 +16,7 @@ describe('SimulatorGateway', () => {
   let incidentsService: any;
   let realtimeService: any;
   let mockServer: any;
+  let prismaService: any;
 
   beforeEach(async () => {
     authService = {
@@ -40,6 +41,15 @@ describe('SimulatorGateway', () => {
     mockServer = {
       emit: jest.fn(),
     };
+    prismaService = {
+      user: {
+        findFirst: jest.fn(),
+        findUnique: jest.fn(),
+      },
+      simulatorSession: {
+        findUnique: jest.fn(),
+      },
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -49,19 +59,7 @@ describe('SimulatorGateway', () => {
         { provide: SimulatorService, useValue: simulatorService },
         { provide: IncidentsService, useValue: incidentsService },
         { provide: SimulatorRealtimeService, useValue: realtimeService },
-        {
-          provide: PrismaService,
-          useValue: {
-            user: {
-              findFirst: jest.fn().mockResolvedValue({
-                id: 'trainer-1',
-                email: 'trainer@equiflow.internal',
-                role: 'HEAD_TRAINER',
-                fullName: 'EquiFlow Simulator Device',
-              }),
-            },
-          },
-        },
+        { provide: PrismaService, useValue: prismaService },
       ],
     }).compile();
 
@@ -70,7 +68,7 @@ describe('SimulatorGateway', () => {
   });
 
   describe('handleConnection', () => {
-    it('connects client in public mode when token is missing', async () => {
+    it('disconnects client when both token and sessionId are missing (no fallback)', async () => {
       const mockClient: any = {
         handshake: { auth: {} },
         disconnect: jest.fn(),
@@ -79,9 +77,168 @@ describe('SimulatorGateway', () => {
 
       await gateway.handleConnection(mockClient);
 
+      expect(mockClient.disconnect).toHaveBeenCalledWith(true);
+      expect(mockClient.data.user).toBeUndefined();
+    });
+
+    it('disconnects client when token-only connection is attempted without sessionId (R-1)', async () => {
+      const mockClient: any = {
+        handshake: {
+          auth: { token: 'jwt-token-without-session' },
+        },
+        disconnect: jest.fn(),
+        data: {},
+      };
+
+      await gateway.handleConnection(mockClient);
+
+      expect(mockClient.disconnect).toHaveBeenCalledWith(true);
+      expect(mockClient.data.user).toBeUndefined();
+    });
+
+    it('disconnects client when credentials or sessionId are provided in query parameters', async () => {
+      const mockClient: any = {
+        handshake: {
+          auth: {},
+          query: { token: 'leak-in-query' },
+        },
+        disconnect: jest.fn(),
+        data: {},
+      };
+
+      await gateway.handleConnection(mockClient);
+
+      expect(mockClient.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('connects client with valid workout sessionId and resolves actor from session.actorUserId', async () => {
+      const mockClient: any = {
+        handshake: { auth: { sessionId: 'sess-workout-1' } },
+        disconnect: jest.fn(),
+        data: {},
+      };
+      prismaService.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-workout-1',
+        type: 'WORKOUT',
+        status: 'PENDING',
+        actorUserId: 'trainer-uuid-1',
+        createdAt: new Date(),
+      });
+      prismaService.user.findUnique.mockResolvedValue({
+        id: 'trainer-uuid-1',
+        email: 'headtrainer@equiflow.com',
+        role: Role.HEAD_TRAINER,
+        status: 'ACTIVE',
+        fullName: 'Head Trainer Minh',
+      });
+
+      await gateway.handleConnection(mockClient);
+
       expect(mockClient.disconnect).not.toHaveBeenCalled();
       expect(mockClient.data.user).toBeDefined();
-      expect(mockClient.data.user.role).toBe('HEAD_TRAINER');
+      expect(mockClient.data.user.userId).toBe('trainer-uuid-1');
+      expect(mockClient.data.user.role).toBe(Role.HEAD_TRAINER);
+      expect(mockClient.data.session.id).toBe('sess-workout-1');
+    });
+
+    it('connects client with valid exam sessionId and resolves actor as VETERINARIAN', async () => {
+      const mockClient: any = {
+        handshake: { auth: { sessionId: 'sess-exam-1' } },
+        disconnect: jest.fn(),
+        data: {},
+      };
+      prismaService.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-exam-1',
+        type: 'EXAM',
+        status: 'PENDING',
+        actorUserId: 'vet-uuid-1',
+        createdAt: new Date(),
+      });
+      prismaService.user.findUnique.mockResolvedValue({
+        id: 'vet-uuid-1',
+        email: 'vet@equiflow.com',
+        role: Role.VETERINARIAN,
+        status: 'ACTIVE',
+        fullName: 'Dr. Veterinarian',
+      });
+
+      await gateway.handleConnection(mockClient);
+
+      expect(mockClient.disconnect).not.toHaveBeenCalled();
+      expect(mockClient.data.user).toBeDefined();
+      expect(mockClient.data.user.userId).toBe('vet-uuid-1');
+      expect(mockClient.data.user.role).toBe(Role.VETERINARIAN);
+    });
+
+    it('disconnects client when sessionId does not exist in DB', async () => {
+      const mockClient: any = {
+        handshake: { auth: { sessionId: 'sess-non-existent' } },
+        disconnect: jest.fn(),
+        data: {},
+      };
+      prismaService.simulatorSession.findUnique.mockResolvedValue(null);
+
+      await gateway.handleConnection(mockClient);
+
+      expect(mockClient.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('disconnects client when session is in terminal state (COMPLETED)', async () => {
+      const mockClient: any = {
+        handshake: { auth: { sessionId: 'sess-finished' } },
+        disconnect: jest.fn(),
+        data: {},
+      };
+      prismaService.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-finished',
+        type: 'WORKOUT',
+        status: 'COMPLETED',
+        actorUserId: 'trainer-uuid-1',
+        createdAt: new Date(),
+      });
+
+      await gateway.handleConnection(mockClient);
+
+      expect(mockClient.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('disconnects client when PENDING session is expired (> 5 minutes)', async () => {
+      const mockClient: any = {
+        handshake: { auth: { sessionId: 'sess-expired' } },
+        disconnect: jest.fn(),
+        data: {},
+      };
+      prismaService.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-expired',
+        type: 'WORKOUT',
+        status: 'PENDING',
+        actorUserId: 'trainer-uuid-1',
+        createdAt: new Date(Date.now() - 301_000),
+      });
+
+      await gateway.handleConnection(mockClient);
+
+      expect(mockClient.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('disconnects client when cross-actor token does not match session actorUserId', async () => {
+      const mockClient: any = {
+        handshake: { auth: { sessionId: 'sess-workout-1', token: 'other-trainer-token' } },
+        disconnect: jest.fn(),
+        data: {},
+      };
+      prismaService.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-workout-1',
+        type: 'WORKOUT',
+        status: 'PENDING',
+        actorUserId: 'trainer-uuid-1',
+        createdAt: new Date(),
+      });
+      jwtService.verify.mockReturnValue({ sub: 'other-trainer-uuid' });
+
+      await gateway.handleConnection(mockClient);
+
+      expect(mockClient.disconnect).toHaveBeenCalledWith(true);
     });
 
     it('disconnects client when JWT is invalid', async () => {
@@ -137,15 +294,22 @@ describe('SimulatorGateway', () => {
       expect(mockGroomClient.disconnect).toHaveBeenCalledWith(true);
     });
 
-    it('accepts Head Trainer, Club Manager, and Veterinarian', async () => {
+    it('accepts session-bound connection with optional matching JWT token (R-1)', async () => {
       const mockTrainerClient: any = {
-        handshake: { auth: { token: 'trainer-token' } },
+        handshake: { auth: { sessionId: 'sess-workout-1', token: 'trainer-token' } },
         disconnect: jest.fn(),
         data: {},
       };
-      jwtService.verify.mockReturnValue({ sub: 'trainer-1' });
-      authService.getMe.mockResolvedValue({
-        id: 'trainer-1',
+      jwtService.verify.mockReturnValue({ sub: 'trainer-uuid-1' });
+      prismaService.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-workout-1',
+        type: 'WORKOUT',
+        status: 'PENDING',
+        actorUserId: 'trainer-uuid-1',
+        createdAt: new Date(),
+      });
+      prismaService.user.findUnique.mockResolvedValue({
+        id: 'trainer-uuid-1',
         email: 'trainer@equiflow.com',
         role: Role.HEAD_TRAINER,
         status: 'ACTIVE',
@@ -157,45 +321,66 @@ describe('SimulatorGateway', () => {
       expect(mockTrainerClient.disconnect).not.toHaveBeenCalled();
       expect(mockTrainerClient.data.user).toBeDefined();
       expect(mockTrainerClient.data.user.role).toBe(Role.HEAD_TRAINER);
+      expect(mockTrainerClient.data.session.id).toBe('sess-workout-1');
     });
 
-    it('waits for asynchronous authentication before handling the first packet', async () => {
-      let resolveProfile!: (profile: any) => void;
+    it('waits for asynchronous session authentication before handling the first packet', async () => {
+      let resolveSession!: (session: any) => void;
       const mockClient: any = {
-        handshake: { auth: { token: 'trainer-token' } },
+        handshake: { auth: { sessionId: 'sess-async-1' } },
         disconnect: jest.fn(),
         data: {},
       };
-      jwtService.verify.mockReturnValue({ sub: 'trainer-1' });
-      authService.getMe.mockReturnValue(new Promise((resolve) => (resolveProfile = resolve)));
-      simulatorService.recordFinished.mockResolvedValue({ id: 'session-1', status: 'COMPLETED' });
-
-      const connection = gateway.handleConnection(mockClient);
-      const firstPacket = gateway.handleSessionFinished(mockClient, {
-        event: 'sim:session_finished',
-        session_id: 'session-1',
-        type: 'WORKOUT',
-        status: 'COMPLETED',
-        horse: { horse_id: 'horse-1' },
-        result: {},
-      });
-      resolveProfile({
+      prismaService.simulatorSession.findUnique.mockReturnValue(
+        new Promise((resolve) => (resolveSession = resolve)),
+      );
+      prismaService.user.findUnique.mockResolvedValue({
         id: 'trainer-1',
         email: 'trainer@equiflow.com',
         role: Role.HEAD_TRAINER,
         status: 'ACTIVE',
         fullName: 'Trainer Minh',
       });
+      simulatorService.recordFinished.mockResolvedValue({
+        id: 'sess-async-1',
+        status: 'COMPLETED',
+      });
+
+      const connection = gateway.handleConnection(mockClient);
+      const firstPacket = gateway.handleSessionFinished(mockClient, {
+        event: 'sim:session_finished',
+        session_id: 'sess-async-1',
+        type: 'WORKOUT',
+        status: 'COMPLETED',
+        horse: { horse_id: 'horse-1' },
+        result: {},
+      });
+      resolveSession({
+        id: 'sess-async-1',
+        type: 'WORKOUT',
+        status: 'PENDING',
+        actorUserId: 'trainer-1',
+        horseIds: ['horse-1'],
+        createdAt: new Date(),
+      });
 
       await connection;
-      await expect(firstPacket).resolves.toEqual({ accepted: true, id: 'session-1' });
+      await expect(firstPacket).resolves.toEqual({ accepted: true, id: 'sess-async-1' });
     });
   });
 
   describe('telemetry and incident relay', () => {
     it('lets a veterinarian publish only a valid examination result', async () => {
       const client: any = {
-        data: { user: { userId: 'vet-1', role: Role.VETERINARIAN, email: 'vet@equiflow.com' } },
+        data: {
+          user: { userId: 'vet-1', role: Role.VETERINARIAN, email: 'vet@equiflow.com' },
+          session: {
+            id: 'exam-1',
+            type: SimulatorSessionType.EXAM,
+            horseIds: ['68eecf5d-1bc8-4a98-8d74-0b2399d04fe1'],
+            actorUserId: 'vet-1',
+          },
+        },
       };
       const packet = {
         event: 'sim:exam_finished' as const,
@@ -228,10 +413,58 @@ describe('SimulatorGateway', () => {
 
       await expect(
         gateway.handleExamFinished(
-          { data: { user: { ...client.data.user, role: Role.HEAD_TRAINER } } } as any,
+          {
+            data: {
+              user: { ...client.data.user, role: Role.HEAD_TRAINER },
+              session: client.data.session,
+            },
+          } as any,
           packet,
         ),
       ).resolves.toEqual({ accepted: false, code: 'FORBIDDEN' });
+    });
+
+    it('R-10: produces exactly one server broadcast and persistence call per accepted exam finish', async () => {
+      const client: any = {
+        data: {
+          user: {
+            userId: 'vet-1',
+            role: Role.VETERINARIAN,
+            email: 'vet@equiflow.com',
+            fullName: 'Dr. Vet',
+          },
+          session: {
+            id: 'exam-single-10',
+            type: SimulatorSessionType.EXAM,
+            horseIds: ['00000000-0000-4000-a002-000000000004'],
+            actorUserId: 'vet-1',
+          },
+        },
+      };
+
+      const packet: any = {
+        event: 'sim:exam_finished',
+        session_id: 'exam-single-10',
+        horse_id: '00000000-0000-4000-a002-000000000004',
+        captured_at: new Date().toISOString(),
+        model_version: 'equiflow-sim-v3',
+        source: 'EQUIFLOW_SIMULATOR',
+        metrics: {
+          temperature: { value: 38.2, unit: 'CELSIUS' },
+          resting_heart_rate: { value: 35, unit: 'BPM' },
+          respiratory_rate: { value: 12, unit: 'BREATHS_PER_MINUTE' },
+          weight: { value: 490, unit: 'KG' },
+        },
+      };
+
+      simulatorService.recordExamFinished.mockResolvedValue({ id: 'exam-single-10' });
+      jest.clearAllMocks();
+      simulatorService.recordExamFinished.mockResolvedValue({ id: 'exam-single-10' });
+      const res = await gateway.handleExamFinished(client, packet);
+      expect(res).toEqual({ accepted: true, id: 'exam-single-10' });
+      expect(simulatorService.recordExamFinished).toHaveBeenCalledTimes(1);
+      expect(mockServer.emit).toHaveBeenCalledTimes(1);
+      expect(mockServer.emit).toHaveBeenCalledWith('sim:exam_finished', packet);
     });
 
     it('relays accepted telemetry packet to subscribers', async () => {
@@ -242,6 +475,12 @@ describe('SimulatorGateway', () => {
             role: Role.HEAD_TRAINER,
             email: 'trainer@equiflow.com',
             fullName: 'Trainer Minh',
+          },
+          session: {
+            id: 'WRK-20261021-001',
+            type: SimulatorSessionType.WORKOUT,
+            horseIds: ['horse-1'],
+            actorUserId: 'trainer-1',
           },
         },
       };
@@ -307,6 +546,12 @@ describe('SimulatorGateway', () => {
               email: 'trainer@equiflow.com',
               fullName: 'Trainer Minh',
             },
+            session: {
+              id: 'session-1',
+              type: SimulatorSessionType.WORKOUT,
+              horseIds: ['horse-1'],
+              actorUserId: 'trainer-1',
+            },
           },
         };
         const validPacket: any = {
@@ -356,6 +601,12 @@ describe('SimulatorGateway', () => {
             email: 'trainer@equiflow.com',
             fullName: 'Trainer Minh',
           },
+          session: {
+            id: 'session-1',
+            type: SimulatorSessionType.WORKOUT,
+            horseIds: ['horse-1'],
+            actorUserId: 'trainer-1',
+          },
         },
       };
       const packet: any = {
@@ -386,6 +637,12 @@ describe('SimulatorGateway', () => {
             role: Role.HEAD_TRAINER,
             email: 'trainer@equiflow.com',
             fullName: 'Trainer Minh',
+          },
+          session: {
+            id: 'WRK-20261021-001',
+            type: SimulatorSessionType.WORKOUT,
+            horseIds: ['horse-1'],
+            actorUserId: 'trainer-1',
           },
         },
       };
@@ -444,6 +701,155 @@ describe('SimulatorGateway', () => {
         }),
       );
       expect(ack).toEqual({ accepted: true, id: 'inc-row-1' });
+    });
+  });
+
+  describe('session-bound packet validation (R-7)', () => {
+    const trainerUser = {
+      userId: 'trainer-1',
+      role: Role.HEAD_TRAINER,
+      email: 'trainer@equiflow.com',
+      fullName: 'Trainer Minh',
+    };
+    const sessionA = {
+      id: 'session-A',
+      type: SimulatorSessionType.WORKOUT,
+      horseIds: ['horse-1'],
+      actorUserId: 'trainer-1',
+    };
+    const clientSessionA: any = {
+      data: {
+        user: trainerUser,
+        session: sessionA,
+      },
+    };
+
+    it('rejects packet when socket authenticated with session A submits packet for session B (same actor)', async () => {
+      const packet: any = {
+        event: 'sim:telemetry_tick',
+        session_id: 'session-B', // session mismatch!
+        timestamp_ms: 1729520000000,
+        sim_time_s: 1.0,
+        sim_speed_multiplier: 1.0,
+        horse: { horse_id: 'horse-1' },
+        track: {
+          surface: 'GRASS',
+          target_distance_m: 1200,
+          covered_distance_m: 10,
+          track_condition: 'GOOD',
+          obstacles_cleared: 0,
+          obstacles_total: 0,
+        },
+        metrics: {
+          velocity_mps: 15.0,
+          heart_rate_bpm: 120,
+          stamina_pct: 99.0,
+          body_temp_c: 38.0,
+          stride_length_m: 6.0,
+          stride_freq_spm: 130,
+          calories_kcal: 20,
+        },
+        alerts: { overload_warning: false, limp_detected: false, heat_stress: false },
+      };
+
+      const result = await gateway.handleTelemetryTick(clientSessionA, packet);
+      expect(result).toEqual({ accepted: false, code: 'SESSION_MISMATCH' });
+      expect(simulatorService.recordTelemetry).not.toHaveBeenCalled();
+      expect(mockServer.emit).not.toHaveBeenCalled();
+
+      // Also verify session_finished rejection for session mismatch
+      const finishPacket: any = {
+        event: 'sim:session_finished',
+        session_id: 'session-B',
+        type: 'WORKOUT',
+        status: 'COMPLETED',
+        horse: { horse_id: 'horse-1' },
+      };
+      const finishResult = await gateway.handleSessionFinished(clientSessionA, finishPacket);
+      expect(finishResult).toEqual({ accepted: false, code: 'SESSION_MISMATCH' });
+      expect(simulatorService.recordFinished).not.toHaveBeenCalled();
+    });
+
+    it('rejects incident report for foreign horse not in authenticated session', async () => {
+      const packet: any = {
+        event: 'sim:incident_report',
+        packet_id: 'pkt-foreign-001',
+        session_id: 'session-A',
+        timestamp_ms: 1729520000000,
+        horse: { horse_id: 'foreign-horse-999' }, // foreign horse!
+        incident: {
+          kind: 'FRACTURE',
+          label: 'Gãy xương chân cấp tính',
+          location: 'STALL',
+          stall: { col: 2, row: 3 },
+        },
+      };
+
+      const result = await gateway.handleIncidentReport(clientSessionA, packet);
+      expect(result).toEqual({ accepted: false, code: 'HORSE_MISMATCH' });
+      expect(incidentsService.createFromSimulator).not.toHaveBeenCalled();
+      expect(mockServer.emit).not.toHaveBeenCalled();
+    });
+
+    it('rejects packet when event is incompatible with session type', async () => {
+      // clientSessionA is a HEAD_TRAINER with a WORKOUT session.
+      // sim:race_progress requires a RACE session.
+      const racePacket: any = {
+        event: 'sim:race_progress',
+        session_id: 'session-A',
+        sim_time_s: 5.0,
+        positions: [
+          {
+            position: 1,
+            lane: 1,
+            horse_id: 'horse-1',
+            covered_distance_m: 100,
+            gap_lengths: 0,
+            velocity_mps: 15.0,
+            heart_rate_bpm: 120,
+            status: 'RUNNING',
+          },
+        ],
+      };
+
+      const result = await gateway.handleRaceProgress(clientSessionA, racePacket);
+      expect(result).toEqual({ accepted: false, code: 'SESSION_TYPE_INCOMPATIBLE' });
+      expect(simulatorService.recordRaceProgress).not.toHaveBeenCalled();
+      expect(mockServer.emit).not.toHaveBeenCalled();
+    });
+
+    it('accepts and processes valid matching packets for session and horse', async () => {
+      const packet: any = {
+        event: 'sim:telemetry_tick',
+        session_id: 'session-A',
+        timestamp_ms: 1729520000000,
+        sim_time_s: 1.0,
+        sim_speed_multiplier: 1.0,
+        horse: { horse_id: 'horse-1' },
+        track: {
+          surface: 'GRASS',
+          target_distance_m: 1200,
+          covered_distance_m: 10,
+          track_condition: 'GOOD',
+          obstacles_cleared: 0,
+          obstacles_total: 0,
+        },
+        metrics: {
+          velocity_mps: 15.0,
+          heart_rate_bpm: 120,
+          stamina_pct: 99.0,
+          body_temp_c: 38.0,
+          stride_length_m: 6.0,
+          stride_freq_spm: 130,
+          calories_kcal: 20,
+        },
+        alerts: { overload_warning: false, limp_detected: false, heat_stress: false },
+      };
+
+      const result = await gateway.handleTelemetryTick(clientSessionA, packet);
+      expect(result).toEqual({ accepted: true });
+      expect(simulatorService.recordTelemetry).toHaveBeenCalledWith(packet, trainerUser);
+      expect(mockServer.emit).toHaveBeenCalledWith('sim:telemetry_tick', packet);
     });
   });
 });
