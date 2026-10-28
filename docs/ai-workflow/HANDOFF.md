@@ -3,13 +3,22 @@
 ## Gate state
 
 - **Plan:** v1-approved-r22 — approved Plan v1 with CR-005 through CR-023 incorporated.
-- **Last completed task:** TASK-016 — DONE and human-approved on 2026-10-28 (`APPROVE TASK-016`).
+- **Last completed task:** TASK-017 — DONE and human-approved on 2026-10-29 (`APPROVE TASK-017`).
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-017 (TODO — not authorized).
+- **Next eligible task:** TASK-018.
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Await explicit human command `START TASK-017` or commit authorization. Do not commit, push, merge, or execute TASK-017 without authorization.
+- **Do now:** Await explicit human command `START TASK-018` to begin execution of TASK-018 (Supply request/delivery simulation). Do not begin implementation, pre-work, commit, push, or merge without direct authorization. Stop.
+
+## TASK-017 boundary
+
+- Scope budget: maximum 5 files per repository (BE: 1 file, FE: 4 files, SIM: 1 file).
+- Incident reporting never auto-creates MedicalLock or MedicalRecord (ADR-007).
+- Incident clinical review is strictly restricted to licensed Veterinarians (CR-001); non-Vet reviews fail closed with HTTP 403 Forbidden.
+- Incident review modal in Main Web provides direct shortcuts to Place Training Lock and Create Medical Record with automatic horse preselection.
+- Medical lock placement/lift by Veterinarian emits `sys:medical_lock_sync` via Socket.IO. Connected Simulator session immediately enforces the lock by disabling heavy/moderate workouts and throttling running pace to safe light pace. Lifting the lock clears the block in real-time.
+- Playwright integration tests enforce fail-safe cleanup in `finally` with zero DB residue.
 
 ## Approved CR-023 TASK-016 boundary
 

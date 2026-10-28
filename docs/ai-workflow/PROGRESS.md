@@ -3,9 +3,9 @@
 **Plan:** v1-approved-r22
 **Plan approval:** APPROVED — explicit `APPROVE PLAN v1` recorded 2026-10-24  
 **Active task:** NONE (IDLE)
-**Next eligible task:** TASK-017 (TODO — not authorized)
+**Next eligible task:** TASK-018 (TODO — not authorized)
 **Planned first task:** TASK-001  
-**Last updated:** 2026-10-28 (Asia/Bangkok)
+**Last updated:** 2026-10-29 (Asia/Bangkok)
 
 This file reports progress only. It never authorizes implementation; `STATE.md`, recorded approval and a direct current-session `START TASK-XXX` command are all required.
 
@@ -13,11 +13,11 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 
 | State | Count |
 | --- | ---: |
-| TODO | 3 |
+| TODO | 2 |
 | BLOCKED | 0 |
 | IN_PROGRESS | 0 |
 | AWAITING_USER_QA | 0 |
-| DONE | 17 |
+| DONE | 18 |
 
 ## Task status
 
@@ -40,13 +40,17 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 | TASK-014 | DONE | Approved 2026-10-28; report in reports/TASK-014.md |
 | TASK-015 | DONE | Approved 2026-10-28; report in reports/TASK-015.md |
 | TASK-016 | DONE | Approved 2026-10-28; report in reports/TASK-016.md |
-| TASK-017 | TODO — not authorized | TASK-005, TASK-009, TASK-016 |
+| TASK-017 | DONE | Approved 2026-10-29; report in reports/TASK-017.md |
 | TASK-018 | TODO — not authorized | TASK-006, TASK-015 |
 | TASK-019 | TODO — not authorized | TASK-010, TASK-014–018, TASK-020 |
 
 ## Recent decisions
 
-- TASK-016 was approved on 2026-10-28 (`APPROVE TASK-016`) following complete verification of multi-trainer ownership scoping, fail-closed boundaries, TrialRunsPage filter auto-expansion, atomic finish/abort transitions, watchdog timers, and fail-safe deterministic fixture cleanup. Status is DONE, execution is IDLE, and next task is TASK-017 (unauthorized). Awaits explicit human command START TASK-017.
+- TASK-017 was approved on 2026-10-29 (`APPROVE TASK-017`) following complete verification of real application contracts across NestJS API, Main Web UI, and Simulator Socket.IO, strictly non-destructive fixture isolation, correlated-only cleanup, sentinel concurrency preservation proof, accepted workout restoration, and passing Playwright tests on both viewports. Status is DONE. Execution is IDLE; TASK-018 remains unauthorized.
+
+- TASK-017 was rejected on 2026-10-29 00:09 (`REJECT TASK-017`) requiring strictly correlated Notification/AuditLog cleanup (never deleting rows solely because IDs were absent from pre-test snapshot), sentinel concurrency preservation check, zero test-correlated residue assertions, and preservation of accepted workout restoration. Requirement R-10 has been fully resolved, verified with sentinel concurrency proof, zero-residue assertions, and confirmed passing across both viewports (`desktop-1280` in 18.0s, `desktop-1440` in 14.9s). TASK-017 is AWAITING_USER_QA.
+
+- TASK-016 was approved on 2026-10-28 (`APPROVE TASK-016`) following complete verification of multi-trainer ownership scoping, fail-closed boundaries, TrialRunsPage filter auto-expansion, atomic finish/abort transitions, watchdog timers, and fail-safe deterministic fixture cleanup. Status is DONE.
 
 - CR-023 was approved on 2026-10-28 and incorporated into v1-approved-r22: expands TASK-016 scope by 4 additional files to exactly 11 application/test files (adding BE training-plans.service.ts, workouts.service.ts, training-services.spec.ts, FE TrialRunsPage.tsx), scopes Head Trainer training plans, workouts, and trial runs to current user, enforces fail-closed cross-trainer mutations, filters Trial Runs actionable simulation rows, and expands date filter to make created trials immediately visible. Blocker is removed; execution returns to IDLE; TASK-016 requires a new direct START TASK-016. TASK-017 remains unauthorized.
 - CR-022 was approved on 2026-10-28 and incorporated into v1-approved-r21: expands TASK-016 scope to exactly 7 application/test files (authorizing simulator.service.spec.ts and simulator.gateway.spec.ts), requires conditional atomic abort transitions only from PENDING/RUNNING, guarantees single persisted terminal outcome / broadcast, defines 5m absolute running watchdog starting at 1st tick, clears timers on finish/abort/reconnect/teardown, and requires 7 fake-clock/concurrency tests. Blocker is removed; execution returns to IDLE; TASK-016 requires a new direct START TASK-016. TASK-017 remains unauthorized.

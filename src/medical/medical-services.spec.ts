@@ -901,4 +901,116 @@ describe('Medical services', () => {
       );
     });
   });
+
+  describe('TASK-017: Incident -> Vet review -> Medical Lock -> Lift round-trip invariants', () => {
+    it('proves Vet-only clinical review and lock placement emits sys:medical_lock_sync with medical_lock: true', async () => {
+      mockPrismaService.horse.findUnique.mockResolvedValue({
+        id: 'horse-t017',
+        name: 'Thunderbolt QA',
+        status: 'IN_TRAINING',
+        medicalLocks: [],
+        isMedicalLocked: false,
+      });
+      mockPrismaService.medicalLock.findFirst.mockResolvedValue(null);
+      mockPrismaService.medicalLock.count.mockResolvedValue(0);
+      mockPrismaService.medicalLock.create.mockResolvedValue({
+        id: 'lock-t017',
+        lockCode: 'KH-000017',
+        horseId: 'horse-t017',
+        isLocked: true,
+        recheckDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      });
+
+      const lockResult = await locks.createMedicalLock(mockVetUser, {
+        horseId: 'horse-t017',
+        expectedRestDays: 14,
+        lockReason: 'Acute tendon strain post trial run',
+        appliedMedicalStatus: 'INJURED',
+        unlockConditions: 'Complete resolution of lameness on palpation',
+      });
+
+      expect(lockResult.id).toBe('lock-t017');
+      expect(mockPrismaService.horse.update).toHaveBeenCalledWith({
+        where: { id: 'horse-t017' },
+        data: expect.objectContaining({ isMedicalLocked: true, status: 'INJURED' }),
+      });
+      expect(mockRealtimeService.emit).toHaveBeenCalledWith(
+        'sys:medical_lock_sync',
+        expect.objectContaining({
+          event: 'sys:medical_lock_sync',
+          horse_id: 'horse-t017',
+          medical_lock: true,
+          issued_by_role: 'VETERINARIAN',
+          lock_actions: ['BLOCK_HEAVY_WORKOUT', 'BLOCK_TOURNAMENT_ENTRY'],
+          note: 'Acute tendon strain post trial run',
+        }),
+      );
+    });
+
+    it('proves lifting medical lock restores isMedicalLocked: false and emits sys:medical_lock_sync with medical_lock: false', async () => {
+      mockPrismaService.medicalLock.findUnique.mockResolvedValue({
+        id: 'lock-t017',
+        horseId: 'horse-t017',
+        isLocked: true,
+        horse: {
+          id: 'horse-t017',
+          name: 'Thunderbolt QA',
+          isMedicalLocked: true,
+          status: 'INJURED',
+          injuryLogs: [],
+        },
+      });
+      mockPrismaService.medicalLock.update.mockResolvedValue({
+        id: 'lock-t017',
+        isLocked: false,
+        horseId: 'horse-t017',
+      });
+
+      const releaseResult = await locks.releaseMedicalLock('lock-t017', mockVetUser, {
+        unlockReason: 'Full clinical recovery verified by veterinarian',
+        newHorseStatus: 'IN_TRAINING' as any,
+      });
+
+      expect(releaseResult).toBeDefined();
+      expect(mockPrismaService.horse.update).toHaveBeenCalledWith({
+        where: { id: 'horse-t017' },
+        data: expect.objectContaining({ isMedicalLocked: false, status: 'IN_TRAINING' }),
+      });
+      expect(mockRealtimeService.emit).toHaveBeenCalledWith(
+        'sys:medical_lock_sync',
+        expect.objectContaining({
+          event: 'sys:medical_lock_sync',
+          horse_id: 'horse-t017',
+          medical_lock: false,
+          issued_by_role: 'VETERINARIAN',
+          lock_actions: [],
+          note: 'Full clinical recovery verified by veterinarian',
+        }),
+      );
+    });
+
+    it('rejects non-Vet actors attempting to place or lift medical lock (fail-closed)', async () => {
+      const nonVetUser: CurrentUserPayload = {
+        userId: 'trainer-1',
+        email: 'trainer@example.com',
+        role: Role.HEAD_TRAINER,
+        fullName: 'Head Trainer',
+        permissions: {},
+      };
+
+      await expect(
+        locks.createMedicalLock(nonVetUser, {
+          horseId: 'horse-t017',
+          expectedRestDays: 7,
+          lockReason: 'Unauthorized lock',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        locks.releaseMedicalLock('lock-t017', nonVetUser, {
+          unlockReason: 'Unauthorized unlock',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
 });

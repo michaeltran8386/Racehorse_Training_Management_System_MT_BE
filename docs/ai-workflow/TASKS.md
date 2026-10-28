@@ -289,11 +289,13 @@
 
 ## TASK-017 — Incident→Vet→Lock round trip
 
+- **Status:** DONE
 - **Objective:** Prove advisory incident becomes a human-reviewed medical action and then synchronizes back to SIM.
 - **Dependencies:** TASK-005, TASK-009, TASK-016.
 - **Files likely touched:** BE incident/simulator/medical focused specs; FE incident/medical page components verified at task start; SIM `src/ui/VetZone.tsx` or `App.tsx` only if a UI gap is proven.
 - **Acceptance:** incident persists and alerts; Vet reviews and explicitly creates record/lock; lock blocks active heavy action and future heavy/race entry; lift restores only allowed state; no automatic record/lock.
 - **Automated:** focused BE integration/E2E, FE/SIM real-stack E2E, SIM isolated unit tests.
+- **Execution Evidence:** `reports/TASK-017.md`.
 - **Manual QA:** produce injury in SIM, handle in Vet Web, observe lock/lift in SIM and affected actor views.
 - **Scope:** must be split by repository if >5 files after exact gap check; no implementation until split is approved.
 
