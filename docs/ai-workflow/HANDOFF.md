@@ -2,14 +2,32 @@
 
 ## Gate state
 
-- **Plan:** v1-approved-r18 — approved Plan v1 with CR-005 through CR-019 incorporated.
-- **Last completed task:** TASK-013 — DONE and human-approved on 2026-10-27 (`APPROVE TASK-013`, superseding typo `APPROVE TASK-013v`).
+- **Plan:** v1-approved-r20 — approved Plan v1 with CR-005 through CR-021 incorporated.
+- **Last completed task:** TASK-015 — DONE and human-approved on 2026-10-28 (`APPROVE TASK-015`).
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-014 (awaiting explicit human command `START TASK-014`).
+- **Next eligible task:** TASK-016 (TODO; requires new exact `START TASK-016`).
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Await explicit human command `START TASK-014`. Do not commit, push, merge, edit `_v3`, or start TASK-014.
+- **Do now:** Human issues `START TASK-016` when ready. TASK-016 remains unauthorized.
+
+## Approved CR-021 TASK-015 boundary
+
+- Simulator functional areas are not Main-Web roles. Do not add Club Manager/Groom inspection-session endpoints, role-filtered catalogue views or Main-Web launch buttons.
+- Direct canonical Simulator access has no secondary login/session gate for catalogue browsing and loads the complete real horse/stall dataset from Backend/PostgreSQL.
+- Direct mode is non-authoritative: it cannot mutate horse/stall master data or persist official workout/exam/incident/lock/inventory outcomes without a matching Backend-issued workflow session.
+- TASK-015 proves real catalogue identity/mapping, refresh/restart persistence and visible no-fallback failure within the existing five-file budget.
+- TASK-016 owns trial write-back; TASK-017 owns incident/Vet/Medical Lock; TASK-018 owns supplies.
+
+## Approved CR-020 corrective TASK-014 boundary
+
+- Root `setup-db.bat` exclusively performs the intentional local database reset/seed and must fail closed on Docker, PostgreSQL, dependency, Prisma or seed failure.
+- Root `start.bat` does not reset data. It starts the real stack in one Windows Terminal with exactly four tabs: Backend, Frontend, canonical `Racehorse_Simulator_Web`, and PostgreSQL/Docker visibility. It reports success only after bounded real health checks pass.
+- Root `stop.bat` is explicitly authorized to force-stop EquiFlow listeners on 3000/5173/5175 and `equiflow-postgres`, then must verify shutdown rather than print unconditional success.
+- Exact application scope is the three root scripts. `_v3`, application source, schema/migrations, dependencies and TASK-015 are out of scope.
+- Required manual order is `stop.bat -> setup-db.bat -> start.bat -> verify four tabs and three health URLs -> stop.bat -> verify shutdown`.
+- Existing uncommitted TASK-014 files are preserved. The previous `AWAITING_USER_QA` report is superseded and must be reconciled by AGY after the new start.
+- The workspace root is not Git-tracked; therefore the report must disclose that root scripts cannot be delivered to teammates by pulling the current three repositories.
 
 ## Completed CR-019 corrective Slice H
 
@@ -106,4 +124,4 @@
 - Retain the verified R-1/R-2/R-3/R-4 protections.
 - CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`. In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
 
-Plan v1-approved-r18 is approved and incorporated. TASK-001 through TASK-013 and TASK-020 are DONE and human-approved. Existing TASK-013 work remains uncommitted in working trees across the 29 authorized files. Execution is IDLE. TASK-014 remains unauthorized until explicit human command `START TASK-014`.
+Plan v1-approved-r20 is approved and incorporated. TASK-001 through TASK-015 and TASK-020 are DONE and human-approved. The three TASK-014 root `.bat` files are accepted as local-only and will not be committed. Execution is IDLE. TASK-016 remains unauthorized until explicit human command `START TASK-016`.

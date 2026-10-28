@@ -456,3 +456,73 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
 - **Downstream boundary:** this pulls only draft hydration/visibility from TASK-016. Persisting the final Head Trainer-approved workout result, live-monitor completion, incident workflow and broader trial realtime flow remain TASK-016. No Backend, schema, migration, seed, dependency, Simulator source, `.bat`, `_v3`, TASK-014 or other later-task work is proposed.
 - **Execution gate:** TASK-013 is `BLOCKED` pending CR-019. Approval would create Plan `v1-approved-r18`, return execution to `IDLE`, retain `next_task: TASK-013`, and require a new exact `START TASK-013 CODEX`. Approval would not approve/commit TASK-013, start TASK-014, push or merge.
 - **Target plan version:** v1-approved-r18.
+
+## CR-020 — Separate database reset from four-tab runtime launcher and force-stop lifecycle
+
+- **State:** APPROVED by exact human command `APPROVE CR-020` on 2026-10-28.
+- **Raised by:** ChatGPT review plus direct human clarification after TASK-014 returned `AWAITING_USER_QA`.
+- **Related plan:** v1-approved-r18 / TASK-014; incorporated into Plan v1-approved-r19.
+- **Rejected prior handoff:** the current `start.bat` opens only three tabs and reports success after a fixed delay without proving BE/FE/SIM health; `stop.bat` prints unconditional success; the separate existing `setup-db.bat` is outside the approved two-file scope and can falsely fall through to PostgreSQL-ready after timeout.
+- **Approved lifecycle:** `setup-db.bat` owns intentional local reset/seed; `start.bat` owns non-destructive runtime startup; `stop.bat` owns forced local teardown. The required manual order is `stop -> setup-db -> start -> verify -> stop`.
+- **Four-tab contract:** one Windows Terminal contains Backend 3000, Frontend 5173, canonical Simulator 5175, and PostgreSQL/Docker status or logs. `start.bat` must never run database reset/seed and must not report success/open browsers until bounded real health checks pass.
+- **Force-stop authority:** the human explicitly authorizes `stop.bat` to force-terminate EquiFlow listeners on 3000/5173/5175 and stop `equiflow-postgres`. It must verify ports/container are stopped and fail non-zero with diagnostics if teardown is incomplete.
+- **Exact scope:** expand TASK-014 from two to exactly three root files: `setup-db.bat`, `start.bat`, `stop.bat`. Canonical coordination/report files do not expand application scope. No application source, schema/migration, dependency, `_v3`, TASK-015 or later-task work is authorized.
+- **Failure behavior:** Docker/Compose, PostgreSQL readiness, dependency installation, Prisma generation, database setup and service-health failures are actionable non-zero exits. No mock/fallback data.
+- **Delivery limitation:** the workspace root is not a Git repository, so these scripts cannot be delivered to other members by pulling the existing BE/FE/SIM repositories. This must be reported truthfully; changing repository layout requires a separate approval.
+- **Sequence:** approval supersedes the previous TASK-014 `AWAITING_USER_QA` handoff, returns execution to `IDLE`, and retains TASK-014 as next. AGY needs a new direct `START TASK-014`; approval does not modify scripts, approve/commit TASK-014, push, merge or start TASK-015.
+- **Target plan version:** v1-approved-r19.
+
+## CR-021 — Simulator Session Issuance & Main-Web Launch for Club Manager and Groom
+
+- **State:** PROPOSED
+- **Raised by:** Human Rejection of TASK-015 (`/browser-testing-with-devtools REJECT TASK-015`, R-3), 2026-10-28.
+- **Related plan:** v1-approved-r19 / TASK-015.
+- **Verified architectural gap:**
+  1. In the Backend, simulation session issuance endpoints strictly require Head Trainer or Veterinarian:
+     - `POST /api/simulator/workouts/:workoutId/start` requires `@Roles(UserRole.HEAD_TRAINER)`.
+     - `POST /api/simulator/horses/:horseId/exams/start` requires `@Roles(UserRole.VETERINARIAN)`.
+     - Attempting to call either endpoint as Club Manager or Groom yields HTTP 403 Forbidden.
+  2. In the Frontend (Main Web), simulation launch actions only exist in:
+     - `src/features/training/pages/TrialRunsPage.tsx` (for Head Trainer trial runs).
+     - `src/features/health/pages/RecordFormPage.tsx` (for Veterinarian medical exams).
+     - There is zero UI in Main Web for Club Manager or Groom to launch the Simulator.
+  3. Consequently, testing a real "Main Web -> Simulator" browser launch flow for Club Manager or Groom is physically impossible without adding new session-issuance endpoints in Backend and launch UI in Frontend.
+  4. TASK-015 is currently constrained to a 5-file scope in TASKS.md ("Change BE simulator service/spec or SIM API/mapper tests only for a proven broader cross-role gap"). Adding session issuance routes and Frontend UI buttons exceeds the approved 5-file scope.
+  5. As instructed by R-3: "If CM/Groom session issuance or UI launch does not exist within the approved five-file scope, mark TASK-015 BLOCKED and propose a CR with the exact minimum files. Do not invent a query-token workaround."
+- **Proposed minimum scope:**
+  - Backend (3 files):
+    1. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.controller.ts`:
+       - Allow Club Manager in `startWorkout` or provide dedicated inspection session endpoint `POST /api/simulator/horses/:horseId/inspections/start` for CM and Groom.
+       - Allow Groom to issue an inspection simulation session for horses assigned to their active stall.
+    2. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.service.ts`:
+       - Implement inspection session issuance logic verifying active stall assignment for Grooms and club-wide authority for Club Manager.
+    3. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.service.spec.ts`:
+       - Unit tests for CM and Groom session issuance.
+  - Frontend (2 files):
+    4. `Racehorse_Training_Management_System_MT_FE/src/features/horses/pages/HorseDetailPage.tsx`:
+       - Add Simulator launch button for Club Manager to inspect horse in simulator.
+    5. `Racehorse_Training_Management_System_MT_FE/src/features/stalls/pages/StallManagementPage.tsx`:
+       - Add Simulator launch button for assigned Groom to inspect assigned horse in simulator.
+- **Security & Authorization invariants:**
+  - Launch URL must contain `sessionId` only, never `token`.
+  - Backend must resolve actor identity from `session.actorUserId` in PostgreSQL.
+  - Assigned Groom session must return masked 15-character microchip (`***********XXXX`) and active stall.
+  - Full microchip must be visible only to authorized roles (Club Manager, Head Trainer, Veterinarian).
+  - Unassigned groom, horse owner, inactive or mismatched actors must fail closed with HTTP 403.
+- **Execution impact:** TASK-015 is marked `BLOCKED`. Awaiting ChatGPT architecture review and explicit human approval (`APPROVE CR-021`).
+- **Target plan version:** v1-approved-r20 (pending approval).
+
+### Planner correction and human-approved resolution
+
+- **State:** INCORPORATED
+- **Human decision:** 2026-10-28 — exact command `APPROVE CR-021` in the current Codex conversation.
+- **Clarified product intent:** the Simulator is not a second role-scoped Main Web. Its Groom, Vet, Track and other areas are simulation functions, not authenticated Main-Web personas. Direct Simulator access requires no secondary login and may browse the complete real horse/stall dataset from Backend/PostgreSQL. It must not maintain a duplicate source of truth.
+- **Superseded proposal:** do **not** add Club Manager/Groom inspection-session endpoints, role-filtered Groom views, Main-Web CM/Groom launch buttons, a new `INSPECTION` enum, or a schema migration. The proposed five-file issuance/UI expansion above is rejected by this clarification and is retained only as proposal history.
+- **Approved runtime boundary:**
+  1. Opening canonical `Racehorse_Simulator_Web` without `sessionId` loads the complete real horse/stall catalogue from Backend/PostgreSQL without a login screen or role filtering.
+  2. Direct mode may run local simulation interactions, but it may not mutate horse/stall master data or persist an official workout, exam, incident, lock, inventory transaction or other Main-Web business result without the matching Backend-issued workflow/session contract.
+  3. A Main-Web-issued `sessionId` remains mandatory only for authoritative write-back. It binds measurements/results to the exact workout, exam or later approved workflow; the URL contains `sessionId` only, never an access/refresh token.
+  4. TASK-015 covers real read-only horse/stall catalogue loading, UUID identity, full 15-digit microchip preservation, active-stall mapping, refresh/restart persistence and visible no-fallback failure. It does not implement CM/Groom launch UI or role-filtered Simulator catalogues.
+  5. TASK-016 owns workout/trial telemetry and persisted result write-back; TASK-017 owns incident/Vet/Medical Lock synchronization; TASK-018 owns supply request/delivery synchronization. TASK-015 must not pre-implement those paths.
+- **Execution gate:** approval removes the CR blocker and incorporates Plan `v1-approved-r20`, but does not resume the blocked execution automatically. State returns to `IDLE`, `next_task` remains TASK-015, and AGY requires a new exact `START TASK-015`. TASK-016 remains unauthorized.
+- **Target plan version:** v1-approved-r20.

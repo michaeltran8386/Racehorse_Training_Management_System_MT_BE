@@ -210,3 +210,24 @@ Do not silently amend accepted decisions; create an ADR and/or CR entry and requ
 - This limited hydration/visibility slice moves into TASK-013; final trainer-approved persistence and broader live-monitor workflow remain TASK-016.
 - Accepted limitation: after the Head Trainer edits imported result fields in `SessionResultPage.tsx`, the Simulator reload button (`Tải chỉ số từ Simulator` / `Tải lại`) becomes disabled until the page is reloaded or edits are discarded, preventing unintended overwrite of in-progress trainer manual edits.
 
+## ADR-026 — Windows local lifecycle is split into setup, start and force-stop scripts
+
+- **Date:** 2026-10-28
+- **Status:** ACCEPTED by `APPROVE CR-020` on 2026-10-28.
+- **Decision:** root `setup-db.bat` is the only script that intentionally resets/seeds the local database; root `start.bat` starts the non-destructive runtime in one four-tab Windows Terminal; root `stop.bat` force-stops the EquiFlow local listeners and PostgreSQL container.
+- **Startup truthfulness:** fixed delay is not readiness. Success requires bounded checks of Backend health/database connectivity, Frontend and canonical Simulator. No launcher references `_v3` or enables runtime mock/fallback.
+- **Shutdown truthfulness:** forced termination is explicitly authorized for the local EquiFlow ports/container, but success requires verifying the listeners and container are stopped.
+- **Delivery trade-off:** the three scripts remain at the user-required workspace-root paths, which are outside all current Git repositories. They are local deliverables until a separate repository-layout decision authorizes a tracked distribution mechanism.
+- **Impacted task:** TASK-014 only.
+
+## ADR-027 — Simulator areas are functions, not Main-Web role views
+
+- **Date:** 2026-10-28
+- **Status:** ACCEPTED by `APPROVE CR-021` on 2026-10-28.
+- **Decision:** canonical Simulator has no secondary login and direct access loads the complete real horse/stall catalogue from Backend/PostgreSQL. Groom, Vet, Track and other Simulator areas describe simulation functions; they do not inherit Main-Web persona filtering.
+- **Authority boundary:** Backend/PostgreSQL remains the only master-data source. Direct Simulator mode may browse and run local simulation interactions but cannot mutate horse/stall master data or persist an official business outcome without the matching Backend-issued workflow session.
+- **Session boundary:** `sessionId` is required for authoritative workout, exam and later approved workflow write-back, not for catalogue browsing. Session URLs never contain access or refresh tokens.
+- **Rejected expansion:** no Club Manager/Groom inspection endpoint, role-filtered Groom catalogue, Main-Web inspection-launch UI, `INSPECTION` enum or schema migration is added.
+- **Task boundary:** TASK-015 validates direct real catalogue loading and persistence/no-fallback behavior; TASK-016 owns trial telemetry/results, TASK-017 owns incident/Vet/Medical Lock and TASK-018 owns supplies.
+- **Impacted tasks:** TASK-015–TASK-018.
+

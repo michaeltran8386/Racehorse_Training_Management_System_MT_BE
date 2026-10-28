@@ -21,14 +21,93 @@ describe('SimulatorService', () => {
     role: Role.VETERINARIAN,
     fullName: 'Veterinarian',
   };
+  const mockCM: CurrentUserPayload = {
+    userId: 'cm-1',
+    email: 'cm@equiflow.com',
+    role: Role.CLUB_MANAGER,
+    fullName: 'Club Manager',
+  };
+  const mockGroom: CurrentUserPayload = {
+    userId: 'groom-1',
+    email: 'groom@equiflow.com',
+    role: Role.GROOM,
+    fullName: 'Assigned Groom',
+  };
+  const mockUnassignedGroom: CurrentUserPayload = {
+    userId: 'groom-2',
+    email: 'othergroom@equiflow.com',
+    role: Role.GROOM,
+    fullName: 'Other Groom',
+  };
+  const mockOwner: CurrentUserPayload = {
+    userId: 'owner-1',
+    email: 'owner@equiflow.com',
+    role: Role.HORSE_OWNER,
+    fullName: 'Horse Owner',
+  };
 
   beforeEach(async () => {
     prisma = {
       $transaction: jest.fn(async (callback: (tx: any) => unknown) => callback(prisma)),
+      user: {
+        findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+          const userMap: Record<string, any> = {
+            [mockActor.userId]: {
+              id: mockActor.userId,
+              email: mockActor.email,
+              role: Role.HEAD_TRAINER,
+              status: 'ACTIVE',
+            },
+            [mockVet.userId]: {
+              id: mockVet.userId,
+              email: mockVet.email,
+              role: Role.VETERINARIAN,
+              status: 'ACTIVE',
+            },
+            [mockCM.userId]: {
+              id: mockCM.userId,
+              email: mockCM.email,
+              role: Role.CLUB_MANAGER,
+              status: 'ACTIVE',
+            },
+            [mockGroom.userId]: {
+              id: mockGroom.userId,
+              email: mockGroom.email,
+              role: Role.GROOM,
+              status: 'ACTIVE',
+            },
+            [mockUnassignedGroom.userId]: {
+              id: mockUnassignedGroom.userId,
+              email: mockUnassignedGroom.email,
+              role: Role.GROOM,
+              status: 'ACTIVE',
+            },
+            [mockOwner.userId]: {
+              id: mockOwner.userId,
+              email: mockOwner.email,
+              role: Role.HORSE_OWNER,
+              status: 'ACTIVE',
+            },
+            'trainer-owner-uuid': {
+              id: 'trainer-owner-uuid',
+              email: 'other@eq.com',
+              role: Role.HEAD_TRAINER,
+              status: 'ACTIVE',
+            },
+            'vet-owner-uuid': {
+              id: 'vet-owner-uuid',
+              email: 'othervet@eq.com',
+              role: Role.VETERINARIAN,
+              status: 'ACTIVE',
+            },
+          };
+          return userMap[where.id] ?? null;
+        }),
+      },
       workoutSession: {
         findUnique: jest.fn(),
       },
-      horse: { findUnique: jest.fn() },
+      horse: { findUnique: jest.fn(), findMany: jest.fn() },
       simulatorSession: {
         upsert: jest.fn(),
         create: jest.fn(),
@@ -205,7 +284,13 @@ describe('SimulatorService', () => {
       isMedicalLocked: false,
       medicalLocks: [],
       weightKg: 490,
-      stallAllocations: [{ id: 'alloc-1', stall: { id: 'stall-1', code: 'A-01', zone: 'Zone A' } }],
+      stallAllocations: [
+        {
+          id: 'alloc-1',
+          assignedGroomUserId: 'groom-1',
+          stall: { id: 'stall-1', code: 'A-01', zone: 'Zone A' },
+        },
+      ],
     },
   });
 
@@ -666,10 +751,333 @@ describe('SimulatorService', () => {
         workoutSession: null,
       };
       prisma.simulatorSession.findUnique.mockResolvedValue(examSession);
+      prisma.horse.findUnique.mockResolvedValue(eligibleWorkout().horse);
 
       await expect(service.getContext('sess-exam-1', mockVet)).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'SIMULATOR_SESSION_FORBIDDEN' }),
       });
+    });
+
+    it('allows CLUB_MANAGER to get context for workout session (returns unmasked 15-digit chip and active stall)', async () => {
+      const session = issuedSession({
+        id: 'sess-cm-wrk-1',
+        status: 'PENDING',
+        createdAt: new Date(),
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      const ctx = await service.getContext('sess-cm-wrk-1', mockCM);
+
+      expect(ctx.type).toBe('WORKOUT');
+      expect(ctx.horse.id).toBe('horse-uuid-1');
+      expect(ctx.horse.microchipRfid).toBe('985141000000001');
+      expect(ctx.horse.stall).toBe('A-01');
+    });
+
+    it('allows CLUB_MANAGER to get context for exam session (returns unmasked 15-digit chip and active stall)', async () => {
+      const examSession = {
+        id: 'sess-cm-exam-1',
+        type: 'EXAM',
+        status: 'PENDING',
+        createdAt: new Date(),
+        horseIds: ['horse-uuid-1'],
+        actorUserId: mockVet.userId,
+        medicalRecordId: 'rec-1',
+        workoutSession: null,
+      };
+      prisma.simulatorSession.findUnique.mockResolvedValue(examSession);
+      prisma.horse.findUnique.mockResolvedValue(eligibleWorkout().horse);
+
+      const ctx = await service.getContext('sess-cm-exam-1', mockCM);
+
+      expect(ctx.type).toBe('EXAM');
+      expect(ctx.horse.id).toBe('horse-uuid-1');
+      expect(ctx.horse.microchipRfid).toBe('985141000000001');
+      expect(ctx.horse.stall).toBe('A-01');
+    });
+
+    it('allows assigned GROOM to get context for workout session with masked 15-digit chip and active stall', async () => {
+      const session = issuedSession({
+        id: 'sess-groom-wrk-1',
+        status: 'PENDING',
+        createdAt: new Date(),
+        actorUserId: mockGroom.userId,
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      const ctx = await service.getContext('sess-groom-wrk-1', mockGroom);
+
+      expect(ctx.type).toBe('WORKOUT');
+      expect(ctx.horse.id).toBe('horse-uuid-1');
+      expect(ctx.horse.microchipRfid).toBe('***********0001');
+      expect(ctx.horse.microchipRfid?.length).toBe(15);
+      expect(ctx.horse.stall).toBe('A-01');
+    });
+
+    it('allows assigned GROOM to get context for exam session with masked 15-digit chip and active stall', async () => {
+      const examSession = {
+        id: 'sess-groom-exam-1',
+        type: 'EXAM',
+        status: 'PENDING',
+        createdAt: new Date(),
+        horseIds: ['horse-uuid-1'],
+        actorUserId: mockGroom.userId,
+        medicalRecordId: null,
+        workoutSession: null,
+      };
+      prisma.simulatorSession.findUnique.mockResolvedValue(examSession);
+      prisma.horse.findUnique.mockResolvedValue(eligibleWorkout().horse);
+
+      const ctx = await service.getContext('sess-groom-exam-1', mockGroom);
+
+      expect(ctx.type).toBe('EXAM');
+      expect(ctx.horse.id).toBe('horse-uuid-1');
+      expect(ctx.horse.microchipRfid).toBe('***********0001');
+      expect(ctx.horse.microchipRfid?.length).toBe(15);
+      expect(ctx.horse.stall).toBe('A-01');
+    });
+
+    it('rejects unassigned GROOM with 403 SIMULATOR_SESSION_FORBIDDEN on workout session', async () => {
+      const session = issuedSession({
+        id: 'sess-groom-wrk-1',
+        status: 'PENDING',
+        createdAt: new Date(),
+        actorUserId: mockUnassignedGroom.userId,
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      await expect(
+        service.getContext('sess-groom-wrk-1', mockUnassignedGroom),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'SIMULATOR_SESSION_FORBIDDEN',
+          message: 'You are not assigned to groom this horse.',
+        }),
+      });
+    });
+
+    it('rejects unassigned GROOM with 403 SIMULATOR_SESSION_FORBIDDEN on exam session', async () => {
+      const examSession = {
+        id: 'sess-groom-exam-1',
+        type: 'EXAM',
+        status: 'PENDING',
+        createdAt: new Date(),
+        horseIds: ['horse-uuid-1'],
+        actorUserId: mockUnassignedGroom.userId,
+        medicalRecordId: null,
+        workoutSession: null,
+      };
+      prisma.simulatorSession.findUnique.mockResolvedValue(examSession);
+      prisma.horse.findUnique.mockResolvedValue(eligibleWorkout().horse);
+
+      await expect(
+        service.getContext('sess-groom-exam-1', mockUnassignedGroom),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'SIMULATOR_SESSION_FORBIDDEN',
+          message: 'You are not assigned to groom this horse.',
+        }),
+      });
+    });
+
+    it('rejects HORSE_OWNER with 403 SIMULATOR_TRAINER_REQUIRED on workout session', async () => {
+      const session = issuedSession({
+        id: 'sess-owner-wrk-1',
+        status: 'PENDING',
+        createdAt: new Date(),
+        actorUserId: mockOwner.userId,
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      await expect(service.getContext('sess-owner-wrk-1', mockOwner)).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'SIMULATOR_TRAINER_REQUIRED',
+        }),
+      });
+    });
+
+    it('rejects HORSE_OWNER with 403 SIMULATOR_SESSION_FORBIDDEN on exam session', async () => {
+      const examSession = {
+        id: 'sess-owner-exam-1',
+        type: 'EXAM',
+        status: 'PENDING',
+        createdAt: new Date(),
+        horseIds: ['horse-uuid-1'],
+        actorUserId: mockOwner.userId,
+        medicalRecordId: null,
+        workoutSession: null,
+      };
+      prisma.simulatorSession.findUnique.mockResolvedValue(examSession);
+      prisma.horse.findUnique.mockResolvedValue(eligibleWorkout().horse);
+
+      await expect(service.getContext('sess-owner-exam-1', mockOwner)).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'SIMULATOR_SESSION_FORBIDDEN',
+        }),
+      });
+    });
+
+    it('proves REST actor identity binds to persisted session actor when actor is null (assigned Groom returns masked chip)', async () => {
+      const session = issuedSession({
+        id: 'sess-groom-wrk-null-actor',
+        status: 'PENDING',
+        createdAt: new Date(),
+        actorUserId: mockGroom.userId,
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      const ctx = await service.getContext('sess-groom-wrk-null-actor', null);
+
+      expect(ctx.horse.microchipRfid).toBe('***********0001');
+      expect(ctx.horse.microchipRfid?.length).toBe(15);
+      expect(ctx.horse.stall).toBe('A-01');
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: mockGroom.userId },
+        select: { id: true, email: true, role: true, status: true },
+      });
+    });
+
+    it('proves no actor-null path leaks an unmasked chip when session actor is unassigned or unauthorized', async () => {
+      const unassignedSession = issuedSession({
+        id: 'sess-unassigned-wrk-null-actor',
+        status: 'PENDING',
+        createdAt: new Date(),
+        actorUserId: mockUnassignedGroom.userId,
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(unassignedSession);
+
+      await expect(
+        service.getContext('sess-unassigned-wrk-null-actor', null),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'SIMULATOR_SESSION_FORBIDDEN',
+          message: 'You are not assigned to groom this horse.',
+        }),
+      });
+    });
+
+    it('rejects getContext when session actor is inactive or suspended in database', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce({
+        id: mockActor.userId,
+        email: mockActor.email,
+        role: Role.HEAD_TRAINER,
+        status: 'INACTIVE',
+      });
+      const session = issuedSession({
+        id: 'sess-inactive-actor',
+        status: 'PENDING',
+        createdAt: new Date(),
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      await expect(service.getContext('sess-inactive-actor', null)).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'SIMULATOR_SESSION_FORBIDDEN',
+          message: 'Session actor is invalid or inactive.',
+        }),
+      });
+    });
+
+    it('rejects caller when authenticated actor does not match persisted session actor and is not CLUB_MANAGER', async () => {
+      const session = issuedSession({
+        id: 'sess-mismatch',
+        status: 'PENDING',
+        createdAt: new Date(),
+        actorUserId: mockActor.userId,
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue(session);
+
+      await expect(service.getContext('sess-mismatch', mockGroom)).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'SIMULATOR_SESSION_FORBIDDEN',
+          message: 'This simulation session belongs to another user.',
+        }),
+      });
+    });
+  });
+
+  describe('getHorsesForSimulator', () => {
+    it('returns complete real horse catalogue with 15-digit microchips, active stalls, and weight', async () => {
+      prisma.horse.findMany.mockResolvedValue([
+        {
+          id: 'horse-uuid-1',
+          name: 'QA Zephyr Wind',
+          horseCode: 'QA-HR-000001',
+          microchipRfid: '985141099000001',
+          microchip: '985141099000001',
+          breed: 'Thoroughbred',
+          color: 'Bay',
+          gender: 'Colt',
+          dob: new Date('2021-03-15'),
+          status: 'ACTIVE',
+          isMedicalLocked: false,
+          weightKg: 490,
+          stallAllocations: [
+            {
+              id: 'alloc-1',
+              stall: { id: 'stall-1', code: 'STALL-QA01', zone: 'Zone QA' },
+            },
+          ],
+        },
+        {
+          id: 'horse-uuid-2',
+          name: 'QA Shadow Runner',
+          horseCode: 'QA-HR-000010',
+          microchipRfid: '985141099000010',
+          microchip: '985141099000010',
+          breed: 'Thoroughbred',
+          color: 'Grey',
+          gender: 'Colt',
+          dob: new Date('2021-03-15'),
+          status: 'IN_TRAINING',
+          isMedicalLocked: false,
+          weightKg: 505,
+          stallAllocations: [],
+        },
+      ]);
+
+      const result = await service.getHorsesForSimulator();
+
+      expect(prisma.horse.findMany).toHaveBeenCalledWith({
+        where: { deletedAt: null },
+        select: expect.objectContaining({
+          id: true,
+          name: true,
+          horseCode: true,
+          microchipRfid: true,
+          microchip: true,
+          breed: true,
+          color: true,
+          gender: true,
+          dob: true,
+          status: true,
+          isMedicalLocked: true,
+          weightKg: true,
+          stallAllocations: expect.any(Object),
+        }),
+        orderBy: { name: 'asc' },
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          id: 'horse-uuid-1',
+          name: 'QA Zephyr Wind',
+          microchip: '985141099000001',
+          microchipRfid: '985141099000001',
+          weightKg: 490,
+          stallCode: 'STALL-QA01',
+          zone: 'Zone QA',
+        }),
+      );
+      expect(result[1]).toEqual(
+        expect.objectContaining({
+          id: 'horse-uuid-2',
+          name: 'QA Shadow Runner',
+          stallCode: null,
+          zone: null,
+        }),
+      );
     });
   });
 });

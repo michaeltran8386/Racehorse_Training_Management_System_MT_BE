@@ -257,6 +257,7 @@ export class SimulatorService {
         dob: true,
         status: true,
         isMedicalLocked: true,
+        weightKg: true,
         stallAllocations: {
           where: { isActive: true },
           select: {
@@ -275,9 +276,15 @@ export class SimulatorService {
     }));
   }
 
+  private maskMicrochip(chip?: string | null): string {
+    if (!chip) return '';
+    if (chip.length <= 4) return '****';
+    return '*'.repeat(chip.length - 4) + chip.slice(-4);
+  }
+
   async getContext(
     sessionId: string,
-    actor?: CurrentUserPayload,
+    actor?: CurrentUserPayload | null,
   ): Promise<WorkoutSimulationContext | ExamSimulationContext> {
     const session = await this.prisma.simulatorSession.findUnique({
       where: { id: sessionId },
@@ -288,7 +295,7 @@ export class SimulatorService {
               include: {
                 stallAllocations: {
                   where: { isActive: true },
-                  include: { stall: true },
+                  include: { stall: true, assignedGroom: true },
                   take: 1,
                 },
               },
@@ -338,20 +345,36 @@ export class SimulatorService {
         'Simulation session is not eligible.',
       );
     }
+
+    // R-2: Bind REST context to the persisted SimulatorSession actor from PostgreSQL
+    const sessionActor = await this.prisma.user.findUnique({
+      where: { id: session.actorUserId },
+      select: { id: true, email: true, role: true, status: true },
+    });
+    if (!sessionActor || sessionActor.status !== 'ACTIVE') {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_SESSION_FORBIDDEN',
+        'Session actor is invalid or inactive.',
+      );
+    }
+
+    // Caller check: an arbitrary JWT cannot override or hijack another actor's session (except CM cross-role observation)
+    if (actor && actor.userId !== session.actorUserId && actor.role !== UserRole.CLUB_MANAGER) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_SESSION_FORBIDDEN',
+        'This simulation session belongs to another user.',
+      );
+    }
+
     if (session.type === SimulatorSessionType.EXAM) {
-      if (actor && (actor.role !== UserRole.VETERINARIAN || session.actorUserId !== actor.userId)) {
-        throw apiError(
-          HttpStatus.FORBIDDEN,
-          'SIMULATOR_SESSION_FORBIDDEN',
-          'This examination simulation belongs to another veterinarian.',
-        );
-      }
       const horse = await this.prisma.horse.findUnique({
         where: { id: session.horseIds[0] },
         include: {
           stallAllocations: {
             where: { isActive: true },
-            include: { stall: true },
+            include: { stall: true, assignedGroom: true },
             take: 1,
           },
         },
@@ -359,6 +382,35 @@ export class SimulatorService {
       if (!horse) {
         throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', 'Horse not found.');
       }
+
+      const activeStall = horse.stallAllocations?.[0];
+      const activeStallCode = activeStall?.stall?.code ?? null;
+      let isGroom = false;
+
+      if (sessionActor.role === UserRole.GROOM) {
+        if (!activeStall || activeStall.assignedGroomUserId !== sessionActor.id) {
+          throw apiError(
+            HttpStatus.FORBIDDEN,
+            'SIMULATOR_SESSION_FORBIDDEN',
+            'You are not assigned to groom this horse.',
+          );
+        }
+        isGroom = true;
+      } else if (sessionActor.role === UserRole.VETERINARIAN) {
+        isGroom = false;
+      } else if (sessionActor.role === UserRole.CLUB_MANAGER) {
+        isGroom = false;
+      } else {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'SIMULATOR_SESSION_FORBIDDEN',
+          'Access to this examination simulation is not permitted for your role.',
+        );
+      }
+
+      const rawChip = horse.microchipRfid || horse.microchip || '';
+      const microchip = isGroom ? this.maskMicrochip(rawChip) : rawChip;
+
       return {
         type: 'EXAM',
         sessionId: session.id,
@@ -368,7 +420,7 @@ export class SimulatorService {
           id: horse.id,
           horseCode: horse.horseCode,
           name: horse.name,
-          microchipRfid: horse.microchipRfid,
+          microchipRfid: microchip,
           breed: horse.breed,
           dob: horse.dob,
           gender: horse.gender,
@@ -376,28 +428,11 @@ export class SimulatorService {
           status: horse.status,
           isMedicalLocked: horse.isMedicalLocked,
           weightKg: horse.weightKg ?? null,
-          stall: horse.stallAllocations?.[0]?.stall?.code ?? null,
+          stall: activeStallCode,
         },
       };
     }
-    if (actor && actor.role !== UserRole.HEAD_TRAINER) {
-      throw apiError(
-        HttpStatus.FORBIDDEN,
-        'SIMULATOR_TRAINER_REQUIRED',
-        'Only the assigned head trainer can open this simulation.',
-      );
-    }
-    if (
-      actor &&
-      (session.actorUserId !== actor.userId ||
-        session.workoutSession?.trainingPlan.trainerUserId !== actor.userId)
-    ) {
-      throw apiError(
-        HttpStatus.FORBIDDEN,
-        'SIMULATOR_SESSION_FORBIDDEN',
-        'This simulation session belongs to another trainer.',
-      );
-    }
+
     const workout = session.workoutSession;
     if (!workout) {
       throw apiError(
@@ -407,23 +442,65 @@ export class SimulatorService {
       );
     }
 
+    const horse = workout.horse;
+    const activeStall = horse.stallAllocations?.[0];
+    const activeStallCode = activeStall?.stall?.code ?? null;
+    let isGroom = false;
+
+    if (sessionActor.role === UserRole.GROOM) {
+      if (!activeStall || activeStall.assignedGroomUserId !== sessionActor.id) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'SIMULATOR_SESSION_FORBIDDEN',
+          'You are not assigned to groom this horse.',
+        );
+      }
+      isGroom = true;
+    } else if (sessionActor.role === UserRole.HEAD_TRAINER) {
+      if (workout.trainingPlan.trainerUserId !== sessionActor.id) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'SIMULATOR_SESSION_FORBIDDEN',
+          'This simulation session belongs to another trainer.',
+        );
+      }
+      isGroom = false;
+    } else if (sessionActor.role === UserRole.CLUB_MANAGER) {
+      isGroom = false;
+    } else if (sessionActor.role === UserRole.HORSE_OWNER) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_TRAINER_REQUIRED',
+        'Only the assigned head trainer can open this simulation.',
+      );
+    } else {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_SESSION_FORBIDDEN',
+        'Only the assigned head trainer can open this simulation.',
+      );
+    }
+
+    const rawChip = horse.microchipRfid || horse.microchip || '';
+    const microchip = isGroom ? this.maskMicrochip(rawChip) : rawChip;
+
     return {
       type: 'WORKOUT',
       sessionId: session.id,
       status: session.status,
       horse: {
-        id: workout.horse.id,
-        horseCode: workout.horse.horseCode,
-        name: workout.horse.name,
-        microchipRfid: workout.horse.microchipRfid,
-        breed: workout.horse.breed,
-        dob: workout.horse.dob,
-        gender: workout.horse.gender,
-        color: workout.horse.color,
-        status: workout.horse.status,
-        isMedicalLocked: workout.horse.isMedicalLocked,
-        weightKg: workout.horse.weightKg ?? null,
-        stall: workout.horse.stallAllocations?.[0]?.stall?.code ?? null,
+        id: horse.id,
+        horseCode: horse.horseCode,
+        name: horse.name,
+        microchipRfid: microchip,
+        breed: horse.breed,
+        dob: horse.dob,
+        gender: horse.gender,
+        color: horse.color,
+        status: horse.status,
+        isMedicalLocked: horse.isMedicalLocked,
+        weightKg: horse.weightKg ?? null,
+        stall: activeStallCode,
       },
       workout: {
         id: workout.id,

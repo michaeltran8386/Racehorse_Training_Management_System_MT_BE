@@ -1,6 +1,6 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r18
+**Version:** v1-approved-r20
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
@@ -30,6 +30,10 @@ Revision r16 incorporates approved CR-017 after the next Human Manual QA found a
 Revision r17 incorporates approved CR-018 after Human Manual QA found that 60× playback produced too few chart samples to communicate simulated variation and that the Trial Runs scheduling entry point defaulted to `CANTER`. TASK-013 gains corrective Slice G: retain 1 Hz real-time Socket.IO transport while sampling the visual chart by simulated time, and preselect `TRIAL` in the existing scheduling dialog. For this continuation only, Codex may replace AGY after a separate direct `START TASK-013 CODEX`; TASK-014 and later tasks retain the default AGY executor.
 
 Revision r18 incorporates approved CR-019 after Human Manual QA found that future scheduled trials looked unavailable without a visible reason and that an already-open result form did not refresh or identify Simulator-imported values on focus. TASK-013 gains corrective Slice H in exactly one additional FE application file plus two already-authorized files; scheduled-time authority remains server-enforced and subjective trainer fields are never fabricated.
+
+Revision r19 incorporates approved CR-020 after launcher review rejected TASK-014. Database reset/seed is isolated in root `setup-db.bat`; runtime startup uses root `start.bat` to open one Windows Terminal with four tabs for Backend, Frontend, canonical Simulator and PostgreSQL/Docker visibility; root `stop.bat` is explicitly allowed to force-stop the EquiFlow local ports and PostgreSQL container. TASK-014 expands from two to exactly three root scripts, must verify real health before success, and requires a new direct `START TASK-014`.
+
+Revision r20 incorporates approved CR-021 and corrects the Simulator product boundary: Simulator functional areas are not Main-Web role personas. Direct canonical Simulator access has no secondary login or role-filtered catalogue and reads the complete real horse/stall dataset from Backend/PostgreSQL. Backend-issued workflow sessions remain mandatory only for authoritative result/event write-back. TASK-015 therefore validates the real catalogue and no-fallback behavior without adding CM/Groom inspection endpoints, launch buttons, an `INSPECTION` enum or a migration; TASK-016–018 retain their respective write-back flows.
 
 > Không task nào được triển khai trước `APPROVE PLAN v1` và một lệnh `START TASK-XXX` riêng trong phiên AGY.
 
@@ -109,9 +113,10 @@ Conflict với hard invariant phải có CR và phê duyệt; không tự chọn
 ### 6.2 Ownership dữ liệu và xác thực
 
 - PostgreSQL/Backend là system of record cho horse, stall, workout/trial, incident, lock, supply request và inventory.
-- Main Web xác thực actor và yêu cầu Backend tạo/ủy quyền session.
-- Simulator không có màn đăng nhập. Nó bootstrap bằng session ngắn hạn do Main Web mở; không đưa access token dài hạn vào URL/localStorage.
-- `sessionId` là capability ngắn hạn do Backend phát hành: context và Socket.IO phải cùng xác thực session, trạng thái và actor; không được fallback sang một Head Trainer mặc định khi thiếu JWT/session.
+- Main Web xác thực actor và yêu cầu Backend tạo/ủy quyền session cho các thao tác ghi kết quả nghiệp vụ.
+- Simulator không có màn đăng nhập. Direct mode tải catalogue horse/stall đầy đủ, chỉ đọc, từ Backend/PostgreSQL; các khu Groom/Vet/Track là khu chức năng mô phỏng, không phải Main-Web role view.
+- `sessionId` là capability ngắn hạn do Backend phát hành cho authoritative write-back: context và Socket.IO phải cùng xác thực session, trạng thái và actor; không đưa access token dài hạn vào URL/localStorage và không fallback sang actor mặc định.
+- Direct mode không có `sessionId` có thể chạy tương tác mô phỏng cục bộ nhưng không được sửa master data hoặc persist kết quả/workflow chính thức.
 - Backend kiểm tra actor, ownership, RBAC, medical lock và trạng thái trước khi trả context; session thiếu, sai, terminal hoặc quá hạn bị từ chối.
 - Main Web và Simulator chỉ có real runtime mode. Backend/PostgreSQL không sẵn sàng phải tạo lỗi kết nối rõ ràng; không được chuyển sang dữ liệu mẫu hoặc giả lập thành công.
 
@@ -218,6 +223,8 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - **CR-017 đã duyệt và hợp nhất:** TASK-013 thêm Slice F để chặn terminal-session relaunch, giữ missing weight là unavailable, hiển thị tên/mã ngựa trong medical-record list và chuẩn hóa fixture `QA T013` idempotent.
 - **CR-018 đã duyệt và hợp nhất:** TASK-013 thêm Slice G để tách biểu đồ theo thời gian mô phỏng khỏi telemetry 1 Hz thời gian thực, mặc định đúng loại `TRIAL` khi tạo lịch từ Trial Runs, và cho phép Codex thực thi riêng continuation này sau lệnh `START TASK-013 CODEX`.
 - **CR-019 đã duyệt và hợp nhất:** TASK-013 thêm Slice H để hiển thị rõ thời điểm được phép chạy, refresh/import draft kết quả Simulator khi mount/focus/retry và phân biệt dữ liệu khách quan với đánh giá bắt buộc của Head Trainer.
+- **CR-020 đã duyệt và hợp nhất:** TASK-014 dùng ba root script local-only cho reset/seed, khởi động real stack bằng một Windows Terminal bốn tab và force-stop có xác minh. Ba script không được Git theo dõi và được human chấp nhận là local-only.
+- **CR-021 đã duyệt và hợp nhất:** direct Simulator hiển thị toàn bộ catalogue horse/stall thật mà không login hoặc role filtering; session chỉ bắt buộc cho authoritative write-back. Không thêm CM/Groom inspection endpoint/UI, enum hay migration. TASK-015 được trả về TODO và cần lệnh `START TASK-015` mới.
 
-Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-019 as v1-approved-r18. TASK-001 through TASK-012 and TASK-020 are DONE and human-approved. TASK-013 corrective Slice H is active under exact `START TASK-013 CODEX`; this does not approve or commit TASK-013 and does not authorize TASK-014.
+Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-021 as v1-approved-r20. TASK-001 through TASK-014 and TASK-020 are DONE and human-approved. Execution is IDLE. TASK-015 is next but remains unauthorized until exact `START TASK-015`.
 

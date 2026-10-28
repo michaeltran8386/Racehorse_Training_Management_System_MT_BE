@@ -1,6 +1,6 @@
-# Task Breakdown — Plan v1-approved-r18
+# Task Breakdown — Plan v1-approved-r20
 
-> Approved specification with CR-005 through CR-019 incorporated. AGY remains the default executor. CR-019 permits Codex to execute only the TASK-013 Slice H continuation after the human separately sends `START TASK-013 CODEX`. One task per run.
+> Approved specification with CR-005 through CR-021 incorporated. AGY remains the default executor. One task per run.
 
 | ID | Goal | Depends on | Status |
 | --- | --- | --- | --- |
@@ -18,8 +18,8 @@
 | TASK-020 | Expand controlled Web manual-QA dataset | 011 | DONE |
 | TASK-012 | Reconcile SIM realtime engine and transport | 020 | DONE |
 | TASK-013 | Bind canonical v3 SIM to Main-Web session with real browser/data acceptance | 012 | DONE |
-| TASK-014 | Switch launcher to canonical SIM repo | 013 | TODO |
-| TASK-015 | Complete horse/stall Web→SIM data flow | 002, 006, 007, 014 | TODO |
+| TASK-014 | Three-script local setup/start/stop launcher using canonical SIM | 013 | DONE |
+| TASK-015 | Complete real horse/stall catalogue→SIM data flow | 002, 006, 007, 014 | DONE |
 | TASK-016 | Complete trial session realtime flow | 004, 015 | TODO |
 | TASK-017 | Complete incident→Vet→Lock round trip | 005, 009, 016 | TODO |
 | TASK-018 | Complete supply request/delivery simulation | 006, 015 | TODO |
@@ -230,28 +230,35 @@
 
 ## TASK-014 — Launcher uses canonical SIM
 
-- **Objective:** Ensure one-click scripts install/start/stop the Git Simulator on port 5175.
+- **Status:** DONE
+- **Objective:** Provide an explicit three-script Windows lifecycle: reset/seed the local PostgreSQL database, start the complete real stack in one four-tab terminal, and force-stop all EquiFlow local runtime.
 - **Dependencies:** TASK-013.
-- **Deferral:** CR-014 leaves this task TODO for later. Manual Docker/npm startup is used until the human separately sends `START TASK-014`; TASK-013 must not edit launcher files.
-- **Files likely touched:** root `start.bat`, `stop.bat`; canonical coordination files only if launcher evidence changes the handoff.
-- **Acceptance:** no runtime reference to `_v3`; BE 3000, FE 5173 and SIM 5175 start once against PostgreSQL; launcher never enables mock mode; stop closes them; missing Backend/DB/dependencies produce actionable errors and no fallback data.
-- **Automated:** script syntax/static path check and SIM build; do not terminate user processes during automated checks without authorization.
-- **Manual QA:** run start/stop on Windows and visit all health URLs.
-- **Scope:** S (2 files).
+- **Corrective scope under CR-020:** preserve the uncommitted TASK-014 work, but supersede the prior two-file/three-tab QA handoff. Execution resumes only after a new direct `START TASK-014`.
+- **Files likely touched:** exactly root `setup-db.bat`, `start.bat`, `stop.bat`; canonical coordination/report files do not expand application scope.
+- **`setup-db.bat`:** warn that the operation resets local data; verify Node/npm/Docker and the canonical local target; start/create `equiflow-postgres`; fail non-zero on Compose, PostgreSQL readiness, dependency, Prisma or `npm run db:setup` failure; report success only after deterministic seed completion.
+- **`start.bat`:** never reset or seed data; ensure required dependencies and Docker/PostgreSQL runtime are available; use `Racehorse_Simulator_Web`, never `_v3`; open exactly one Windows Terminal with four tabs for Backend 3000, Frontend 5173, canonical Simulator 5175 and PostgreSQL/Docker status or logs; bounded-poll BE health, FE and SIM before printing success or opening browsers; no mock flag or fallback data.
+- **`stop.bat`:** human explicitly authorizes forced termination of the EquiFlow listeners on ports 3000/5173/5175 and stopping `equiflow-postgres`; verify afterward that all three ports are closed and the container is stopped, otherwise exit non-zero with diagnostics.
+- **Acceptance:** the ordered lifecycle `stop.bat -> setup-db.bat -> start.bat` produces one real PostgreSQL-backed stack; four visible tabs use the canonical repos; BE health reports database connected, FE and SIM respond, no `_v3` or runtime mock path is used; false-success paths are eliminated; stop leaves no EquiFlow listener or database container running.
+- **Automated:** static syntax/path/zero-`_v3` checks and existing relevant build checks; do not run the destructive reset or force-stop scripts automatically without separate runtime authorization.
+- **Manual QA:** from a stopped local stack, run `setup-db.bat`, then `start.bat`; verify four tabs and `http://localhost:3000/api/health`, `http://localhost:5173`, `http://localhost:5175`; run `stop.bat` and verify the URLs/ports fail and `equiflow-postgres` is stopped; exercise at least one controlled failure and confirm non-zero/actionable output.
+- **Delivery limitation:** the workspace root is not a Git repository, so these three root scripts cannot be distributed by pulling any of the three current repositories. The report must state this truthfully; resolving team distribution requires a separately approved repository-layout decision.
+- **Scope:** S (exactly 3 root scripts).
 
 ### Checkpoint SIM
 
 - Canonical Git Simulator only; `_v3` untouched; no secondary login or reachable runtime sample-data path; full SIM gates pass against real Backend/PostgreSQL before synchronization work begins.
 
-## TASK-015 — Broader horse/stall Web→SIM authorization flow
+## TASK-015 — Real horse/stall catalogue→SIM data flow
 
-- **Objective:** Extend the real single-session horse/stall baseline moved into TASK-013 to the broader authorized cross-role flow; registration remains CM-only in Main Web.
+- **Status:** DONE — Approved 2026-10-28; report in reports/TASK-015.md
+- **Objective:** Let the canonical Simulator open directly without a secondary login and browse the complete real horse/stall catalogue from Backend/PostgreSQL. Simulator functional areas are not Main-Web role views; do not add CM/Groom launch UI or role-filter the catalogue.
 - **Dependencies:** TASK-002, TASK-006, TASK-007, TASK-014.
-- **Files likely touched:** verify the TASK-013 context/mapper baseline first; change BE simulator service/spec or SIM API/mapper tests only for a proven broader cross-role gap, without recreating a Simulator-side source of truth.
-- **Acceptance:** context uses horse UUID as key; 15-digit microchip preserved/masked; active stall shown; unauthorized horse/session rejected; no Simulator-side duplicate source of truth.
-- **Automated:** focused BE simulator tests + SIM isolated mapper/API tests and build; real-stack Web→API→DB→SIM integration for authorized and rejected sessions.
-- **Manual QA:** using real Backend/PostgreSQL, CM creates/assigns horse in Web, launches SIM and verifies data; Groom launch shows only assignment/masked chip; restart and confirm the same persisted horse/stall context.
-- **Scope:** M (5 files).
+- **Files likely touched:** reconcile the existing public Simulator horse/stall catalogue endpoint/client and mapper baseline first; use the existing five-file budget unless a proven gap requires another CR. No schema/migration or Main-Web launch page is expected.
+- **Acceptance:** direct port 5175 access has no login/session gate for catalogue browsing; all real horses and active stalls load from Backend/PostgreSQL; horse UUID is the key; full 15-digit microchip and active stall are preserved; reload/restart reflects persisted changes; Backend/DB failure is visible and never falls back to mock/sample/default horses; Simulator cannot mutate master data. Authoritative business write-back still requires the matching Backend-issued workflow session.
+- **Automated:** focused BE catalogue/service tests plus SIM client/mapper tests, typecheck/build and real-stack browser coverage with no request interception or mock data. Prove direct catalogue load, a Web-side horse/stall change visible after Simulator reload, and fail-closed behavior when Backend is unavailable.
+- **Manual QA:** open Simulator directly without `sessionId` or login; find multiple real horses and verify UUID/name/full chip/active stall against Main Web/PostgreSQL; change or reassign one horse/stall through authorized Main Web, reload Simulator and see the update; restart stack and verify persistence; stop Backend and confirm a visible error with no sample data. Do not test CM/Groom-specific Simulator views because they no longer exist by design.
+- **Boundary:** TASK-016 owns trial telemetry/result write-back, TASK-017 owns incident/Vet/Medical Lock synchronization, and TASK-018 owns supplies. TASK-015 must not pre-implement them.
+- **Scope:** M (maximum 5 application/test files); canonical coordination/report files do not count.
 
 ## TASK-016 — Trial session realtime
 
