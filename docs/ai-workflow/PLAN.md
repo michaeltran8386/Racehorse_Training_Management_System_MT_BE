@@ -1,6 +1,6 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r20
+**Version:** v1-approved-r22
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
@@ -34,6 +34,10 @@ Revision r18 incorporates approved CR-019 after Human Manual QA found that futur
 Revision r19 incorporates approved CR-020 after launcher review rejected TASK-014. Database reset/seed is isolated in root `setup-db.bat`; runtime startup uses root `start.bat` to open one Windows Terminal with four tabs for Backend, Frontend, canonical Simulator and PostgreSQL/Docker visibility; root `stop.bat` is explicitly allowed to force-stop the EquiFlow local ports and PostgreSQL container. TASK-014 expands from two to exactly three root scripts, must verify real health before success, and requires a new direct `START TASK-014`.
 
 Revision r20 incorporates approved CR-021 and corrects the Simulator product boundary: Simulator functional areas are not Main-Web role personas. Direct canonical Simulator access has no secondary login or role-filtered catalogue and reads the complete real horse/stall dataset from Backend/PostgreSQL. Backend-issued workflow sessions remain mandatory only for authoritative result/event write-back. TASK-015 therefore validates the real catalogue and no-fallback behavior without adding CM/Groom inspection endpoints, launch buttons, an `INSPECTION` enum or a migration; TASK-016–018 retain their respective write-back flows.
+
+Revision r21 incorporates approved CR-022: TASK-016 expands to exactly 7 application/test files adding `simulator.service.spec.ts` and `simulator.gateway.spec.ts`. Enforces conditional atomic transitions for abort and normal finish only from PENDING/RUNNING, single persisted terminal outcome and wire broadcast, 5-minute running watchdog timer from 1st tick, 15-second disconnect grace period, timer lifecycle cleanup, and fake-clock/concurrency unit test coverage.
+
+Revision r22 incorporates approved CR-023 after Human Manual QA found that Head Trainer training plans, workouts, and trial runs were not properly scoped by trainerUserId in Backend queries and that Trial Runs ignored the created trial date filter. TASK-016 expands by 4 additional files (BE `training-plans.service.ts`, `workouts.service.ts`, `training-services.spec.ts`, FE `TrialRunsPage.tsx`; total 11 files across workspace) to enforce strict Head Trainer data scoping, fail-closed cross-trainer mutations, actionable simulation row filtering, and immediate date filter visibility for created trials. Execution returns to IDLE awaiting explicit START TASK-016.
 
 > Không task nào được triển khai trước `APPROVE PLAN v1` và một lệnh `START TASK-XXX` riêng trong phiên AGY.
 
@@ -225,6 +229,8 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - **CR-019 đã duyệt và hợp nhất:** TASK-013 thêm Slice H để hiển thị rõ thời điểm được phép chạy, refresh/import draft kết quả Simulator khi mount/focus/retry và phân biệt dữ liệu khách quan với đánh giá bắt buộc của Head Trainer.
 - **CR-020 đã duyệt và hợp nhất:** TASK-014 dùng ba root script local-only cho reset/seed, khởi động real stack bằng một Windows Terminal bốn tab và force-stop có xác minh. Ba script không được Git theo dõi và được human chấp nhận là local-only.
 - **CR-021 đã duyệt và hợp nhất:** direct Simulator hiển thị toàn bộ catalogue horse/stall thật mà không login hoặc role filtering; session chỉ bắt buộc cho authoritative write-back. Không thêm CM/Groom inspection endpoint/UI, enum hay migration. TASK-015 được trả về TODO và cần lệnh `START TASK-015` mới.
+- **CR-022 đã duyệt và hợp nhất:** TASK-016 mở rộng phạm vi chính xác 7 tệp (thêm `simulator.service.spec.ts` và `simulator.gateway.spec.ts`), bắt buộc conditional atomic transition cho abort và normal finish chỉ từ PENDING/RUNNING, đảm bảo single persisted terminal outcome và broadcast, 5m running watchdog timer từ tick đầu tiên, 15s disconnect grace timer và fake-clock/concurrency tests.
+- **CR-023 đã duyệt và hợp nhất:** TASK-016 mở rộng phạm vi thêm 4 tệp (BE `training-plans.service.ts`, `workouts.service.ts`, `training-services.spec.ts`, FE `TrialRunsPage.tsx`; tổng cộng đúng 11 tệp), giới hạn training plans, workouts và trial runs của Head Trainer theo trainerUserId hiện tại, fail-closed khi thao tác plan/workout của trainer khác, chỉ hiển thị nút chạy mô phỏng cho trainer sở hữu và cập nhật dải ngày để thấy ngay trial vừa tạo.
 
-Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-021 as v1-approved-r20. TASK-001 through TASK-014 and TASK-020 are DONE and human-approved. Execution is IDLE. TASK-015 is next but remains unauthorized until exact `START TASK-015`.
+Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-005 through CR-023 incorporated as v1-approved-r22. TASK-001 through TASK-015 and TASK-020 are DONE and human-approved. Execution is IDLE; next_task is TASK-016 awaiting direct `START TASK-016`. TASK-017 remains unauthorized.
 

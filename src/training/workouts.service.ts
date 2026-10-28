@@ -350,6 +350,9 @@ export class WorkoutsService {
       if (!plan) {
         throw apiError(HttpStatus.NOT_FOUND, 'PLAN_NOT_FOUND', 'Training plan not found.');
       }
+      if (user.role === UserRole.HEAD_TRAINER && plan.trainerUserId !== user.userId) {
+        throw apiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'This plan belongs to another trainer.');
+      }
       await tx.$queryRaw`SELECT "id" FROM "TrainingPlan" WHERE "id" = ${planId} FOR UPDATE`;
       await tx.$queryRaw`SELECT "id" FROM "Horse" WHERE "id" = ${plan.horseId} FOR UPDATE`;
 
@@ -391,6 +394,9 @@ export class WorkoutsService {
       const plan = await tx.trainingPlan.findUnique({ where: { id: planId } });
       if (!plan) {
         throw apiError(HttpStatus.NOT_FOUND, 'PLAN_NOT_FOUND', 'Training plan not found.');
+      }
+      if (user.role === UserRole.HEAD_TRAINER && plan.trainerUserId !== user.userId) {
+        throw apiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'This plan belongs to another trainer.');
       }
       await tx.$queryRaw`SELECT "id" FROM "TrainingPlan" WHERE "id" = ${planId} FOR UPDATE`;
       await tx.$queryRaw`SELECT "id" FROM "Horse" WHERE "id" = ${plan.horseId} FOR UPDATE`;
@@ -498,6 +504,16 @@ export class WorkoutsService {
       if (!existing) {
         throw apiError(HttpStatus.NOT_FOUND, 'WORKOUT_NOT_FOUND', 'Workout session not found.');
       }
+      if (
+        user.role === UserRole.HEAD_TRAINER &&
+        existing.trainingPlan?.trainerUserId !== user.userId
+      ) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'FORBIDDEN',
+          'This workout belongs to another trainer.',
+        );
+      }
       previousGroomId = existing.assignedStaffUserId;
       if (existing.status !== WorkoutStatus.SCHEDULED || existing.scheduledDate <= new Date()) {
         throw apiError(
@@ -581,9 +597,22 @@ export class WorkoutsService {
    */
   async recordResult(workoutId: string, dto: RecordWorkoutResultDto, user: CurrentUserPayload) {
     const updated = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.workoutSession.findUnique({ where: { id: workoutId } });
+      const existing = await tx.workoutSession.findUnique({
+        where: { id: workoutId },
+        include: { trainingPlan: true },
+      });
       if (!existing) {
         throw apiError(HttpStatus.NOT_FOUND, 'WORKOUT_NOT_FOUND', 'Workout session not found.');
+      }
+      if (
+        user.role === UserRole.HEAD_TRAINER &&
+        existing.trainingPlan?.trainerUserId !== user.userId
+      ) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'FORBIDDEN',
+          'This workout belongs to another trainer.',
+        );
       }
       await tx.$queryRaw`SELECT "id" FROM "WorkoutSession" WHERE "id" = ${workoutId} FOR UPDATE`;
       const now = new Date();
@@ -719,9 +748,18 @@ export class WorkoutsService {
 
   /** DL-2.05 Hủy buổi tập Đã lên lịch / Bị chặn / Bỏ lỡ (HT). */
   async cancelWorkout(workoutId: string, dto: CancelWorkoutDto, user: CurrentUserPayload) {
-    const existing = await this.prisma.workoutSession.findUnique({ where: { id: workoutId } });
+    const existing = await this.prisma.workoutSession.findUnique({
+      where: { id: workoutId },
+      include: { trainingPlan: true },
+    });
     if (!existing) {
       throw apiError(HttpStatus.NOT_FOUND, 'WORKOUT_NOT_FOUND', 'Workout session not found.');
+    }
+    if (
+      user.role === UserRole.HEAD_TRAINER &&
+      existing.trainingPlan?.trainerUserId !== user.userId
+    ) {
+      throw apiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'This workout belongs to another trainer.');
     }
     if (!PENDING_WORKOUT_STATUSES.includes(existing.status)) {
       throw apiError(
@@ -759,6 +797,16 @@ export class WorkoutsService {
       });
       if (!existing) {
         throw apiError(HttpStatus.NOT_FOUND, 'WORKOUT_NOT_FOUND', 'Workout session not found.');
+      }
+      if (
+        user.role === UserRole.HEAD_TRAINER &&
+        existing.trainingPlan?.trainerUserId !== user.userId
+      ) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'FORBIDDEN',
+          'This workout belongs to another trainer.',
+        );
       }
       if (existing.status !== WorkoutStatus.BLOCKED) {
         throw apiError(
@@ -847,6 +895,8 @@ export class WorkoutsService {
       where.horse = { deletedAt: null, ownerId: user.userId };
     } else if (user.role === UserRole.GROOM) {
       where.assignedStaffUserId = user.userId;
+    } else if (user.role === UserRole.HEAD_TRAINER) {
+      where.trainingPlan = { trainerUserId: user.userId };
     }
 
     const rows = await this.prisma.workoutSession.findMany({
@@ -862,12 +912,17 @@ export class WorkoutsService {
   async findWorkoutById(id: string, user: CurrentUserPayload) {
     const workout = await this.prisma.workoutSession.findUnique({
       where: { id },
-      include: WORKOUT_INCLUDE,
+      include: {
+        ...WORKOUT_INCLUDE,
+        trainingPlan: { select: { ...WORKOUT_INCLUDE.trainingPlan.select, trainerUserId: true } },
+      },
     });
     const outOfScope =
       !workout ||
       (user.role === UserRole.HORSE_OWNER && workout.horse.ownerId !== user.userId) ||
-      (user.role === UserRole.GROOM && workout.assignedStaffUserId !== user.userId);
+      (user.role === UserRole.GROOM && workout.assignedStaffUserId !== user.userId) ||
+      (user.role === UserRole.HEAD_TRAINER &&
+        (workout.trainingPlan as any)?.trainerUserId !== user.userId);
     if (outOfScope) {
       throw apiError(HttpStatus.NOT_FOUND, 'WORKOUT_NOT_FOUND', 'Workout session not found.');
     }

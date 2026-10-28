@@ -30,6 +30,8 @@ describe('SimulatorGateway', () => {
       recordRaceProgress: jest.fn(),
       recordFinished: jest.fn(),
       recordExamFinished: jest.fn(),
+      abortSession: jest.fn(),
+      getActiveSession: jest.fn(),
     };
     incidentsService = {
       createFromSimulator: jest.fn(),
@@ -342,8 +344,11 @@ describe('SimulatorGateway', () => {
         fullName: 'Trainer Minh',
       });
       simulatorService.recordFinished.mockResolvedValue({
-        id: 'sess-async-1',
-        status: 'COMPLETED',
+        session: {
+          id: 'sess-async-1',
+          status: 'COMPLETED',
+        },
+        transitioned: true,
       });
 
       const connection = gateway.handleConnection(mockClient);
@@ -850,6 +855,327 @@ describe('SimulatorGateway', () => {
       expect(result).toEqual({ accepted: true });
       expect(simulatorService.recordTelemetry).toHaveBeenCalledWith(packet, trainerUser);
       expect(mockServer.emit).toHaveBeenCalledWith('sim:telemetry_tick', packet);
+    });
+  });
+
+  describe('timer lifecycle and abort contracts (CR-022 / R-4)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('Scenario 1: reconnect before 15s cancels disconnect abort timer and preserves running session', async () => {
+      const sessionId = 'sess-timer-1';
+      const mockClient: any = {
+        id: 'client-1',
+        data: {
+          session: { id: sessionId, status: 'RUNNING' },
+        },
+      };
+      simulatorService.getActiveSession.mockReturnValue({
+        sessionId,
+        status: 'RUNNING',
+      });
+
+      gateway.handleDisconnect(mockClient);
+
+      expect((gateway as any).disconnectTimers.has(sessionId)).toBe(true);
+
+      // Advance 10s (< 15s)
+      jest.advanceTimersByTime(10000);
+
+      // Client reconnects within grace period
+      const reconnectClient: any = {
+        id: 'client-2',
+        handshake: { auth: { sessionId } },
+        disconnect: jest.fn(),
+        data: {},
+      };
+      prismaService.simulatorSession.findUnique.mockResolvedValue({
+        id: sessionId,
+        type: 'WORKOUT',
+        status: 'RUNNING',
+        actorUserId: 'trainer-1',
+        createdAt: new Date(),
+      });
+      prismaService.user.findUnique.mockResolvedValue({
+        id: 'trainer-1',
+        role: Role.HEAD_TRAINER,
+        status: 'ACTIVE',
+        email: 'trainer@eq.com',
+      });
+
+      await gateway.handleConnection(reconnectClient);
+
+      expect(reconnectClient.disconnect).not.toHaveBeenCalled();
+      expect((gateway as any).disconnectTimers.has(sessionId)).toBe(false);
+
+      // Advance past the original 15s mark
+      jest.advanceTimersByTime(10000);
+      await Promise.resolve();
+
+      expect(simulatorService.abortSession).not.toHaveBeenCalled();
+      expect(mockServer.emit).not.toHaveBeenCalledWith('sim:session_finished', expect.anything());
+    });
+
+    it('Scenario 2: 15s disconnect expiry aborts running session once and emits single broadcast', async () => {
+      const sessionId = 'sess-timer-2';
+      const mockClient: any = {
+        id: 'client-disconnect-2',
+        data: {
+          session: { id: sessionId, status: 'RUNNING' },
+        },
+      };
+      simulatorService.getActiveSession.mockReturnValue({
+        sessionId,
+        status: 'RUNNING',
+      });
+      simulatorService.abortSession.mockResolvedValue({
+        session: { id: sessionId, type: 'WORKOUT', status: 'ABORTED_INJURY' },
+        transitioned: true,
+      });
+
+      gateway.handleDisconnect(mockClient);
+
+      expect((gateway as any).disconnectTimers.has(sessionId)).toBe(true);
+
+      // Advance 15s
+      jest.advanceTimersByTime(15000);
+      await Promise.resolve();
+
+      expect(simulatorService.abortSession).toHaveBeenCalledTimes(1);
+      expect(simulatorService.abortSession).toHaveBeenCalledWith(
+        sessionId,
+        'DISCONNECT_TIMEOUT_15S',
+      );
+      expect(mockServer.emit).toHaveBeenCalledTimes(1);
+      expect(mockServer.emit).toHaveBeenCalledWith('sim:session_finished', {
+        event: 'sim:session_finished',
+        session_id: sessionId,
+        type: 'WORKOUT',
+        status: 'ABORTED_INJURY',
+        result: { reason: 'DISCONNECT_TIMEOUT_15S' },
+      });
+      expect((gateway as any).disconnectTimers.has(sessionId)).toBe(false);
+    });
+
+    it('Scenario 3: normal finish cancels disconnect timer and 5m watchdog timer', async () => {
+      const sessionId = 'sess-timer-3';
+      const dummyTimer1 = setTimeout(() => {}, 10000);
+      const dummyTimer2 = setTimeout(() => {}, 300000);
+      (gateway as any).disconnectTimers.set(sessionId, dummyTimer1);
+      (gateway as any).sessionTimeouts.set(sessionId, dummyTimer2);
+
+      const client: any = {
+        data: {
+          user: { userId: 'trainer-1', role: Role.HEAD_TRAINER },
+          session: {
+            id: sessionId,
+            type: SimulatorSessionType.WORKOUT,
+            horseIds: ['horse-1'],
+          },
+        },
+      };
+
+      const packet: any = {
+        event: 'sim:session_finished',
+        session_id: sessionId,
+        type: 'WORKOUT',
+        status: 'COMPLETED',
+        horse: { horse_id: 'horse-1' },
+        result: { distanceCompletedM: 1800 },
+      };
+
+      simulatorService.recordFinished.mockResolvedValue({
+        session: {
+          id: sessionId,
+          status: 'COMPLETED',
+        },
+        transitioned: true,
+      });
+
+      const res = await gateway.handleSessionFinished(client, packet);
+
+      expect(res).toEqual({ accepted: true, id: sessionId });
+      expect((gateway as any).disconnectTimers.has(sessionId)).toBe(false);
+      expect((gateway as any).sessionTimeouts.has(sessionId)).toBe(false);
+
+      // Advance past both timers
+      jest.advanceTimersByTime(400000);
+      await Promise.resolve();
+
+      expect(simulatorService.abortSession).not.toHaveBeenCalled();
+    });
+
+    it('Scenario 4: 5m watchdog aborts running session once after 300,000ms from 1st tick', async () => {
+      const sessionId = 'sess-timer-4';
+      const client: any = {
+        data: {
+          user: { userId: 'trainer-1', role: Role.HEAD_TRAINER },
+          session: {
+            id: sessionId,
+            type: SimulatorSessionType.WORKOUT,
+            horseIds: ['horse-1'],
+          },
+        },
+      };
+
+      const packet: any = {
+        event: 'sim:telemetry_tick',
+        session_id: sessionId,
+        timestamp_ms: 1729520000000,
+        sim_time_s: 1.0,
+        sim_speed_multiplier: 1.0,
+        horse: { horse_id: 'horse-1' },
+        track: {
+          surface: 'GRASS',
+          target_distance_m: 1200,
+          covered_distance_m: 10,
+          track_condition: 'GOOD',
+          obstacles_cleared: 0,
+          obstacles_total: 0,
+        },
+        metrics: {
+          velocity_mps: 15.0,
+          heart_rate_bpm: 120,
+          stamina_pct: 99.0,
+          body_temp_c: 38.0,
+          stride_length_m: 6.0,
+          stride_freq_spm: 130,
+          calories_kcal: 20,
+        },
+        alerts: { overload_warning: false, limp_detected: false, heat_stress: false },
+      };
+
+      simulatorService.recordTelemetry.mockResolvedValue({ sessionId });
+      simulatorService.abortSession.mockResolvedValue({
+        session: { id: sessionId, type: 'WORKOUT', status: 'ABORTED_INJURY' },
+        transitioned: true,
+      });
+
+      await gateway.handleTelemetryTick(client, packet);
+
+      expect((gateway as any).sessionTimeouts.has(sessionId)).toBe(true);
+
+      // Advance 299,000 ms - should not fire yet
+      jest.advanceTimersByTime(299000);
+      await Promise.resolve();
+      expect(simulatorService.abortSession).not.toHaveBeenCalled();
+
+      // Advance remaining 1,000 ms to reach 300,000 ms
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+
+      expect(simulatorService.abortSession).toHaveBeenCalledTimes(1);
+      expect(simulatorService.abortSession).toHaveBeenCalledWith(sessionId, 'SESSION_TIMEOUT_5M');
+      expect(mockServer.emit).toHaveBeenCalledWith('sim:session_finished', {
+        event: 'sim:session_finished',
+        session_id: sessionId,
+        type: 'WORKOUT',
+        status: 'ABORTED_INJURY',
+        result: { reason: 'SESSION_TIMEOUT_5M' },
+      });
+      expect((gateway as any).sessionTimeouts.has(sessionId)).toBe(false);
+    });
+
+    it('Scenario 5: duplicate timer triggers do not duplicate persistence or broadcast', async () => {
+      const sessionId = 'sess-timer-5';
+
+      simulatorService.abortSession
+        .mockResolvedValueOnce({
+          session: { id: sessionId, type: 'WORKOUT', status: 'ABORTED_INJURY' },
+          transitioned: true,
+        })
+        .mockResolvedValueOnce({
+          session: { id: sessionId, type: 'WORKOUT', status: 'ABORTED_INJURY' },
+          transitioned: false,
+        });
+
+      // Call abortDueToDisconnect twice
+      await (gateway as any).abortDueToDisconnect(sessionId);
+      await (gateway as any).abortDueToDisconnect(sessionId);
+
+      expect(mockServer.emit).toHaveBeenCalledTimes(1);
+      expect(mockServer.emit).toHaveBeenCalledWith('sim:session_finished', {
+        event: 'sim:session_finished',
+        session_id: sessionId,
+        type: 'WORKOUT',
+        status: 'ABORTED_INJURY',
+        result: { reason: 'DISCONNECT_TIMEOUT_15S' },
+      });
+    });
+
+    it('Scenario 6: completed session cannot be overwritten by delayed abort and broadcast is suppressed', async () => {
+      const sessionId = 'sess-timer-6';
+
+      simulatorService.abortSession.mockResolvedValue({
+        session: { id: sessionId, type: 'WORKOUT', status: 'COMPLETED' },
+        transitioned: false,
+      });
+
+      await (gateway as any).abortDueToDisconnect(sessionId);
+
+      expect(mockServer.emit).not.toHaveBeenCalledWith('sim:session_finished', expect.anything());
+    });
+
+    it('Scenario 6b: aborted session suppresses duplicate broadcast from delayed finish packet', async () => {
+      const sessionId = 'sess-timer-6b';
+      const client = {
+        id: 'client-6b',
+        data: {
+          user: { userId: 'trainer-1', role: Role.HEAD_TRAINER },
+          session: {
+            id: sessionId,
+            type: 'WORKOUT',
+            status: 'RUNNING',
+            actorUserId: 'trainer-1',
+            horseIds: ['horse-1'],
+          },
+        },
+      } as any;
+
+      simulatorService.recordFinished.mockResolvedValue({
+        session: { id: sessionId, type: 'WORKOUT', status: 'ABORTED_INJURY' },
+        transitioned: false,
+      });
+
+      const finishPacket: any = {
+        event: 'sim:session_finished',
+        session_id: sessionId,
+        type: 'WORKOUT',
+        status: 'COMPLETED',
+        horse: { horse_id: 'horse-1' },
+        result: { distanceCompletedM: 1800 },
+      };
+
+      const ack = await gateway.handleSessionFinished(client, finishPacket);
+      expect(ack).toEqual({ accepted: true, id: sessionId });
+
+      expect(mockServer.emit).not.toHaveBeenCalledWith('sim:session_finished', expect.anything());
+    });
+
+    it('Scenario 7: onModuleDestroy cleanly clears all active timers', async () => {
+      const timer1 = setTimeout(() => {}, 15000);
+      const timer2 = setTimeout(() => {}, 300000);
+      (gateway as any).disconnectTimers.set('sess-7a', timer1);
+      (gateway as any).sessionTimeouts.set('sess-7b', timer2);
+
+      expect((gateway as any).disconnectTimers.size).toBe(1);
+      expect((gateway as any).sessionTimeouts.size).toBe(1);
+
+      gateway.onModuleDestroy();
+
+      expect((gateway as any).disconnectTimers.size).toBe(0);
+      expect((gateway as any).sessionTimeouts.size).toBe(0);
+
+      // Advance time by 1,000,000 ms to confirm no lingering timer callbacks fire
+      jest.advanceTimersByTime(1000000);
+      await Promise.resolve();
+
+      expect(simulatorService.abortSession).not.toHaveBeenCalled();
     });
   });
 });

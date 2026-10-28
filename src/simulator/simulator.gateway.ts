@@ -8,7 +8,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { plainToInstance, type ClassConstructor } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Server, Socket } from 'socket.io';
@@ -54,8 +54,13 @@ async function validatePacket<T extends object>(
     credentials: true,
   },
 })
-export class SimulatorGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class SimulatorGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+{
   private readonly logger = new Logger(SimulatorGateway.name);
+  private readonly disconnectTimers = new Map<string, NodeJS.Timeout>();
+  private readonly sessionTimeouts = new Map<string, NodeJS.Timeout>();
+  private readonly emittedFinished = new Set<string>();
 
   @WebSocketServer()
   server: Server;
@@ -72,6 +77,26 @@ export class SimulatorGateway implements OnGatewayInit, OnGatewayConnection, OnG
   afterInit(server: Server) {
     this.realtimeService.setServer(server);
     this.logger.log('Simulator WebSocket gateway initialized at namespace /simulator');
+  }
+
+  onModuleDestroy() {
+    for (const timer of this.disconnectTimers.values()) clearTimeout(timer);
+    for (const timer of this.sessionTimeouts.values()) clearTimeout(timer);
+    this.disconnectTimers.clear();
+    this.sessionTimeouts.clear();
+  }
+
+  private clearSessionTimers(sessionId: string): void {
+    const dt = this.disconnectTimers.get(sessionId);
+    if (dt) {
+      clearTimeout(dt);
+      this.disconnectTimers.delete(sessionId);
+    }
+    const st = this.sessionTimeouts.get(sessionId);
+    if (st) {
+      clearTimeout(st);
+      this.sessionTimeouts.delete(sessionId);
+    }
   }
 
   async handleConnection(client: Socket) {
@@ -130,6 +155,18 @@ export class SimulatorGateway implements OnGatewayInit, OnGatewayConnection, OnG
       this.logger.warn(`Rejected connection [${client.id}]: session ${sessionId} not found`);
       client.disconnect(true);
       return;
+    }
+
+    // Cancel pending disconnect timer if client reconnected within grace period
+    if (this.disconnectTimers.has(sessionId)) {
+      const pending = this.disconnectTimers.get(sessionId);
+      if (pending) {
+        clearTimeout(pending);
+        this.disconnectTimers.delete(sessionId);
+        this.logger.log(
+          `Client reconnected for session ${sessionId} within 15s grace period; cancelled disconnect abort timer`,
+        );
+      }
     }
 
     if (
@@ -234,6 +271,64 @@ export class SimulatorGateway implements OnGatewayInit, OnGatewayConnection, OnG
 
   handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected [${client.id}]`);
+    const sessionId: string | undefined = client.data?.session?.id;
+    if (sessionId && !this.emittedFinished.has(sessionId)) {
+      const activeSession = this.simulatorService.getActiveSession(sessionId);
+      const isRunning =
+        (activeSession && activeSession.status === SimulatorSessionStatus.RUNNING) ||
+        client.data?.session?.status === SimulatorSessionStatus.RUNNING;
+      if (isRunning && !this.disconnectTimers.has(sessionId)) {
+        this.logger.warn(
+          `Client disconnected for running session ${sessionId}; starting 15s disconnect grace timer`,
+        );
+        const timer = setTimeout(async () => {
+          this.disconnectTimers.delete(sessionId);
+          await this.abortDueToDisconnect(sessionId);
+        }, 15000);
+        timer.unref?.();
+        this.disconnectTimers.set(sessionId, timer);
+      }
+    }
+  }
+
+  private async abortDueToDisconnect(sessionId: string): Promise<void> {
+    try {
+      const result = await this.simulatorService.abortSession(sessionId, 'DISCONNECT_TIMEOUT_15S');
+      this.clearSessionTimers(sessionId);
+      if (result?.transitioned && result?.session) {
+        this.emittedFinished.add(sessionId);
+        this.server.emit('sim:session_finished', {
+          event: 'sim:session_finished',
+          session_id: sessionId,
+          type: result.session.type,
+          status: 'ABORTED_INJURY',
+          result: { reason: 'DISCONNECT_TIMEOUT_15S' },
+        });
+      }
+    } catch (err: any) {
+      this.logger.error(
+        `Error aborting session ${sessionId} after disconnect timeout: ${err.message}`,
+      );
+    }
+  }
+
+  private async abortDueToSessionTimeout(sessionId: string): Promise<void> {
+    try {
+      const result = await this.simulatorService.abortSession(sessionId, 'SESSION_TIMEOUT_5M');
+      this.clearSessionTimers(sessionId);
+      if (result?.transitioned && result?.session) {
+        this.emittedFinished.add(sessionId);
+        this.server.emit('sim:session_finished', {
+          event: 'sim:session_finished',
+          session_id: sessionId,
+          type: result.session.type,
+          status: 'ABORTED_INJURY',
+          result: { reason: 'SESSION_TIMEOUT_5M' },
+        });
+      }
+    } catch (err: any) {
+      this.logger.error(`Error aborting session ${sessionId} after 5m timeout: ${err.message}`);
+    }
   }
 
   private async requirePublisherSession(
@@ -328,6 +423,20 @@ export class SimulatorGateway implements OnGatewayInit, OnGatewayConnection, OnG
         validPacket.horse.horse_id,
       ]);
       await this.simulatorService.recordTelemetry(validPacket, user);
+      if (
+        !this.sessionTimeouts.has(validPacket.session_id) &&
+        !this.emittedFinished.has(validPacket.session_id)
+      ) {
+        const timeout = setTimeout(
+          async () => {
+            this.sessionTimeouts.delete(validPacket.session_id);
+            await this.abortDueToSessionTimeout(validPacket.session_id);
+          },
+          5 * 60 * 1000,
+        );
+        timeout.unref?.();
+        this.sessionTimeouts.set(validPacket.session_id, timeout);
+      }
       this.server.emit('sim:telemetry_tick', validPacket);
       return { accepted: true };
     } catch (err: any) {
@@ -413,15 +522,22 @@ export class SimulatorGateway implements OnGatewayInit, OnGatewayConnection, OnG
         validPacket.session_id,
         horseIds,
       );
-      const resSession = await this.simulatorService.recordFinished(validPacket, user);
+      const finishResult = await this.simulatorService.recordFinished(validPacket, user);
+      const resSession = finishResult.session;
+      if (resSession) {
+        this.clearSessionTimers(resSession.id);
+      }
 
-      this.server.emit('sim:session_finished', {
-        ...validPacket,
-        session_id: resSession.id,
-        status: resSession.status,
-      });
+      if (finishResult.transitioned && resSession) {
+        this.emittedFinished.add(resSession.id);
+        this.server.emit('sim:session_finished', {
+          ...validPacket,
+          session_id: resSession.id,
+          status: resSession.status,
+        });
+      }
 
-      return { accepted: true, id: resSession.id };
+      return { accepted: true, id: validPacket.session_id };
     } catch (err: any) {
       return { accepted: false, code: err.message };
     }

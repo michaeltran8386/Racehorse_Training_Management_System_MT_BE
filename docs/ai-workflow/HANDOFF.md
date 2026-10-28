@@ -2,14 +2,39 @@
 
 ## Gate state
 
-- **Plan:** v1-approved-r20 — approved Plan v1 with CR-005 through CR-021 incorporated.
-- **Last completed task:** TASK-015 — DONE and human-approved on 2026-10-28 (`APPROVE TASK-015`).
+- **Plan:** v1-approved-r22 — approved Plan v1 with CR-005 through CR-023 incorporated.
+- **Last completed task:** TASK-016 — DONE and human-approved on 2026-10-28 (`APPROVE TASK-016`).
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-016 (TODO; requires new exact `START TASK-016`).
+- **Next eligible task:** TASK-017 (TODO — not authorized).
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Human issues `START TASK-016` when ready. TASK-016 remains unauthorized.
+- **Do now:** Await explicit human command `START TASK-017` or commit authorization. Do not commit, push, merge, or execute TASK-017 without authorization.
+
+## Approved CR-023 TASK-016 boundary
+
+- Scope expands by 4 additional files to exactly 11 application/test files:
+  1. BE `src/training/training-plans.service.ts`
+  2. BE `src/training/workouts.service.ts`
+  3. BE `src/training/training-services.spec.ts`
+  4. FE `src/features/training/pages/TrialRunsPage.tsx`
+  - Together with the 7 prior files (BE `simulator.service.ts`, `simulator.gateway.ts`, `simulator.service.spec.ts`, `simulator.gateway.spec.ts`; SIM `TrialTab.tsx`; FE `LiveMonitorPage.tsx`, `simulator-real-stack.spec.ts`).
+- Head Trainer horse master-data visibility remains unchanged.
+- Head Trainer training plans, workouts, and trial runs are strictly scoped to `trainingPlan.trainerUserId === current userId`.
+- Club Manager and Veterinarian read visibility remains unchanged.
+- Creating a workout or repeated workout against another trainer's plan must fail closed (403 Forbidden).
+- Direct mutation/start requests for another trainer's workout must fail closed.
+- Trial Runs must not render an actionable simulation row belonging to another trainer.
+- After successful creation, the created trial must be visible immediately. If its date is outside the current filter, update/expand the filter to include that date before reload.
+- Two-trainer real-stack browser test in `simulator-real-stack.spec.ts` verifies data isolation and immediate trial visibility.
+
+## Approved CR-022 TASK-016 boundary
+
+- Scope expands to exactly 7 application/test files by authorizing `src/simulator/simulator.service.spec.ts` and `src/simulator/simulator.gateway.spec.ts`.
+- `abortSession` performs a conditional atomic transition in database transaction only from `PENDING` or `RUNNING`. Delayed disconnect/timeout must never overwrite `COMPLETED` or existing `ABORTED_INJURY`. Single persisted terminal outcome and broadcast.
+- 5-minute rule is an absolute running-session watchdog beginning at the first accepted telemetry tick.
+- Normal finish, accepted abort, client reconnect within 15s, and module teardown clear applicable timers. Reconnect within 15s preserves session. 15s expiry aborts once.
+- Fake-clock and concurrency tests in the 2 Backend spec files cover all 7 scenarios specified in R-4.
 
 ## Approved CR-021 TASK-015 boundary
 
@@ -124,4 +149,4 @@
 - Retain the verified R-1/R-2/R-3/R-4 protections.
 - CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`. In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
 
-Plan v1-approved-r20 is approved and incorporated. TASK-001 through TASK-015 and TASK-020 are DONE and human-approved. The three TASK-014 root `.bat` files are accepted as local-only and will not be committed. Execution is IDLE. TASK-016 remains unauthorized until explicit human command `START TASK-016`.
+Plan v1-approved-r21 is approved and incorporated. TASK-001 through TASK-015 and TASK-020 are DONE and human-approved. TASK-016 is BLOCKED pending CR-023 (multi-trainer training plan/workout scoping & trial date filter visibility) following human manual QA rejection. Next task remains TASK-016; TASK-017 remains unauthorized.

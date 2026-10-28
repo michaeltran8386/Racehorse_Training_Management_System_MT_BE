@@ -115,6 +115,7 @@ describe('SimulatorService', () => {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         delete: jest.fn(),
       },
       medicalLock: {
@@ -569,17 +570,24 @@ describe('SimulatorService', () => {
     };
     prisma.simulatorSession.findUnique
       .mockResolvedValueOnce(issuedSession({ status: 'RUNNING' }))
+      .mockResolvedValueOnce(completedSession)
       .mockResolvedValueOnce(completedSession);
-    prisma.simulatorSession.update.mockResolvedValue(completedSession);
+    prisma.simulatorSession.updateMany.mockResolvedValue({ count: 1 });
 
-    await service.recordFinished(finishedWorkout, mockActor);
-    await expect(service.recordFinished(finishedWorkout, mockActor)).resolves.toBe(
-      completedSession,
-    );
+    const first = await service.recordFinished(finishedWorkout, mockActor);
+    expect(first).toEqual({ session: completedSession, transitioned: true });
 
-    expect(prisma.simulatorSession.update).toHaveBeenCalledTimes(1);
-    expect(prisma.simulatorSession.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'server-session-1' } }),
+    const second = await service.recordFinished(finishedWorkout, mockActor);
+    expect(second).toEqual({ session: completedSession, transitioned: false });
+
+    expect(prisma.simulatorSession.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.simulatorSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'server-session-1',
+          status: { in: ['PENDING', 'RUNNING'] },
+        },
+      }),
     );
     expect(prisma.simulatorSession.upsert).not.toHaveBeenCalled();
 
@@ -1078,6 +1086,283 @@ describe('SimulatorService', () => {
           zone: null,
         }),
       );
+    });
+  });
+
+  describe('abortSession', () => {
+    it('transitions RUNNING session to ABORTED_INJURY and reports transitioned: true', async () => {
+      prisma.simulatorSession.updateMany.mockResolvedValue({ count: 1 });
+      prisma.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-running-1',
+        type: 'WORKOUT',
+        status: 'ABORTED_INJURY',
+        result: { abortReason: 'DISCONNECT_TIMEOUT_15S' },
+      });
+
+      const res = await service.abortSession('sess-running-1', 'DISCONNECT_TIMEOUT_15S');
+
+      expect(prisma.simulatorSession.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'sess-running-1',
+          status: { in: ['PENDING', 'RUNNING'] },
+        },
+        data: {
+          status: 'ABORTED_INJURY',
+          finishedAt: expect.any(Date),
+          result: expect.objectContaining({ abortReason: 'DISCONNECT_TIMEOUT_15S' }),
+        },
+      });
+      expect(res.transitioned).toBe(true);
+      expect(res.session?.status).toBe('ABORTED_INJURY');
+    });
+
+    it('transitions PENDING session to ABORTED_INJURY and reports transitioned: true', async () => {
+      prisma.simulatorSession.updateMany.mockResolvedValue({ count: 1 });
+      prisma.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-pending-1',
+        type: 'WORKOUT',
+        status: 'ABORTED_INJURY',
+        result: { abortReason: 'SESSION_TIMEOUT_5M' },
+      });
+
+      const res = await service.abortSession('sess-pending-1', 'SESSION_TIMEOUT_5M');
+
+      expect(res.transitioned).toBe(true);
+      expect(res.session?.status).toBe('ABORTED_INJURY');
+    });
+
+    it('does not overwrite already COMPLETED session and reports transitioned: false', async () => {
+      prisma.simulatorSession.updateMany.mockResolvedValue({ count: 0 });
+      prisma.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-completed-1',
+        type: 'WORKOUT',
+        status: 'COMPLETED',
+        result: { distanceCompletedM: 1800, durationS: 120 },
+      });
+
+      const res = await service.abortSession('sess-completed-1', 'DISCONNECT_TIMEOUT_15S');
+
+      expect(res.transitioned).toBe(false);
+      expect(res.session?.status).toBe('COMPLETED');
+      expect((res.session?.result as any).distanceCompletedM).toBe(1800);
+      expect((res.session?.result as any).abortReason).toBeUndefined();
+    });
+
+    it('does not overwrite already ABORTED_INJURY session and reports transitioned: false', async () => {
+      prisma.simulatorSession.updateMany.mockResolvedValue({ count: 0 });
+      prisma.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-aborted-1',
+        type: 'WORKOUT',
+        status: 'ABORTED_INJURY',
+        result: { abortReason: 'EMERGENCY_STOP' },
+      });
+
+      const res = await service.abortSession('sess-aborted-1', 'DISCONNECT_TIMEOUT_15S');
+
+      expect(res.transitioned).toBe(false);
+      expect(res.session?.status).toBe('ABORTED_INJURY');
+      expect((res.session?.result as any).abortReason).toBe('EMERGENCY_STOP');
+    });
+
+    it('returns { session: null, transitioned: false } when session does not exist', async () => {
+      prisma.simulatorSession.updateMany.mockResolvedValue({ count: 0 });
+      prisma.simulatorSession.findUnique.mockResolvedValue(null);
+
+      const res = await service.abortSession('sess-non-existent', 'DISCONNECT_TIMEOUT_15S');
+
+      expect(res.transitioned).toBe(false);
+      expect(res.session).toBeNull();
+    });
+
+    it('handles concurrent duplicate abortSession calls where exactly one transitions', async () => {
+      let callCount = 0;
+      prisma.simulatorSession.updateMany.mockImplementation(async () => {
+        callCount++;
+        return { count: callCount === 1 ? 1 : 0 };
+      });
+      prisma.simulatorSession.findUnique.mockResolvedValue({
+        id: 'sess-concurrent-1',
+        type: 'WORKOUT',
+        status: 'ABORTED_INJURY',
+        result: { abortReason: 'CALL_1' },
+      });
+
+      const [res1, res2] = await Promise.all([
+        service.abortSession('sess-concurrent-1', 'CALL_1'),
+        service.abortSession('sess-concurrent-1', 'CALL_2'),
+      ]);
+
+      const transitions = [res1.transitioned, res2.transitioned];
+      expect(transitions.filter(Boolean)).toHaveLength(1);
+      expect(transitions.filter((t) => !t)).toHaveLength(1);
+    });
+
+    it('handles concurrent duplicate recordFinished calls where exactly one transitions', async () => {
+      const finishedWorkout = {
+        event: 'sim:session_finished' as const,
+        session_id: 'server-session-dup',
+        type: 'WORKOUT' as const,
+        status: 'COMPLETED' as const,
+        horse: { horse_id: 'horse-1' },
+        result: { distanceCompletedM: 1800 },
+      };
+
+      prisma.simulatorSession.findUnique.mockResolvedValue({
+        id: 'server-session-dup',
+        type: 'WORKOUT',
+        status: 'RUNNING',
+        horseIds: ['horse-1'],
+        actorUserId: mockActor.userId,
+        workoutSession: {
+          id: 'wrk-1',
+          trainingPlan: { trainerUserId: mockActor.userId },
+          horse: { id: 'horse-1', isMedicalLocked: false, medicalLocks: [] },
+        },
+      });
+
+      let callCount = 0;
+      prisma.simulatorSession.updateMany.mockImplementation(async () => {
+        callCount++;
+        return { count: callCount === 1 ? 1 : 0 };
+      });
+
+      const [res1, res2] = await Promise.all([
+        service.recordFinished(finishedWorkout, mockActor),
+        service.recordFinished(finishedWorkout, mockActor),
+      ]);
+
+      const transitions = [res1.transitioned, res2.transitioned];
+      expect(transitions.filter(Boolean)).toHaveLength(1);
+      expect(transitions.filter((t) => !t)).toHaveLength(1);
+    });
+
+    it('controlled interleaving: abort wins race -> delayed finish cannot overwrite ABORTED_INJURY or its abort result', async () => {
+      let state: any = {
+        id: 'server-session-interleave-1',
+        type: 'WORKOUT',
+        status: 'RUNNING',
+        horseIds: ['horse-1'],
+        actorUserId: mockActor.userId,
+        result: null,
+        workoutSession: {
+          id: 'wrk-1',
+          trainingPlan: { trainerUserId: mockActor.userId },
+          horse: { id: 'horse-1', isMedicalLocked: false, medicalLocks: [] },
+        },
+      };
+
+      prisma.simulatorSession.findUnique.mockImplementation(async ({ where }: any) => {
+        if (where.id === state.id) return { ...state };
+        return null;
+      });
+
+      prisma.simulatorSession.updateMany.mockImplementation(async ({ where, data }: any) => {
+        if (where.id === state.id && where.status?.in?.includes(state.status)) {
+          state = {
+            ...state,
+            status: data.status,
+            finishedAt: data.finishedAt,
+            result: data.result,
+          };
+          return { count: 1 };
+        }
+        return { count: 0 };
+      });
+
+      const finishedWorkout = {
+        event: 'sim:session_finished' as const,
+        session_id: 'server-session-interleave-1',
+        type: 'WORKOUT' as const,
+        status: 'COMPLETED' as const,
+        horse: { horse_id: 'horse-1' },
+        result: { distanceCompletedM: 1800 },
+      };
+
+      // 1. Abort runs first and transitions RUNNING -> ABORTED_INJURY
+      const abortRes = await service.abortSession(
+        'server-session-interleave-1',
+        'DISCONNECT_TIMEOUT_15S',
+      );
+      expect(abortRes.transitioned).toBe(true);
+      expect(state.status).toBe('ABORTED_INJURY');
+      expect(state.result.abortReason).toBe('DISCONNECT_TIMEOUT_15S');
+
+      // 2. Delayed finish arrives, but updateMany finds status is ABORTED_INJURY (not PENDING/RUNNING)
+      const finishRes = await service.recordFinished(finishedWorkout, mockActor);
+      expect(finishRes.transitioned).toBe(false);
+      expect(finishRes.session?.status).toBe('ABORTED_INJURY');
+      expect((finishRes.session?.result as any).abortReason).toBe('DISCONNECT_TIMEOUT_15S');
+      expect((finishRes.session?.result as any).distanceCompletedM).toBeUndefined();
+
+      // State remains unchanged by delayed finish
+      expect(state.status).toBe('ABORTED_INJURY');
+      expect(state.result.abortReason).toBe('DISCONNECT_TIMEOUT_15S');
+      expect(state.result.distanceCompletedM).toBeUndefined();
+    });
+
+    it('controlled interleaving: finish wins race -> delayed abort cannot overwrite COMPLETED or its workout result', async () => {
+      let state: any = {
+        id: 'server-session-interleave-2',
+        type: 'WORKOUT',
+        status: 'RUNNING',
+        horseIds: ['horse-1'],
+        actorUserId: mockActor.userId,
+        result: null,
+        workoutSession: {
+          id: 'wrk-1',
+          trainingPlan: { trainerUserId: mockActor.userId },
+          horse: { id: 'horse-1', isMedicalLocked: false, medicalLocks: [] },
+        },
+      };
+
+      prisma.simulatorSession.findUnique.mockImplementation(async ({ where }: any) => {
+        if (where.id === state.id) return { ...state };
+        return null;
+      });
+
+      prisma.simulatorSession.updateMany.mockImplementation(async ({ where, data }: any) => {
+        if (where.id === state.id && where.status?.in?.includes(state.status)) {
+          state = {
+            ...state,
+            status: data.status,
+            finishedAt: data.finishedAt,
+            result: data.result,
+          };
+          return { count: 1 };
+        }
+        return { count: 0 };
+      });
+
+      const finishedWorkout = {
+        event: 'sim:session_finished' as const,
+        session_id: 'server-session-interleave-2',
+        type: 'WORKOUT' as const,
+        status: 'COMPLETED' as const,
+        horse: { horse_id: 'horse-1' },
+        surface: 'TURF',
+        result: { distanceCompletedM: 1800, topSpeedKmh: 58.2 },
+      };
+
+      // 1. Finish runs first and transitions RUNNING -> COMPLETED
+      const finishRes = await service.recordFinished(finishedWorkout, mockActor);
+      expect(finishRes.transitioned).toBe(true);
+      expect(state.status).toBe('COMPLETED');
+      expect(state.result.distanceCompletedM).toBe(1800);
+
+      // 2. Delayed abort arrives, but updateMany finds status is COMPLETED (not PENDING/RUNNING)
+      const abortRes = await service.abortSession(
+        'server-session-interleave-2',
+        'DISCONNECT_TIMEOUT_15S',
+      );
+      expect(abortRes.transitioned).toBe(false);
+      expect(abortRes.session?.status).toBe('COMPLETED');
+      expect((abortRes.session?.result as any).distanceCompletedM).toBe(1800);
+      expect((abortRes.session?.result as any).abortReason).toBeUndefined();
+
+      // State remains unchanged by delayed abort
+      expect(state.status).toBe('COMPLETED');
+      expect(state.result.distanceCompletedM).toBe(1800);
+      expect(state.result.abortReason).toBeUndefined();
     });
   });
 });

@@ -1,9 +1,9 @@
 # Delivery Progress
 
-**Plan:** v1-approved-r20
+**Plan:** v1-approved-r22
 **Plan approval:** APPROVED — explicit `APPROVE PLAN v1` recorded 2026-10-24  
 **Active task:** NONE (IDLE)
-**Next eligible task:** TASK-016 (TODO — not authorized; requires direct START TASK-016)
+**Next eligible task:** TASK-017 (TODO — not authorized)
 **Planned first task:** TASK-001  
 **Last updated:** 2026-10-28 (Asia/Bangkok)
 
@@ -13,11 +13,11 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 
 | State | Count |
 | --- | ---: |
-| TODO | 4 |
+| TODO | 3 |
 | BLOCKED | 0 |
 | IN_PROGRESS | 0 |
 | AWAITING_USER_QA | 0 |
-| DONE | 16 |
+| DONE | 17 |
 
 ## Task status
 
@@ -39,13 +39,17 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 | TASK-013 | DONE | Approved 2026-10-27; report in reports/TASK-013.md |
 | TASK-014 | DONE | Approved 2026-10-28; report in reports/TASK-014.md |
 | TASK-015 | DONE | Approved 2026-10-28; report in reports/TASK-015.md |
-| TASK-016 | TODO — not authorized | TASK-004, TASK-015 |
+| TASK-016 | DONE | Approved 2026-10-28; report in reports/TASK-016.md |
 | TASK-017 | TODO — not authorized | TASK-005, TASK-009, TASK-016 |
 | TASK-018 | TODO — not authorized | TASK-006, TASK-015 |
 | TASK-019 | TODO — not authorized | TASK-010, TASK-014–018, TASK-020 |
 
 ## Recent decisions
 
+- TASK-016 was approved on 2026-10-28 (`APPROVE TASK-016`) following complete verification of multi-trainer ownership scoping, fail-closed boundaries, TrialRunsPage filter auto-expansion, atomic finish/abort transitions, watchdog timers, and fail-safe deterministic fixture cleanup. Status is DONE, execution is IDLE, and next task is TASK-017 (unauthorized). Awaits explicit human command START TASK-017.
+
+- CR-023 was approved on 2026-10-28 and incorporated into v1-approved-r22: expands TASK-016 scope by 4 additional files to exactly 11 application/test files (adding BE training-plans.service.ts, workouts.service.ts, training-services.spec.ts, FE TrialRunsPage.tsx), scopes Head Trainer training plans, workouts, and trial runs to current user, enforces fail-closed cross-trainer mutations, filters Trial Runs actionable simulation rows, and expands date filter to make created trials immediately visible. Blocker is removed; execution returns to IDLE; TASK-016 requires a new direct START TASK-016. TASK-017 remains unauthorized.
+- CR-022 was approved on 2026-10-28 and incorporated into v1-approved-r21: expands TASK-016 scope to exactly 7 application/test files (authorizing simulator.service.spec.ts and simulator.gateway.spec.ts), requires conditional atomic abort transitions only from PENDING/RUNNING, guarantees single persisted terminal outcome / broadcast, defines 5m absolute running watchdog starting at 1st tick, clears timers on finish/abort/reconnect/teardown, and requires 7 fake-clock/concurrency tests. Blocker is removed; execution returns to IDLE; TASK-016 requires a new direct START TASK-016. TASK-017 remains unauthorized.
 - CR-021 was approved on 2026-10-28 and incorporated into v1-approved-r20: Simulator areas are simulation functions, not Main-Web personas. Direct canonical Simulator access loads the complete real horse/stall catalogue without login or role filtering. No CM/Groom inspection endpoint/UI, enum or migration is added. Backend-issued session binding remains mandatory only for authoritative write-back in TASK-016–018. TASK-015 returns to TODO and needs a new exact START.
 - CR-020 was approved on 2026-10-28 and incorporated into v1-approved-r19: TASK-014 now owns exactly three root scripts. `setup-db.bat` resets/seeds local PostgreSQL, `start.bat` opens one four-tab real-stack terminal and waits for real health, and `stop.bat` may force-stop EquiFlow ports/container but must verify shutdown. The previous TASK-014 QA handoff is superseded; execution is IDLE and requires a new direct `START TASK-014`.
 - CR-019 was approved on 2026-10-27 and incorporated into v1-approved-r18: keep the scheduled-time guard but expose its reason; refresh and identify the existing Simulator result draft on initial load/focus/manual retry; derive only defensible completion state and never fabricate recovery HR, score or trainer comments. Slice H passed 16/16 real-stack browser checks. TASK-013 is DONE and approved by `APPROVE TASK-013` on 2026-10-27 (superseding typo `APPROVE TASK-013v`). Known accepted limitation: after Head Trainer edits imported result fields, the Simulator reload button is disabled until page reload or edits discarded. Execution is IDLE; TASK-014 remains unauthorized.

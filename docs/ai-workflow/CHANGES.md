@@ -526,3 +526,93 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
   5. TASK-016 owns workout/trial telemetry and persisted result write-back; TASK-017 owns incident/Vet/Medical Lock synchronization; TASK-018 owns supply request/delivery synchronization. TASK-015 must not pre-implement those paths.
 - **Execution gate:** approval removes the CR blocker and incorporates Plan `v1-approved-r20`, but does not resume the blocked execution automatically. State returns to `IDLE`, `next_task` remains TASK-015, and AGY requires a new exact `START TASK-015`. TASK-016 remains unauthorized.
 - **Target plan version:** v1-approved-r20.
+
+## CR-022 — TASK-016 Backend Timer, Atomic Abort Transition & Spec Coverage Expansion
+
+- **State:** INCORPORATED
+- **Raised by:** Human Rejection of TASK-016 (`REJECT TASK-016`, R-1 to R-5), 2026-10-28.
+- **Related plan:** v1-approved-r20 / TASK-016; incorporated into Plan v1-approved-r21.
+- **Verified architectural and test gaps:**
+  1. `abortSession` in `simulator.service.ts` must perform a conditional atomic transition only from `PENDING` or `RUNNING` status within a database transaction. A delayed disconnect or timeout must never overwrite `COMPLETED` or an existing `ABORTED_INJURY` result.
+  2. Concurrent duplicate abort calls, as well as races between normal session finish and delayed abort, must result in exactly one persisted terminal outcome in PostgreSQL and exactly one `sim:session_finished` wire broadcast.
+  3. The 5-minute session rule is defined as an absolute running-session watchdog beginning at the first accepted telemetry tick.
+  4. Timer lifecycle: normal finish, accepted abort, client reconnect within 15s, and module teardown (`onModuleDestroy`) must clean up applicable timers. Reconnecting within 15 seconds must cancel the pending abort timer and preserve the running session. Expiry of the 15-second disconnect timer must abort exactly once.
+  5. The existing Backend test suite (77 tests) does not cover the new timer/concurrency logic.
+- **Approved exact scope expansion (2 additional Backend spec files):**
+  1. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.service.spec.ts`
+  2. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.gateway.spec.ts`
+  - Total TASK-016 authorized scope expands from 5 to exactly 7 application/test files:
+    - 4 application files:
+      1. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.service.ts`
+      2. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.gateway.ts`
+      3. `Racehorse_Simulator_Web/src/ui/TrialTab.tsx`
+      4. `Racehorse_Training_Management_System_MT_FE/src/features/training/pages/LiveMonitorPage.tsx`
+    - 3 test files:
+      5. `Racehorse_Training_Management_System_MT_FE/tests/e2e/simulator-real-stack.spec.ts`
+      6. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.service.spec.ts` (CR-022)
+      7. `Racehorse_Training_Management_System_MT_BE/src/simulator/simulator.gateway.spec.ts` (CR-022)
+- **Required fake-clock and concurrency test coverage:**
+  - Reconnect before 15s cancels abort.
+  - 15s expiry aborts once.
+  - Normal finish cancels disconnect and 5m timers.
+  - 5m watchdog aborts once.
+  - Duplicate timers do not duplicate persistence or broadcast.
+  - Completed session cannot be overwritten by delayed abort.
+  - Module destroy clears all active timers.
+
+### Planner and human-approved resolution
+
+- **State:** INCORPORATED
+- **Human decision:** 2026-10-28 — exact command `APPROVE CR-022` in current conversation.
+- **Incorporated Plan version:** v1-approved-r21.
+- **Execution gate:** Approval incorporates Plan v1-approved-r21 and removes the CR-022 blocker. Execution returns to `IDLE` with `next_task: TASK-016`. AGY requires a new direct `START TASK-016` to begin implementation. TASK-017 remains unauthorized.
+- **Target plan version:** v1-approved-r21.
+
+## CR-023 — Head Trainer Training Plans/Workouts Ownership Scoping & Trial Runs Date Visibility
+
+- **State:** INCORPORATED
+- **Raised by:** Human Rejection of TASK-016 (`REJECT TASK-016`), 2026-10-28.
+- **Related plan:** v1-approved-r21 / TASK-016.
+- **Verified defect and root causes:**
+  1. A newly created trial workout reports success and appears in Weekly Training Calendar, but does not appear on Trial Runs.
+  2. Trial Runs displays an actionable workout that fails start with: `"This workout belongs to another trainer."`
+  3. Confirmed root causes:
+     - `TrainingPlansService.findAllPlans` does not scope `HEAD_TRAINER` by `trainerUserId`.
+     - `WorkoutsService.findAllWorkouts` and `findTrialRuns` do not scope `HEAD_TRAINER` by `trainingPlan.trainerUserId`.
+     - `createWorkout` does not reject a plan owned by another Head Trainer.
+     - `TrialRunsPage` renders Run simulation for every `SCHEDULED` row returned to a `HEAD_TRAINER`.
+     - `TrialRunsPage` ignores the created date passed through `onSaved(date)` and reloads only the previous from/to filter.
+- **Proposed exact additional files (4 files):**
+  1. `Racehorse_Training_Management_System_MT_BE/src/training/training-plans.service.ts`
+  2. `Racehorse_Training_Management_System_MT_BE/src/training/workouts.service.ts`
+  3. `Racehorse_Training_Management_System_MT_BE/src/training/training-services.spec.ts`
+  4. `Racehorse_Training_Management_System_MT_FE/src/features/training/pages/TrialRunsPage.tsx`
+  - *Note:* The already-authorized test file `Racehorse_Training_Management_System_MT_FE/tests/e2e/simulator-real-stack.spec.ts` will be extended to cover the multi-trainer boundary.
+- **Required contract for CR-023:**
+  1. Head Trainer horse master-data visibility remains unchanged.
+  2. Head Trainer training plans, workouts, and trial runs are strictly scoped to `trainingPlan.trainerUserId === current userId`.
+  3. Club Manager and Veterinarian read visibility remains unchanged.
+  4. Creating a workout or repeated workout against another trainer's plan must fail closed (403/Forbidden).
+  5. Direct mutation/start requests for another trainer's workout must fail closed.
+  6. Trial Runs must not render an actionable simulation row belonging to another trainer.
+  7. After successful creation, the created trial must be visible immediately. If its date is outside the current filter, update/expand the filter to include that date before reload.
+  8. Do not hide Backend authorization errors as a substitute for correct query scoping.
+- **Required browser coverage:**
+  - Using two real Head Trainer accounts and real PostgreSQL:
+    - Trainer A sees and can start only Trainer A trials.
+    - Trainer B trials do not appear in Trainer A Trial Runs.
+    - Direct API start/create/mutation against Trainer B plan/workout is rejected.
+    - Creating a new TRIAL from Trial Runs makes the exact created row visible immediately and after reload.
+    - Weekly Calendar and Trial Runs show the same created TRIAL identity.
+    - Preserve TASK-016 telemetry, emergency stop, reconnect, and atomic terminal tests.
+- **Execution gate:**
+  - Approval incorporates Plan v1-approved-r22 and removes the CR-023 blocker. Execution returns to `IDLE` with `next_task: TASK-016`. AGY requires a new direct `START TASK-016` to begin implementation of the expanded 11-file scope. TASK-017 remains unauthorized.
+- **Target plan version:** v1-approved-r22.
+
+### Planner and human-approved resolution
+
+- **State:** INCORPORATED
+- **Human decision:** 2026-10-28 — exact command `APPROVE CR-023` in current conversation.
+- **Incorporated Plan version:** v1-approved-r22.
+- **Execution gate:** Approval incorporates Plan v1-approved-r22 and removes the CR-023 blocker. Execution returns to `IDLE` with `next_task: TASK-016`. AGY requires a new direct `START TASK-016` to begin implementation of the expanded 11-file scope. TASK-017 remains unauthorized.
+- **Target plan version:** v1-approved-r22.

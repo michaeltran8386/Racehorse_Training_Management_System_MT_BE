@@ -19,6 +19,7 @@ import {
 } from './simulator.types';
 import { ExamFinishedPacketDto } from './dto/exam-packet.dto';
 import {
+  HorseStatus,
   SimulatorSession,
   SimulatorSessionStatus,
   SimulatorSessionType,
@@ -95,6 +96,9 @@ export class SimulatorService {
           'WORKOUT_NOT_STARTED',
           'The workout has not reached its scheduled start time.',
         );
+      }
+      if (workout.horse.status === HorseStatus.RETIRED) {
+        throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
       }
       const locked = workout.horse.isMedicalLocked || workout.horse.medicalLocks.length > 0;
       if (locked && isHeavy(workout.workoutType ?? '', workout.intensity ?? '')) {
@@ -642,7 +646,7 @@ export class SimulatorService {
   async recordFinished(
     dto: SessionFinishedPacketDto,
     actor: CurrentUserPayload,
-  ): Promise<SimulatorSession> {
+  ): Promise<{ session: SimulatorSession | null; transitioned: boolean }> {
     const status =
       dto.status === 'ABORTED_INJURY'
         ? SimulatorSessionStatus.ABORTED_INJURY
@@ -665,7 +669,7 @@ export class SimulatorService {
       issued.status === SimulatorSessionStatus.ABORTED_INJURY
     ) {
       this.active.delete(dto.session_id);
-      return issued;
+      return { session: issued, transitioned: false };
     }
 
     const finishedAt = new Date();
@@ -677,18 +681,64 @@ export class SimulatorService {
           }
         : (dto.results ?? null);
 
-    const session = await this.prisma.simulatorSession.update({
-      where: { id: dto.session_id },
-      data: {
-        status,
-        finishedAt,
-        result: resultPayload as any,
-        ...(horseIds.length > 0 ? { horseIds } : {}),
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.simulatorSession.updateMany({
+        where: {
+          id: dto.session_id,
+          status: { in: [SimulatorSessionStatus.PENDING, SimulatorSessionStatus.RUNNING] },
+        },
+        data: {
+          status,
+          finishedAt,
+          result: resultPayload as any,
+          ...(horseIds.length > 0 ? { horseIds } : {}),
+        },
+      });
 
-    this.active.delete(dto.session_id);
-    return session;
+      this.active.delete(dto.session_id);
+
+      const session = await tx.simulatorSession.findUnique({
+        where: { id: dto.session_id },
+      });
+
+      return {
+        session,
+        transitioned: updateResult.count > 0,
+      };
+    });
+  }
+
+  async abortSession(
+    sessionId: string,
+    reason = 'ABORTED',
+  ): Promise<{ session: SimulatorSession | null; transitioned: boolean }> {
+    return this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.simulatorSession.updateMany({
+        where: {
+          id: sessionId,
+          status: { in: [SimulatorSessionStatus.PENDING, SimulatorSessionStatus.RUNNING] },
+        },
+        data: {
+          status: SimulatorSessionStatus.ABORTED_INJURY,
+          finishedAt: new Date(),
+          result: {
+            abortReason: reason,
+            abortedAt: new Date().toISOString(),
+          } as any,
+        },
+      });
+
+      this.active.delete(sessionId);
+
+      const session = await tx.simulatorSession.findUnique({
+        where: { id: sessionId },
+      });
+
+      return {
+        session,
+        transitioned: updateResult.count > 0,
+      };
+    });
   }
 
   private async requireIssuedSession(

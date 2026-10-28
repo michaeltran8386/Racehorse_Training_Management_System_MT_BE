@@ -1,6 +1,6 @@
-# Task Breakdown — Plan v1-approved-r20
+# Task Breakdown — Plan v1-approved-r22
 
-> Approved specification with CR-005 through CR-021 incorporated. AGY remains the default executor. One task per run.
+> Approved specification with CR-005 through CR-023 incorporated. AGY remains the default executor. One task per run.
 
 | ID | Goal | Depends on | Status |
 | --- | --- | --- | --- |
@@ -20,7 +20,7 @@
 | TASK-013 | Bind canonical v3 SIM to Main-Web session with real browser/data acceptance | 012 | DONE |
 | TASK-014 | Three-script local setup/start/stop launcher using canonical SIM | 013 | DONE |
 | TASK-015 | Complete real horse/stall catalogue→SIM data flow | 002, 006, 007, 014 | DONE |
-| TASK-016 | Complete trial session realtime flow | 004, 015 | TODO |
+| TASK-016 | Complete trial session realtime flow | 004, 015 | DONE |
 | TASK-017 | Complete incident→Vet→Lock round trip | 005, 009, 016 | TODO |
 | TASK-018 | Complete supply request/delivery simulation | 006, 015 | TODO |
 | TASK-019 | Full system acceptance and evidence | 010, 014–018, 020 | TODO |
@@ -262,13 +262,30 @@
 
 ## TASK-016 — Trial session realtime
 
+- **Status:** DONE — Approved 2026-10-28; report in reports/TASK-016.md
 - **Objective:** Complete Web-created trial → SIM telemetry → persisted result/live monitor.
 - **Dependencies:** TASK-004, TASK-015.
-- **Files likely touched:** BE simulator service/gateway specs; SIM `src/ui/TrialTab.tsx`; FE `src/features/training/pages/LiveMonitorPage.tsx` and focused simulator/live E2E path verified at task start.
-- **Acceptance:** only authorized HT starts eligible active horse; Medical Lock/heavy rules block; 1 Hz telemetry appears live; finish/abort persists once; disconnect 15s and timeout 5m mark abort per contract.
-- **Automated:** BE simulator specs, SIM isolated unit tests/build, FE/SIM real-stack integration E2E, tick benchmark. No mock-backed E2E counts as acceptance.
-- **Manual QA:** normal finish, emergency stop, lock-before-start and network-disconnect scenarios.
-- **Scope:** M; split transport/backend from FE if verified files exceed 5.
+- **Approved CR-022 Contract:**
+  1. `abortSession` and `recordFinished` perform a conditional atomic transition in database transaction only from `PENDING` or `RUNNING`. Neither delayed disconnect/timeout nor delayed finish can overwrite an already reached terminal outcome. Single persisted terminal outcome and broadcast.
+  2. 5-minute rule is an absolute running-session watchdog beginning at the first accepted telemetry tick.
+  3. Normal finish, accepted abort, client reconnect within 15s, and module teardown clear applicable timers. Reconnect within 15s preserves session. 15s expiry aborts once.
+  4. Fake-clock and concurrency tests in the 2 Backend spec files cover all 7 scenarios specified in R-4.
+- **Approved CR-023 Contract:**
+  1. Head Trainer horse master-data visibility remains unchanged.
+  2. Head Trainer training plans, workouts, and trial runs are strictly scoped to `trainingPlan.trainerUserId === current userId`.
+  3. Club Manager and Veterinarian read visibility remains unchanged.
+  4. Creating a workout or repeated workout against another trainer's plan must fail closed (403 Forbidden).
+  5. Direct mutation/start requests for another trainer's workout must fail closed.
+  6. Trial Runs must not render an actionable simulation row belonging to another trainer.
+  7. After successful creation, the created trial must be visible immediately. If its date is outside the current filter, update/expand the filter to include that date before reload.
+  8. Browser coverage with two real Head Trainer accounts and real PostgreSQL proves data isolation and immediate trial creation visibility.
+- **Files touched (11 files):**
+  - Prior 7 files (CR-022): BE `src/simulator/simulator.service.ts`, `src/simulator/simulator.gateway.ts`, `src/simulator/simulator.service.spec.ts`, `src/simulator/simulator.gateway.spec.ts`; SIM `src/ui/TrialTab.tsx`; FE `src/features/training/pages/LiveMonitorPage.tsx`, `tests/e2e/simulator-real-stack.spec.ts`.
+  - 4 additional files (CR-023): BE `src/training/training-plans.service.ts`, `src/training/workouts.service.ts`, `src/training/training-services.spec.ts`; FE `src/features/training/pages/TrialRunsPage.tsx`.
+- **Acceptance:** only authorized HT starts eligible active horse; Medical Lock/heavy rules block; 1 Hz telemetry appears live; finish/abort persists once; disconnect 15s and timeout 5m mark abort per contract; multi-trainer data scoping and fail-closed mutations enforced; created trial visible immediately on Trial Runs; all unit/integration/E2E tests pass.
+- **Automated:** BE simulator specs (7 fake-clock/concurrency cases), BE training services specs, SIM isolated unit tests/build, FE/SIM real-stack integration E2E (including two-trainer scoping). No mock-backed E2E counts as acceptance.
+- **Manual QA:** normal finish, emergency stop, lock-before-start, network-disconnect scenarios, multi-trainer trial isolation, and trial creation date visibility.
+- **Scope:** M; expanded to exactly 11 application/test files via approved CR-022 and CR-023.
 
 ## TASK-017 — Incident→Vet→Lock round trip
 
