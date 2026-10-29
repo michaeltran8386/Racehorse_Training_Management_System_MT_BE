@@ -1,5 +1,13 @@
 # Architecture Decision Log
 
+
+## CR-024 — Unified supply delivery authority
+
+- Date: 2026-10-29. ACCEPTED by exact human command `APPROVE CR-024`.
+- Definitive contract: CHANGES.md section 7, incorporated into v1-approved-r23; 21 paths in sequential slices with one combined QA gate.
+- Manager approval dispatches DELIVERING; dedicated supply capability ACK after 8s or persistent Backend 20s fallback completes an atomic single stock credit. Real catalogue/zone stock and nullable capacity replace independent Simulator inventory. Legacy APPROVED rows retain explicit CM receipt. Existing workout/exam guards are preserved.
+- Drafting/approval does not execute application changes or migration. Await fresh START TASK-018 in AGY; no TASK-019 authority.
+
 > Plan revision hiện hành là v1-approved-r13, approved by `APPROVE PLAN v1` and amended through approved CR-014 on 2026-10-26. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
 
 ## ADR-001 — Backend là system of record
@@ -230,4 +238,10 @@ Do not silently amend accepted decisions; create an ADR and/or CR entry and requ
 - **Rejected expansion:** no Club Manager/Groom inspection endpoint, role-filtered Groom catalogue, Main-Web inspection-launch UI, `INSPECTION` enum or schema migration is added.
 - **Task boundary:** TASK-015 validates direct real catalogue loading and persistence/no-fallback behavior; TASK-016 owns trial telemetry/results, TASK-017 owns incident/Vet/Medical Lock and TASK-018 owns supplies.
 - **Impacted tasks:** TASK-015–TASK-018.
+
+## CR-025 — Existing Simulator sound is included in task delivery
+
+- Accepted by exact human command `APPROVE CR-025`, 2026-10-29; incorporated into r24.
+- Include current music/SFX/control source dependencies and 12 used runtime assets in TASK-018; total 39 exact paths per CHANGES.md. Do not commit unused theme-main.wav, music source duplicates or NOW notes.
+- Audio cannot block business workflows; verify combined build, autoplay failures, settings and delivery with sound enabled/disabled. Fresh START TASK-018 required; no completion/commit authorization.
 

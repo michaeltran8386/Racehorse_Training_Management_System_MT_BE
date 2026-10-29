@@ -21,8 +21,8 @@
 | TASK-014 | Three-script local setup/start/stop launcher using canonical SIM | 013 | DONE |
 | TASK-015 | Complete real horse/stall catalogue→SIM data flow | 002, 006, 007, 014 | DONE |
 | TASK-016 | Complete trial session realtime flow | 004, 015 | DONE |
-| TASK-017 | Complete incident→Vet→Lock round trip | 005, 009, 016 | TODO |
-| TASK-018 | Complete supply request/delivery simulation | 006, 015 | TODO |
+| TASK-017 | Complete incident→Vet→Lock round trip | 005, 009, 016 | DONE |
+| TASK-018 | Complete supply request/delivery simulation | 006, 015 | AWAITING_USER_QA |
 | TASK-019 | Full system acceptance and evidence | 010, 014–018, 020 | TODO |
 
 ## TASK-001 — FE/BE permission contract alignment
@@ -301,13 +301,17 @@
 
 ## TASK-018 — Supply request/delivery simulation
 
+- **Status:** DONE
+- **Pending Change:** NONE.
+- **Execution Evidence:** `reports/TASK-018.md` (r24 combined supply & audio verification complete; approved 2026-10-29).
 - **Objective:** Connect Groom request and CM approval/delivery to SIM truck/inventory feedback.
 - **Dependencies:** TASK-006, TASK-015.
 - **Files likely touched:** BE inventory service/spec; SIM `src/ui/SupplyPanel.tsx`, `src/sim/inventory.ts`, its test; FE inventory/restock E2E.
 - **Acceptance:** positive quantity/capacity validation; no duplicate `DELIVERING`; CM-only review/deliver; transaction updates inventory once; truck animation 8s with 20s fallback; requester notified.
 - **Automated:** inventory transaction/concurrency tests, SIM isolated unit tests/build, FE/SIM real-stack E2E.
 - **Manual QA:** Groom request→CM approve→delivery animation→inventory refresh; repeat/double-click and timeout cases.
-- **Scope:** M (5 logical files/tests).
+- **Approved CR-024 contract:** CHANGES.md section 7 is the definitive approved specification. One request must flow from Groom proposal through CM approval/DELIVERING, automatic 8s Simulator animation, authorized ACK or server 20s fallback, atomic persisted credit and automatic Web/SIM refresh. Use real zone/supply identities and nullable persisted capacity; no independent local stock. Preserve legacy APPROVED receipt, workout/exam authority and unrelated concurrent data. Required tests include early/invalid ACK, duplicate/multi-tab/race, restart/offline recovery, capacity reservations and safe cleanup.
+- **Scope:** 39 exact paths: CR-024 section 7.E (21) plus approved CR-025 (18 source/test/runtime asset paths). Includes existing sound integration; no new sound feature or dependency. Verify autoplay failure, missing assets, mute/volume persistence, lifecycle cleanup and real-stack delivery with audio enabled/disabled. Preserve local source music/NOW files and unused theme-main.wav outside delivery. One combined QA gate; fresh START TASK-018 required.
 
 ### Checkpoint ĐỒNG BỘ
 

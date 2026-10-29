@@ -1,9 +1,9 @@
 # Delivery Progress
 
-**Plan:** v1-approved-r22
+**Plan:** v1-approved-r24
 **Plan approval:** APPROVED — explicit `APPROVE PLAN v1` recorded 2026-10-24  
-**Active task:** NONE (IDLE)
-**Next eligible task:** TASK-018 (TODO — not authorized)
+**Active task:** NONE
+**Next eligible task:** TASK-019 (TODO — not authorized)
 **Planned first task:** TASK-001  
 **Last updated:** 2026-10-29 (Asia/Bangkok)
 
@@ -13,11 +13,11 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 
 | State | Count |
 | --- | ---: |
-| TODO | 2 |
+| TODO | 1 |
 | BLOCKED | 0 |
 | IN_PROGRESS | 0 |
 | AWAITING_USER_QA | 0 |
-| DONE | 18 |
+| DONE | 19 |
 
 ## Task status
 
@@ -41,14 +41,21 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 | TASK-015 | DONE | Approved 2026-10-28; report in reports/TASK-015.md |
 | TASK-016 | DONE | Approved 2026-10-28; report in reports/TASK-016.md |
 | TASK-017 | DONE | Approved 2026-10-29; report in reports/TASK-017.md |
-| TASK-018 | TODO — not authorized | TASK-006, TASK-015 |
+| TASK-018 | DONE | Approved 2026-10-29; report in reports/TASK-018.md |
 | TASK-019 | TODO — not authorized | TASK-010, TASK-014–018, TASK-020 |
 
 ## Recent decisions
 
-- TASK-017 was approved on 2026-10-29 (`APPROVE TASK-017`) following complete verification of real application contracts across NestJS API, Main Web UI, and Simulator Socket.IO, strictly non-destructive fixture isolation, correlated-only cleanup, sentinel concurrency preservation proof, accepted workout restoration, and passing Playwright tests on both viewports. Status is DONE. Execution is IDLE; TASK-018 remains unauthorized.
+- 2026-10-29: `APPROVE TASK-018` received in current session. TASK-018 is marked DONE under Plan v1-approved-r24 (incorporating approved CR-024 and CR-025, 39 paths total). Execution state is IDLE; next_task is TASK-019 (unauthorized). Stopped; no commit, push, merge, or TASK-019 execution without explicit separate human authorization.
+- 2026-10-29: TASK-018 completed combined supply replenishment & audio integration verification under Plan v1-approved-r24 (CR-024 + CR-025, 39 paths). All quality gates passed (Backend 50/50, Simulator 179/179, Simulator production build, Frontend build, Playwright E2E on desktop-1280 (50.6s) and desktop-1440 (51.2s), git diff --check 0 errors). Status set to AWAITING_USER_QA. Execution stopped; no commit/push or TASK-019 authority.
+- 2026-10-29: APPROVE CR-025 incorporates existing sound into r24/TASK-018, 39 paths. Execution IDLE; fresh START TASK-018 required for combined verification. Earlier QA status entries are historical; TASK-019 unauthorized.
 
-- TASK-017 was rejected on 2026-10-29 00:09 (`REJECT TASK-017`) requiring strictly correlated Notification/AuditLog cleanup (never deleting rows solely because IDs were absent from pre-test snapshot), sentinel concurrency preservation check, zero test-correlated residue assertions, and preservation of accepted workout restoration. Requirement R-10 has been fully resolved, verified with sentinel concurrency proof, zero-residue assertions, and confirmed passing across both viewports (`desktop-1280` in 18.0s, `desktop-1440` in 14.9s). TASK-017 is AWAITING_USER_QA.
+- 2026-10-29: TASK-018 third REJECT resolution completed (Human QA exact stock display correction). Authoritative decimal stock formatting (`formatStockQuantity`), delivery pending isolation matching both `zoneId` and `supplyId`, open warehouse panel 2s auto-refresh with sequence tagging, and Playwright browser verification passed across both `desktop-1280` (44.6s) and `desktop-1440` (41.4s). Status set to `AWAITING_USER_QA`.
+- 2026-10-29: `APPROVE CR-024` approves CHANGES.md section 7 and incorporates it into r23. TASK-018 blocker removed; execution IDLE. Scope 21 paths, three sequential slices, one combined Human QA gate. Previous pending entries below are historical; TASK-019 remains unauthorized.
+
+- TASK-018 was rejected by Human QA on 2026-10-29 (`REJECT TASK-018`) because Web and Simulator were running disconnected supply mechanisms. CR-024 has been proposed in `CHANGES.md` to establish a unified contract: Manager approval -> Backend transitions to `DELIVERING`, broadcasts `sys:supply_delivery_start` via Socket.IO, starts 20s watchdog timer -> Simulator automatically animates truck ~8s and emits `sim:supply_delivery_ack` -> Backend transaction increments `StockBalance` exactly once and marks `DELIVERED`. TASK-018 is marked BLOCKED pending ChatGPT review and human approval of CR-024.
+
+- TASK-017 was approved on 2026-10-29 (`APPROVE TASK-017`) following complete verification of real application contracts across NestJS API, Main Web UI, and Simulator Socket.IO, strictly non-destructive fixture isolation, correlated-only cleanup, sentinel concurrency preservation proof, accepted workout restoration, and passing Playwright tests on both viewports. Status is DONE.
 
 - TASK-016 was approved on 2026-10-28 (`APPROVE TASK-016`) following complete verification of multi-trainer ownership scoping, fail-closed boundaries, TrialRunsPage filter auto-expansion, atomic finish/abort transitions, watchdog timers, and fail-safe deterministic fixture cleanup. Status is DONE.
 
@@ -69,4 +76,4 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 - TASK-001 baseline is BE `86d9bf0` and FE `4a73709`; canonical Simulator is clean.
 - Current repository statuses before CR-013 documentation edits: Backend is ahead of origin/main by 11 commits (HEAD `dac87eb`); Frontend is ahead of origin/main by 9 commits (HEAD `844e50d`); canonical Simulator branch `refactor/remove-rfid-standardize-microchip` is ahead of its upstream by 1 commit (HEAD `3f52a7a`). All three were clean; only canonical CR-013 documentation is now modified in Backend. Push remains separately gated.
 
-TASK-001 evidence is recorded in `reports/TASK-001.md`. TASK-002 through TASK-015 and TASK-020 are DONE with their canonical reports. TASK-014 root scripts are accepted as local-only and are intentionally not Git-deliverable. Execution is IDLE; commit/push and TASK-016 remain unauthorized until a new exact `START TASK-016`.
+TASK-001 evidence is recorded in `reports/TASK-001.md`. TASK-002 through TASK-017 and TASK-020 are DONE with their canonical reports. TASK-014 root scripts are accepted as local-only and are intentionally not Git-deliverable. TASK-018 is BLOCKED pending ChatGPT review and human approval of CR-024. Next task is TASK-018; TASK-019 remains unauthorized.

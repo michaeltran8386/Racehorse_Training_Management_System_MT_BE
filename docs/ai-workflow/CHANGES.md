@@ -616,3 +616,252 @@ AGY may append proposal and stop but must not rewrite approved Plan or implement
 - **Incorporated Plan version:** v1-approved-r22.
 - **Execution gate:** Approval incorporates Plan v1-approved-r22 and removes the CR-023 blocker. Execution returns to `IDLE` with `next_task: TASK-016`. AGY requires a new direct `START TASK-016` to begin implementation of the expanded 11-file scope. TASK-017 remains unauthorized.
 - **Target plan version:** v1-approved-r22.
+
+## CR-024 — Unified Web-Simulator Supply Replenishment & Delivery Coordination Contract
+
+> Planner revision dated 2026-10-29 is appended below this proposal and supersedes conflicting design and scope in sections 2–6. State remains PROPOSED; no implementation authority is granted.
+
+- **State:** PROPOSED
+- **Raised by:** Human Rejection of TASK-018 (`REJECT TASK-018`), 2026-10-29.
+- **Related plan:** v1-approved-r22 / TASK-018.
+
+### 1. Verified Defect & Root Cause Analysis
+
+1. **Independent Disconnected Inventories:**
+   - Simulator `src/sim/inventory.ts` currently maintains an independent mock catalog (`HAY`, `FEED`, `BEDDING`, `MEDS`, `SHOES`), mock capacities, and simulated local consumption. It does not read from or synchronize with the Backend/PostgreSQL system of record (`SupplyCatalog`, `StallZone`, `StockBalance`).
+2. **Missing Automated Delivery Trigger upon CM Approval:**
+   - On the Main Web, when Club Manager approves a restock request, the request transitions to `APPROVED`. Backend does not broadcast a delivery dispatch event to Simulator, and no delivery truck is automatically triggered.
+3. **Manual Delivery Confirmation on Web Decoupled from Simulator Animation:**
+   - Completion of delivery currently requires Club Manager to manually click "Confirm Receipt" in Main Web. The Simulator's truck animation does not decide or acknowledge order completion to the Backend.
+4. **Test & Workflow Disconnect:**
+   - The initial E2E test placed an order for oats on Web and separately ordered hay inside Simulator, failing to prove a single end-to-end unified workflow.
+5. **Notification Cleanup Over-reach:**
+   - Global notification cleanup could inadvertently delete restock notifications belonging to concurrent requests.
+
+### 2. Confirmed Product Requirements & Specification
+
+1. **Requester Workflow:** Groom submits restock proposal on Web (`POST /api/inventory/requests`). Initial state: `PENDING`.
+2. **Club Manager Approval & Automatic Dispatch:**
+   - Club Manager reviews and approves proposal on Web (`POST /api/inventory/requests/:id/review`).
+   - Backend transitions state to `DELIVERING` (ĐANG GIAO).
+   - Backend broadcasts WebSocket event `sys:supply_delivery_start` via Socket.IO containing: `requestId`, `requestNumber`, `zoneId`, `supplyId`, `supplyCode`, `supplyName`, `approvedQuantity`, `unit`, `dispatchedAt`, and `timeoutSeconds: 20`.
+   - Backend starts an in-memory 20-second watchdog timer for this `requestId`.
+3. **Simulator Real-Time Delivery Animation:**
+   - Connected Simulator client automatically receives `sys:supply_delivery_start`.
+   - Simulator spawns delivery truck animation (~8s) for that specific `requestId`, `zoneId`, `supplyId`, and `approvedQuantity` without requiring any manual "Order" click.
+   - When the truck arrives at the warehouse (~8 seconds), Simulator emits ACK packet `sim:supply_delivery_ack` with `requestId` back to Backend.
+4. **Backend Exactly-Once Stock Balance Increment:**
+   - When Backend receives `sim:supply_delivery_ack` (or when the 20-second watchdog timer expires if Simulator is offline/disconnected):
+     - Executes an atomic interactive database transaction (`prisma.$transaction`).
+     - Conditional state transition: `RestockRequest.updateMany({ where: { id: requestId, status: RestockStatus.DELIVERING }, data: { status: RestockStatus.DELIVERED, deliveredAt: new Date() } })`.
+     - If `count === 0` (due to duplicate ACK, late ACK after timeout, or concurrent tab), the request safely no-ops.
+     - If `count === 1`, Backend cancels the active watchdog timer, increments PostgreSQL `StockBalance.quantity` by `approvedQuantity`, creates audit log, and notifies the requester Groom.
+   - Main Web reflects `DELIVERED` (ĐÃ GIAO) automatically upon refresh or refetch.
+5. **Offline & Fallback Handling (20s Rule):**
+   - If Simulator is not connected or fails to ACK within 20s, the Backend 20s watchdog timer fires, transitions request to `DELIVERED`, and increments inventory balance.
+   - If Backend restarts while a request is in `DELIVERING`:
+     - On module bootstrap, Backend queries all requests in `DELIVERING`.
+     - If `now - reviewedAt >= 20s`, completes delivery immediately.
+     - If `now - reviewedAt < 20s`, reschedules watchdog timer for remaining duration.
+6. **Unified Master Data & Reconnection:**
+   - Web and Simulator share identical catalogue, units, stock balances, and capacities from PostgreSQL (`GET /api/inventory`). Local mock inventory in Simulator is eliminated.
+   - When Simulator reconnects or reloads, it queries active deliveries (`GET /api/inventory/active-deliveries`) to recover ongoing deliveries if within animation window.
+7. **Role Exclusivity:**
+   - Approval remains exclusively Club Manager (`CLUB_MANAGER`).
+   - Simulator ACK only finalizes an already-authorized `DELIVERING` request; it cannot initiate, approve, or arbitrarily alter delivery quantities.
+
+### 3. State Machine & Event Contracts
+
+- **RestockStatus Transitions:**
+  - `PENDING` -> `DELIVERING` (via Club Manager approval)
+  - `PENDING` -> `REJECTED` (via Club Manager rejection)
+  - `DELIVERING` -> `DELIVERED` (via Simulator `sim:supply_delivery_ack` OR Backend 20s watchdog timer)
+  - `DELIVERED` -> `[]` (Terminal)
+  - `REJECTED` -> `[]` (Terminal)
+
+- **Socket.IO Event Contracts:**
+  - `sys:supply_delivery_start`:
+    ```json
+    {
+      "requestId": "uuid",
+      "requestNumber": "REQ-2610-0003",
+      "zoneId": "uuid",
+      "supplyId": "uuid",
+      "supplyCode": "SUP_GRAIN_OATS",
+      "supplyName": "Yến mạch cán vỡ",
+      "approvedQuantity": 20,
+      "unit": "KG",
+      "dispatchedAt": "2026-10-29T06:00:00.000Z",
+      "timeoutSeconds": 20
+    }
+    ```
+  - `sim:supply_delivery_ack`:
+    ```json
+    {
+      "requestId": "uuid",
+      "completedAt": "2026-10-29T06:00:08.000Z"
+    }
+    ```
+
+### 4. Schema & Migration Impact
+
+- **Database Enum `RestockStatus`:**
+  - Add value `DELIVERING` to enum `RestockStatus`.
+  - Non-destructive Prisma migration: `ALTER TYPE "RestockStatus" ADD VALUE 'DELIVERING';`.
+
+### 5. Exact File Scope Budget (12 application & test files)
+
+- **Backend (`Racehorse_Training_Management_System_MT_BE`) — 5 files:**
+  1. `prisma/schema.prisma` (Add `DELIVERING` to `RestockStatus` enum).
+  2. `src/inventory/inventory.service.ts` (Implement `DELIVERING` state, watchdog timer Map, restart recovery hook, and exactly-once delivery completion).
+  3. `src/simulator/simulator.gateway.ts` (Broadcast `sys:supply_delivery_start` and handle `sim:supply_delivery_ack`).
+  4. `src/inventory/inventory.controller.ts` (Add endpoint for active deliveries and query scoping for Simulator).
+  5. `src/inventory/inventory.service.spec.ts` (Unit tests for 20s watchdog, restart recovery, ACK vs timeout concurrency, and exactly-once stock increment).
+
+- **Frontend (`Racehorse_Training_Management_System_MT_FE`) — 3 files:**
+  6. `src/features/stable/pages/RestockRequestsPage.tsx` (Display `DELIVERING` badge; remove manual CM confirm button; auto-refresh/reflect `DELIVERED` status).
+  7. `src/features/stable/types/inventory.ts` (Add `DELIVERING` to frontend type definitions).
+  8. `tests/e2e/simulator-real-stack.spec.ts` (Real-stack E2E test verifying: Groom creates proposal -> CM approves -> Simulator receives socket event and animates truck 8s -> Simulator sends ACK -> Web updates to `DELIVERED` and DB stock increments exactly once; plus fallback timeout test and safe notification cleanup).
+
+- **Canonical Simulator (`Racehorse_Simulator_Web`) — 4 files:**
+  9. `src/sim/inventory.ts` (Bind inventory state to Backend API; handle inbound delivery orders from Backend socket).
+  10. `src/ui/SupplyPanel.tsx` (Display real Backend catalog items, units, and PostgreSQL stock balances).
+  11. `src/hub/socketTransport.ts` (Listen for `sys:supply_delivery_start`, track animation completion, and emit `sim:supply_delivery_ack`).
+  12. `src/sim/inventory.test.ts` (Unit tests for socket delivery receipt, duplicate event deduplication, and ACK emission).
+
+### 6. Execution Gate
+
+- Approval of CR-024 incorporates the proposed architecture into the canonical plan.
+- TASK-018 is currently marked `BLOCKED` with `pending_change: CR-024`.
+- Implementation, schema migration, or testing requires an explicit human command `START TASK-018` after CR-024 is approved.
+- TASK-019 remains unauthorized.
+
+### 7. ChatGPT planner revision — definitive proposal awaiting Human approval (2026-10-29)
+
+**Approval outcome — ACCEPTED on 2026-10-29 by exact human command `APPROVE CR-024`, received by ChatGPT Planner.** This section is incorporated into v1-approved-r23, superseding conflicting proposal sections above. PROPOSED/pending statements are historical. TASK-018 is TODO, execution IDLE, awaiting fresh START TASK-018. Approval does not execute migration, approve task completion or authorize commit/push.
+
+This revision supersedes conflicting sections 2–6 above. It does not amend the approved r22 plan until `APPROVE CR-024`. Proposed next revision: `v1-approved-r23`. TASK-018 remains BLOCKED, pending CR-024; a fresh `START TASK-018` is required after approval. No application code, migration execution, commit or later-task work is authorized by drafting this section.
+
+#### A. Product lifecycle and persisted authority
+
+- New requests: `PENDING -> DELIVERING` only on explicit Club Manager approval; rejection remains `PENDING -> REJECTED`. Completion is `DELIVERING -> DELIVERED` through authorized animation ACK or server fallback. Terminal states stay terminal.
+- Approval atomically records approved quantity, reviewing Manager, and `reviewedAt` as the dispatch timestamp. Quantity cannot be changed by Simulator. Main Web immediately shows Dang giao, with no manual confirmation required for newly dispatched requests.
+- Simulator direct access remains login-free and loads a read-only supply snapshot. It automatically animates the exact approved request, zone, supply and quantity for 8 wall-clock seconds from persisted dispatch time, independent of simulation speed/pause. It never locally orders, fills or consumes official stock.
+- Delivery completion transaction increments stock exactly once by approved quantity, records deliveredAt and attributes authorization to the approving Manager; audit also records completion source ACK/FALLBACK. Broadcast and requester notification occur after commit. Web refetches while deliveries are active (bounded polling <=2s is sufficient), and Simulator refetches on completion/focus/reconnect. Both display persisted stock, never an optimistic fabricated balance.
+- Keep legacy APPROVED rows unchanged. The existing CM-only manual receipt endpoint/UI remains available ONLY for those legacy rows; startup must not auto-dispatch them. New approvals bypass APPROVED and use the automatic flow. This avoids a bulk data migration or accidental delivery of old orders.
+
+#### B. Data contract and capacity
+
+- PostgreSQL SupplyCatalog and StockBalance are authoritative. Identity is `(zoneId, supplyId)`, with supply code/name/category/unit, exact quantity and minThreshold. No fixed five-item catalogue, random stock, invented unit, local consumption or default capacity in runtime.
+- Add nullable Decimal(12,2) `StockBalance.capacity`, in the same unit as the supply. Existing rows remain NULL, interpreted as UNCONFIGURED capacity rather than zero or an invented physical limit. UI shows quantity and 'capacity not configured' without a percentage meter. Positive configured capacity must be enforced; this CR does not introduce a capacity-management UI or invent fixture-independent values.
+- Retain validation of finite positive quantities and valid active supply/zone. Remove the arbitrary universal 10000 ceiling from TASK-018 changes. Serialize Decimal values consistently with the existing API contract.
+- Approval and any manual stock adjustment/delivery must serialize on the zone row (including first balance creation), then inspect the relevant zone/supply balance and reserved DELIVERING quantities. When capacity exists, `balance + pending delivery reservations + newly approved quantity <= capacity`. Legacy receipt and direct stock increases must honor existing reservations too. No oversell through two different requests or a concurrent stock adjustment. Consistent lock ordering prevents deadlocks.
+- Additive migration file `prisma/migrations/20261029010000_supply_delivery_sync/migration.sql` adds DELIVERING and nullable capacity; no reset, truncate, seed replacement, destructive enum rewrite or automatic APPROVED conversion. Use the repository's migration workflow after the separately authorized START; migration SQL must be reviewed before applying to the named local DB. Never run migrate reset/db push as a substitute.
+
+#### C. Dedicated supply connection and bounded ACK authority
+
+- Add an Inventory-owned Socket.IO gateway on `/supplies`; do not change `/simulator` handshake, workout/exam guards or session types. InventoryModule registers it and it delegates business operations to InventoryService. Avoid InventoryModule/SimulatorModule circular imports.
+- Supply REST snapshot is a deliberately public read-only projection for direct Simulator use, under `/api/inventory/simulator/context`; expose catalogue/zone stock and active deliveries only, without requester PII, account data or write credentials. Existing authenticated inventory endpoints retain RBAC. Supply socket is read/ACK only and cannot create/approve/change quantity/master data.
+- For each DELIVERING request, the Backend issues an opaque signed capability scoped to purpose SUPPLY_DELIVERY_ACK, exact requestId and dispatch timestamp, expiring no later than dispatch+20s. Reuse existing signing infrastructure; no new dependency, schema-stored secret or access token in URL/localStorage. Capability travels only in the local supply socket dispatch/recovery payload, remains in memory, and is excluded from logs/screenshots. This is a narrow local Simulator capability, not human identity or a claim of strong access isolation for the public demo.
+- `sys:supply_delivery_start`: requestId, requestNumber, zoneId, supplyId, code/name/unit, approvedQuantity, dispatchedAt, animationEndsAt, fallbackAt and ackCapability. `sim:supply_delivery_ack`: requestId and ackCapability; client completedAt is not authoritative. Validate payload shape, capability signature/purpose/binding/expiry and persisted DELIVERING status before mutation. Reject early ACK before dispatch+8s. Valid duplicate/late terminal ACK is an idempotent response without increment; unknown/invalid credentials never mutate.
+- On supply socket connect/reconnect, reissue capabilities for still-active deliveries and send the active snapshot after subscription is established. Reconcile buffered events by requestId and persisted state so a snapshot/event race cannot lose a dispatch. Multiple tabs may animate but completion is unique. New deliveries arriving during a trip retain their own deadlines; do not silently merge quantities or ACK an order before its 8s deadline. Already DELIVERED requests refresh stock and do not replay as new deliveries.
+- `sys:supply_delivery_completed` contains requestId, zoneId, supplyId, status and authoritative resulting balance after commit. No capability in completion messages. Backend/DB/network failure surfaces visibly without mock fallback.
+
+#### D. Transactions, watchdog and recovery
+
+- One shared completion method handles ACK, fallback and recovery. Lock the zone consistently, conditionally transition DELIVERING -> DELIVERED and increment the balance inside the same transaction. A zero transition count is a no-op. Neither a duplicate ACK nor two different worker processes may double credit.
+- Only after successful commit clear the request timer and emit completion/notification. On rollback retain/re-arm recovery; never mark DELIVERED without the increment. Notification failure must not reverse stock credit or cause duplicate credit on retry; report failure and retain existing dedupe practices.
+- Server fallback is the absolute deadline reviewedAt+20s, independent of browser animation/clock. Startup scans persisted DELIVERING rows, completes overdue rows and re-arms remaining time. Add a bounded periodic recovery sweep for failed timer completions; module shutdown clears timers. No fallback implementation solely inside browser inventory.ts.
+- Backend downtime can delay delivery beyond 20s; recovery completes overdue requests when service resumes. UI must show the persisted state honestly.
+
+#### E. Proposed exact scope — replaces the unsupported per-repository five-file interpretation
+
+TASK-018 remains ONE task with sequential implementation slices and ONE combined Human QA gate. Proposed total: 21 application/test/migration paths across the workspace; coordination docs/report excluded. Includes every currently dirty TASK-018 application file, even those retained only to undo incidental changes. A further path requires a new scope review before editing.
+
+Backend (8):
+1. `prisma/schema.prisma`
+2. `prisma/migrations/20261029010000_supply_delivery_sync/migration.sql` (new)
+3. `src/inventory/inventory.service.ts`
+4. `src/inventory/inventory.service.spec.ts`
+5. `src/inventory/inventory.controller.ts`
+6. `src/inventory/inventory.module.ts`
+7. `src/inventory/supply-delivery.gateway.ts` (new)
+8. `src/inventory/supply-delivery.gateway.spec.ts` (new)
+
+Frontend (3):
+9. `src/features/stable/pages/RestockRequestsPage.tsx`
+10. `src/features/stable/types/inventory.ts`
+11. `tests/e2e/simulator-real-stack.spec.ts`
+
+Canonical Simulator (10):
+12. `src/sim/inventory.ts`
+13. `src/sim/inventory.test.ts`
+14. `src/ui/SupplyPanel.tsx`
+15. `src/ui/FarmHub.tsx`
+16. `src/ui/App.tsx`
+17. `src/main.tsx` (retain/reconcile existing TASK-018 change only)
+18. `src/api/inventoryApi.ts` (new, reuse API base/error conventions)
+19. `src/api/inventoryApi.test.ts` (new)
+20. `src/sim/supplyTransport.ts` (new, dedicated namespace)
+21. `src/sim/supplyTransport.test.ts` (new)
+
+The existing workout/exam socketTransport and gateway are verification-only. No dependency, root launcher, reference _v3, horse/medical flow or unrelated asset work. Preserve NOW1.txt, NOW2.txt and music/; do not include them in TASK-018 delivery.
+
+#### F. Required proof and manual handoff
+
+- Sequential slices: A Backend schema/contracts/transaction/recovery; B Simulator real snapshot/dispatch/animation/ACK; C Web display and combined browser acceptance. No slice is independently approved or a license to start TASK-019.
+- Unit/fake-clock proof: 8s early-ACK rejection, 20s offline fallback, restart before/after deadline, transaction rollback/retry, duplicate/replayed/foreign capability, ACK vs timeout race, two requests sharing a stock balance, capacity reservations, legacy APPROVED compatibility, timer teardown.
+- Real-stack browser proof on both viewports: Groom creates ONE uniquely identified request; Simulator already open; CM approves; UI shows DELIVERING; matching supply/zone/quantity animates automatically; stock remains unchanged before completion; ACK completes and DB/Web/SIM agree exactly once. No separate Simulator order click, conditional skip or unrelated HAY substitute counts as acceptance.
+- Also prove multi-tab/reconnect, offline fallback and Backend restart recovery, invalid/early ACK, and visible Backend-down failure. Isolated unit mocks are permitted; runtime/E2E request interception or fake data are not.
+- E2E fixtures use named QA data and exact captured IDs/markers. Cleanup preserves concurrent unrelated notifications/audits, restores all affected baseline fields and asserts residue; include sentinel proof. Never delete global newly created rows by notIn baseline IDs.
+- Run BE focused tests/typecheck/lint, FE typecheck/lint and real-stack browser tests, SIM tests/typecheck/build, diff hygiene and historical evidence integrity. Report each check actually run, residual risk and migration applied/not applied.
+- Human handoff must identify exact QA request/zone/supply, expected quantity and starting stock, actor accounts and URLs. Human needs only reload existing pages, submit/approve, watch automatic truck, then compare persisted balances. Finish AWAITING_USER_QA and STOP.
+
+## CR-025 — Include existing Simulator sound dependencies in TASK-018 delivery
+
+**Approval outcome: ACCEPTED by exact human command `APPROVE CR-025` received by ChatGPT Planner on 2026-10-29. Incorporated into v1-approved-r24. Earlier PROPOSED/pending wording below is proposal history. Execution IDLE, TASK-018 TODO awaiting fresh START TASK-018; no task completion or commit authority.**
+
+- **State:** PROPOSED by ChatGPT Planner, 2026-10-29; awaiting explicit APPROVE CR-025.
+- **Human request:** "thế thì bạn điều chỉnh bổ sung đi, vì đúng là cái này nằm ngoài nhưng mà chỉ có phần sound thêm vào sim thôi mà ?"
+- **Reason:** Existing user audio work is integrated into App/FarmHub and delivery interactions. Excluding the imported audio manager/control while committing those callers produces an incomplete Simulator checkout. Preserve and include the existing sound feature rather than mechanically splitting its callers.
+- **Plan impact upon approval:** proposed v1-approved-r24; TASK-018 remains one task. No Backend/schema/FE change beyond existing CR-024 scope. No task approval, commit or START TASK-019 authority is implied.
+
+### Included behavior
+- Existing looping music, intro/UI/building/delivery SFX and music/SFX enable/volume controls with local preference persistence.
+- Reuse current HTMLAudioElement implementation and existing assets. No dependency, new music generation, new sound feature or redesign.
+- Audio must never block launch, animation, delivery ACK/fallback, stock persistence or accessibility. Missing files, autoplay rejection, unavailable storage or invalid saved settings must fail gracefully. Volume is finite and bounded 0..1.
+- Start playback through a browser-permitted user interaction; no assumption that first page load can play audio. Settings remain operable by keyboard with accessible labels, Escape dismissal and visible focus.
+- Sound must not duplicate on refetch/reconnect or create overlapping background loops/listeners. Verify mount/unmount cleanup and one delivery sound sequence per logical delivery.
+
+### Exact additional scope (18 paths)
+Existing CR-024 App.tsx, FarmHub.tsx and main.tsx can retain their sound integration; already included in the original 21 paths.
+Additional source/test paths:
+1. SIM src/audio/audioManager.ts
+2. SIM src/audio/audioManager.test.ts (new focused test)
+3. SIM src/ui/AudioControl.tsx
+4. SIM src/ui/FarmMapCanvas.tsx
+5. SIM src/ui/IntroOverlay.tsx
+6. SIM src/ui/Popup.tsx
+
+Additional runtime assets under canonical Simulator public/audio/:
+7. theme-main.mp3
+8. ui-click.wav
+9. building-select.wav
+10. building-open.wav
+11. ui-close.wav
+12. ui-success.wav
+13. ui-error.wav
+14. intro-cloud-whoosh.wav
+15. intro-logo-reveal.wav
+16. delivery-vehicle-arrive.wav
+17. delivery-stop.wav
+18. delivery-complete.wav
+
+Combined TASK-018 scope becomes 39 application/test/migration/asset paths (21 CR-024 + 18 CR-025); coordination/report excluded. Keep the unused 34.6 MB public/audio/theme-main.wav, source music/ copies and variants, generation scripts, NOW1.txt and NOW2.txt intact locally but out of this delivery. Do not delete them. Report origin/usage permission of existing user-provided assets; do not invent provenance.
+
+### Verification and commit boundary
+- Verify every runtime audio URL exists in the staged tree and production build, with no dependency on untracked local source files.
+- Run Simulator tests/typecheck/build, focused audio tests (mock browser APIs only in isolated tests), and browser smoke: fresh load/autoplay blocked, user activation, mute/unmute, volume/reload persistence, popup/intro and delivery sound without duplicate music or ACK delay.
+- Re-run the existing real-stack TASK-018 supply acceptance with sound enabled and disabled. Preserve concurrent user data and existing evidence.
+- Document the combined file manifest and actual results in TASK-018 report. Once Human QA approves TASK-018 and separately authorizes commit, create a self-contained Simulator commit including both supply and approved audio files; no blanket git add.
+- Until APPROVE CR-025, this is a proposal only. Do not implement new audio changes, commit or discard user work. On approval reconcile the plan/task scope and require a fresh START TASK-018 for final combined verification, then AWAITING_USER_QA and STOP.

@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { UserRole } from '../common/enums/role.enum';
 import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { InventoryService } from './inventory.service';
@@ -18,6 +19,15 @@ import {
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
+
+  /**
+   * CR-024: Public read-only projection for direct Simulator access
+   */
+  @Get('simulator/context')
+  @Public()
+  async getSimulatorContext() {
+    return this.inventoryService.getSimulatorContext();
+  }
 
   /**
    * SC-4.06: Lấy danh sách tồn kho vật tư theo Khu chuồng

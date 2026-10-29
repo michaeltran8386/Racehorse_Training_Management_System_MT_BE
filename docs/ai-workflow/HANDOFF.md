@@ -1,15 +1,27 @@
 # Current Handoff
 
+## TASK-018 Human QA correction — exact stock display (2026-10-29)
+
+Human requested "check và thực hiện điều chỉnh" for Simulator stock accuracy. Planner review found the Backend context exposes real Decimal(12,2) stock quantities, but SupplyPanel applies Math.ceil(item.quantity), then CountUp applies Math.round, so fractional stock is displayed incorrectly. Its pending delivery predicate matches supply alone without zoneId. These are corrective defects inside existing TASK-018/CR-024 paths, not approval of the task or a new feature scope.
+
+AGY correction requirements for the same TASK-018:
+- Render authoritative quantity with up to two fractional digits, preserving exact final value (e.g. 25.25 must not become 26); remove integer rounding from visible quantity and meter aria-valuenow. Animation must settle on the exact persisted value. Use a consistent readable unit; never manufacture capacity. Keep unconfigured capacity explicit but secondary to the actual stock amount.
+- Delivery indication must match BOTH zoneId and supplyId; one delivery must not mark the same supply in another zone as delivering.
+- Refresh the authoritative inventory while the warehouse panel is open, with a bounded interval (2s is sufficient), and on focus/reconnect/completion; clean up timers, prevent overlapping/stale responses from overwriting newer snapshots, and show errors visibly without mock fallback. A Web inventory adjustment must become visible without manually reloading Simulator. Do not introduce automatic simulated stock consumption.
+- Verify fractional stock (25.25 and 0.50), zero stock, same supply in two zones, Web adjustment visible in Simulator, completed delivery and reload persistence using real API/PostgreSQL browser QA. Restore exact QA baseline fields and delete only correlated test rows.
+- Reuse the authorized 21-path scope (SupplyPanel, App, inventory tests and existing real-stack E2E as needed); no new assets, icons, dependencies or files. Icon artwork is a separate requested topic and is not part of this numeric correction.
+- Update TASK-018 report with actual verification, return to AWAITING_USER_QA and STOP. No commit/push/merge, migration/reset, approval or TASK-019 authority is granted by this note. Preserve all concurrent user audio/UI changes.
+
 ## Gate state
 
-- **Plan:** v1-approved-r22 — approved Plan v1 with CR-005 through CR-023 incorporated.
-- **Last completed task:** TASK-017 — DONE and human-approved on 2026-10-29 (`APPROVE TASK-017`).
+- **Plan:** v1-approved-r24 — CR-024 and CR-025 approved 2026-10-29.
+- **Last completed task:** TASK-018 — DONE and human-approved on 2026-10-29 (`APPROVE TASK-018`).
 - **Active task:** NONE.
 - **Active task status:** IDLE.
-- **Next eligible task:** TASK-018.
+- **Next eligible task:** TASK-019 (TODO; unauthorized).
 - **Pending design change:** NONE.
 - **Operational blocker:** NONE.
-- **Do now:** Await explicit human command `START TASK-018` to begin execution of TASK-018 (Supply request/delivery simulation). Do not begin implementation, pre-work, commit, push, or merge without direct authorization. Stop.
+- **Do now:** Await explicit human instruction (commit authorization or separate `START TASK-019`). TASK-019 remains unauthorized. Do not commit, push, merge, or execute TASK-019 pre-work.
 
 ## TASK-017 boundary
 
@@ -158,4 +170,4 @@
 - Retain the verified R-1/R-2/R-3/R-4 protections.
 - CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`. In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
 
-Plan v1-approved-r21 is approved and incorporated. TASK-001 through TASK-015 and TASK-020 are DONE and human-approved. TASK-016 is BLOCKED pending CR-023 (multi-trainer training plan/workout scoping & trial date filter visibility) following human manual QA rejection. Next task remains TASK-016; TASK-017 remains unauthorized.
+Plan v1-approved-r24 is approved and incorporated. TASK-001 through TASK-018 and TASK-020 are DONE and human-approved. Next task is TASK-019; TASK-019 remains unauthorized.

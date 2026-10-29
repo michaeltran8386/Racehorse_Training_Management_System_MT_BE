@@ -1,9 +1,13 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r22
+**Version:** v1-approved-r24
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
+
+Revision r24 incorporates APPROVE CR-025 (2026-10-29): include existing Simulator music/SFX/control dependencies and 12 runtime audio assets within TASK-018, total 39 paths (21 CR-024 + 18 CR-025). Source music copies and unused theme-main.wav remain local, excluded. Combined supply acceptance with audio enabled/disabled and audio safety/build checks required. Execution IDLE awaiting fresh START TASK-018; no task approval or commit authority.
+
+Revision r23 incorporates `APPROVE CR-024` (2026-10-29), specifically the definitive planner revision in CHANGES.md section 7: TASK-018 expands to 21 exact application/test/migration paths in three sequential slices with one combined QA gate. Backend owns real catalogue/stock, nullable capacity, capacity reservations, DELIVERING dispatch, bounded supply ACK capability, 8s earliest completion and persistent 20s fallback/restart recovery. Supply uses a dedicated /supplies gateway; workout/exam guards remain unchanged. Existing APPROVED requests retain CM-only legacy receipt. Migration is additive; no reset/reseed or invented capacities. Prior TASK-018 report is superseded. Execution returns to IDLE awaiting a fresh START TASK-018; TASK-019 remains unauthorized.
 
 Revision r6 incorporates approved CR-007: the result modal must submit results and optional locking through the single transactional `/results` request; it must not call `/lock-results` again after that request succeeds. TASK-003 has an approved six-file scope for this correction and its focused E2E coverage.
 
