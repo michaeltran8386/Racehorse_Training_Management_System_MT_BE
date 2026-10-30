@@ -778,126 +778,126 @@ export class TournamentsService {
    * Ghi nhận kết quả thi đấu (Trainer hoặc CM)
    */
   async recordResults(tournamentId: string, dto: BatchRecordResultsDto, actor: TournamentActor) {
-    const tournament = await this.prisma.tournament.findUnique({
-      where: { id: tournamentId },
-      include: {
-        registrations: {
-          include: {
-            horse: true,
-            result: true,
+    const { tournament, savedResults } = await this.prisma.$transaction(async (tx) => {
+      // Serialize both finalization APIs and drafts before reading authoritative state.
+      await tx.$queryRaw`SELECT id FROM "Tournament" WHERE id = ${tournamentId} FOR UPDATE`;
+      const tournament = await tx.tournament.findUnique({
+        where: { id: tournamentId },
+        include: {
+          registrations: {
+            include: {
+              horse: true,
+              result: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!tournament) {
-      throw apiError(
-        HttpStatus.NOT_FOUND,
-        'TOURNAMENT_NOT_FOUND',
-        `Tournament ${tournamentId} not found`,
-      );
-    }
-
-    if (actor.role !== 'CLUB_MANAGER') {
-      throw apiError(
-        HttpStatus.FORBIDDEN,
-        'PERMISSION_DENIED',
-        'Only the Club Manager has the authority to record or edit tournament results.',
-      );
-    }
-
-    if (tournament.status === TournamentStatus.COMPLETED) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'ALREADY_LOCKED',
-        'Results for this tournament have already been locked by the Club Manager.',
-      );
-    }
-
-    if (tournament.status === TournamentStatus.CANCELLED) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'INVALID_STATUS_TRANSITION',
-        'Cannot record results for a cancelled tournament.',
-      );
-    }
-
-    if (tournament.status !== TournamentStatus.CLOSED_REGISTRATION) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'REGISTRATION_NOT_CLOSED',
-        'Results can only be recorded after registration has closed (CLOSED_REGISTRATION).',
-      );
-    }
-
-    if (new Date() < new Date(tournament.raceDate)) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'RACE_NOT_FINISHED',
-        'Results cannot be recorded before the race has occurred.',
-      );
-    }
-
-    const regMap = new Map(tournament.registrations.map((r) => [r.id, r]));
-
-    // R-3: Reject registrations that are not active (SCRATCHED_MEDICAL, DISQUALIFIED, etc.) before any upsert/audit
-    for (const item of dto.results) {
-      const reg = regMap.get(item.registrationId);
-      if (!reg) {
+      if (!tournament) {
         throw apiError(
-          HttpStatus.BAD_REQUEST,
-          'INVALID_REGISTRATION_ID',
-          `Registration ID ${item.registrationId} does not belong to this tournament`,
+          HttpStatus.NOT_FOUND,
+          'TOURNAMENT_NOT_FOUND',
+          `Tournament ${tournamentId} not found`,
         );
       }
 
-      if (
-        reg.status === RegistrationStatus.SCRATCHED_MEDICAL ||
-        reg.status === RegistrationStatus.DISQUALIFIED ||
-        (reg.status !== RegistrationStatus.REGISTERED &&
-          reg.status !== RegistrationStatus.CONFIRMED)
-      ) {
+      if (actor.role !== 'CLUB_MANAGER') {
         throw apiError(
-          HttpStatus.BAD_REQUEST,
-          'CANNOT_RECORD_RESULT',
-          `Cannot record result for registration ${item.registrationId} with status ${reg.status}. Results may only be recorded for active registrations.`,
-        );
-      }
-    }
-
-    const activeRegs = tournament.registrations.filter(
-      (r) =>
-        r.status === RegistrationStatus.REGISTERED || r.status === RegistrationStatus.CONFIRMED,
-    );
-
-    // R-4: If locking results, validate BEFORE any writes that every active registration has a result
-    if (dto.lockResults) {
-      if (activeRegs.length === 0) {
-        throw apiError(
-          HttpStatus.BAD_REQUEST,
-          'NO_REGISTRATIONS',
-          'Cannot lock tournament without any registered participants.',
+          HttpStatus.FORBIDDEN,
+          'PERMISSION_DENIED',
+          'Only the Club Manager has the authority to record or edit tournament results.',
         );
       }
 
-      const dtoRegIds = new Set(dto.results.map((r) => r.registrationId));
-      const missingResults = activeRegs.filter((r) => !dtoRegIds.has(r.id) && !r.result);
-      if (missingResults.length > 0) {
+      if (tournament.status === TournamentStatus.COMPLETED) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
-          'RESULTS_INCOMPLETE',
-          `Cannot lock results: ${missingResults.length} registered horse(s) still lack finish results.`,
+          'ALREADY_LOCKED',
+          'Results for this tournament have already been locked by the Club Manager.',
         );
       }
-    }
 
-    // Atomic execution
-    if (dto.lockResults) {
-      const now = new Date();
-      const billingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      if (tournament.status === TournamentStatus.CANCELLED) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_STATUS_TRANSITION',
+          'Cannot record results for a cancelled tournament.',
+        );
+      }
+
+      if (tournament.status !== TournamentStatus.CLOSED_REGISTRATION) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'REGISTRATION_NOT_CLOSED',
+          'Results can only be recorded after registration has closed (CLOSED_REGISTRATION).',
+        );
+      }
+
+      if (new Date() < new Date(tournament.raceDate)) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'RACE_NOT_FINISHED',
+          'Results cannot be recorded before the race has occurred.',
+        );
+      }
+
+      const regMap = new Map(tournament.registrations.map((r) => [r.id, r]));
+
+      // R-3: Reject registrations that are not active (SCRATCHED_MEDICAL, DISQUALIFIED, etc.) before any upsert/audit
+      for (const item of dto.results) {
+        const reg = regMap.get(item.registrationId);
+        if (!reg) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'INVALID_REGISTRATION_ID',
+            `Registration ID ${item.registrationId} does not belong to this tournament`,
+          );
+        }
+
+        if (
+          reg.status === RegistrationStatus.SCRATCHED_MEDICAL ||
+          reg.status === RegistrationStatus.DISQUALIFIED ||
+          (reg.status !== RegistrationStatus.REGISTERED &&
+            reg.status !== RegistrationStatus.CONFIRMED)
+        ) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'CANNOT_RECORD_RESULT',
+            `Cannot record result for registration ${item.registrationId} with status ${reg.status}. Results may only be recorded for active registrations.`,
+          );
+        }
+      }
+
+      const activeRegs = tournament.registrations.filter(
+        (r) =>
+          r.status === RegistrationStatus.REGISTERED || r.status === RegistrationStatus.CONFIRMED,
+      );
+
+      // R-4: If locking results, validate BEFORE any writes that every active registration has a result
+      if (dto.lockResults) {
+        if (activeRegs.length === 0) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'NO_REGISTRATIONS',
+            'Cannot lock tournament without any registered participants.',
+          );
+        }
+
+        const dtoRegIds = new Set(dto.results.map((r) => r.registrationId));
+        const missingResults = activeRegs.filter((r) => !dtoRegIds.has(r.id) && !r.result);
+        if (missingResults.length > 0) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'RESULTS_INCOMPLETE',
+            `Cannot lock results: ${missingResults.length} registered horse(s) still lack finish results.`,
+          );
+        }
+      }
+
       const savedResults: any[] = [];
-
-      await this.prisma.$transaction(async (tx) => {
+      if (dto.lockResults) {
+        const now = new Date();
+        const billingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         // 1. Upsert results from dto
         for (const item of dto.results) {
           const calculatedSpeed =
@@ -1003,8 +1003,42 @@ export class TournamentsService {
             }
           }
         }
-      });
+      } else {
+        for (const item of dto.results) {
+          const calculatedSpeed =
+            item.avgSpeedKmh && item.avgSpeedKmh > 0
+              ? item.avgSpeedKmh
+              : Math.round((tournament.distanceMeters / item.finishTimeSeconds) * 3.6 * 100) / 100;
 
+          const res = await tx.tournamentResult.upsert({
+            where: { registrationId: item.registrationId },
+            create: {
+              registrationId: item.registrationId,
+              finalRank: item.finalRank,
+              finishTimeSeconds: item.finishTimeSeconds,
+              avgSpeedKmh: calculatedSpeed,
+              prizeMoneyWon: item.prizeMoneyWon ?? 0,
+              officialNotes: item.officialNotes,
+            },
+            update: {
+              finalRank: item.finalRank,
+              finishTimeSeconds: item.finishTimeSeconds,
+              avgSpeedKmh: calculatedSpeed,
+              prizeMoneyWon: item.prizeMoneyWon ?? 0,
+              officialNotes: item.officialNotes,
+            },
+          });
+
+          savedResults.push({
+            ...res,
+            prizeMoneyWon: Number(res.prizeMoneyWon),
+          });
+        }
+      }
+      return { tournament, savedResults };
+    });
+
+    if (dto.lockResults) {
       if (savedResults.length > 0) {
         await this.audit.record(
           { id: actor.id, name: actor.name },
@@ -1044,41 +1078,6 @@ export class TournamentsService {
       });
     }
 
-    // Draft mode (lockResults=false)
-    const savedResults: any[] = [];
-    await this.prisma.$transaction(async (tx) => {
-      for (const item of dto.results) {
-        const calculatedSpeed =
-          item.avgSpeedKmh && item.avgSpeedKmh > 0
-            ? item.avgSpeedKmh
-            : Math.round((tournament.distanceMeters / item.finishTimeSeconds) * 3.6 * 100) / 100;
-
-        const res = await tx.tournamentResult.upsert({
-          where: { registrationId: item.registrationId },
-          create: {
-            registrationId: item.registrationId,
-            finalRank: item.finalRank,
-            finishTimeSeconds: item.finishTimeSeconds,
-            avgSpeedKmh: calculatedSpeed,
-            prizeMoneyWon: item.prizeMoneyWon ?? 0,
-            officialNotes: item.officialNotes,
-          },
-          update: {
-            finalRank: item.finalRank,
-            finishTimeSeconds: item.finishTimeSeconds,
-            avgSpeedKmh: calculatedSpeed,
-            prizeMoneyWon: item.prizeMoneyWon ?? 0,
-            officialNotes: item.officialNotes,
-          },
-        });
-
-        savedResults.push({
-          ...res,
-          prizeMoneyWon: Number(res.prizeMoneyWon),
-        });
-      }
-    });
-
     if (savedResults.length > 0) {
       await this.audit.record(
         { id: actor.id, name: actor.name },
@@ -1110,85 +1109,87 @@ export class TournamentsService {
       );
     }
 
-    const tournament = await this.prisma.tournament.findUnique({
-      where: { id: tournamentId },
-      include: {
-        registrations: {
-          include: {
-            horse: true,
-            result: true,
+    const tournament = await this.prisma.$transaction(async (tx) => {
+      // Serialize both finalization APIs and drafts before reading authoritative state.
+      await tx.$queryRaw`SELECT id FROM "Tournament" WHERE id = ${tournamentId} FOR UPDATE`;
+      const tournament = await tx.tournament.findUnique({
+        where: { id: tournamentId },
+        include: {
+          registrations: {
+            include: {
+              horse: true,
+              result: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    if (!tournament) {
-      throw apiError(
-        HttpStatus.NOT_FOUND,
-        'TOURNAMENT_NOT_FOUND',
-        `Tournament ${tournamentId} not found`,
+      if (!tournament) {
+        throw apiError(
+          HttpStatus.NOT_FOUND,
+          'TOURNAMENT_NOT_FOUND',
+          `Tournament ${tournamentId} not found`,
+        );
+      }
+
+      if (tournament.status === TournamentStatus.COMPLETED) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'ALREADY_COMPLETED',
+          'Tournament results have already been locked.',
+        );
+      }
+
+      if (tournament.status === TournamentStatus.CANCELLED) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_STATUS_TRANSITION',
+          'Cannot lock results for a cancelled tournament.',
+        );
+      }
+
+      if (tournament.status !== TournamentStatus.CLOSED_REGISTRATION) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'REGISTRATION_NOT_CLOSED',
+          'Results can only be locked when tournament is in CLOSED_REGISTRATION status.',
+        );
+      }
+
+      if (new Date() < new Date(tournament.raceDate)) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'RACE_NOT_FINISHED',
+          'Results cannot be locked before the race date.',
+        );
+      }
+
+      const activeRegs = tournament.registrations.filter(
+        (r) =>
+          r.status === RegistrationStatus.REGISTERED || r.status === RegistrationStatus.CONFIRMED,
       );
-    }
 
-    if (tournament.status === TournamentStatus.COMPLETED) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'ALREADY_COMPLETED',
-        'Tournament results have already been locked.',
-      );
-    }
+      if (activeRegs.length === 0) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'NO_REGISTRATIONS',
+          'Cannot lock tournament without any registered participants.',
+        );
+      }
 
-    if (tournament.status === TournamentStatus.CANCELLED) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'INVALID_STATUS_TRANSITION',
-        'Cannot lock results for a cancelled tournament.',
-      );
-    }
+      const missingResults = activeRegs.filter((r) => !r.result);
+      if (missingResults.length > 0) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'RESULTS_INCOMPLETE',
+          `Cannot lock results: ${missingResults.length} registered horse(s) still lack finish results.`,
+        );
+      }
 
-    if (tournament.status !== TournamentStatus.CLOSED_REGISTRATION) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'REGISTRATION_NOT_CLOSED',
-        'Results can only be locked when tournament is in CLOSED_REGISTRATION status.',
-      );
-    }
+      // Xử lý trong transaction
+      const now = new Date();
+      const billingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    if (new Date() < new Date(tournament.raceDate)) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'RACE_NOT_FINISHED',
-        'Results cannot be locked before the race date.',
-      );
-    }
-
-    const activeRegs = tournament.registrations.filter(
-      (r) =>
-        r.status === RegistrationStatus.REGISTERED || r.status === RegistrationStatus.CONFIRMED,
-    );
-
-    if (activeRegs.length === 0) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'NO_REGISTRATIONS',
-        'Cannot lock tournament without any registered participants.',
-      );
-    }
-
-    const missingResults = activeRegs.filter((r) => !r.result);
-    if (missingResults.length > 0) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'RESULTS_INCOMPLETE',
-        `Cannot lock results: ${missingResults.length} registered horse(s) still lack finish results.`,
-      );
-    }
-
-    // Xử lý trong transaction
-    const now = new Date();
-    const billingPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-    await this.prisma.$transaction(async (tx) => {
       // 1. Chốt giải đấu
       await tx.tournament.update({
         where: { id: tournamentId },
@@ -1252,6 +1253,7 @@ export class TournamentsService {
           }
         }
       }
+      return tournament;
     });
 
     await this.audit.record(

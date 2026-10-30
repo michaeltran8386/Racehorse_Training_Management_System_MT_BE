@@ -51,13 +51,15 @@ class RespiratoryRateMeasurementDto {
 }
 
 class WeightMeasurementDto {
+  @IsOptional()
   @IsNumber()
   @Min(200)
   @Max(800)
-  value: number;
+  value?: number | null;
 
+  @IsOptional()
   @Equals('KG')
-  unit: 'KG';
+  unit?: 'KG';
 }
 
 class ExamMetricsDto {
@@ -76,10 +78,10 @@ class ExamMetricsDto {
   @Type(() => RespiratoryRateMeasurementDto)
   respiratory_rate: RespiratoryRateMeasurementDto;
 
-  @IsDefined()
+  @IsOptional()
   @ValidateNested()
   @Type(() => WeightMeasurementDto)
-  weight: WeightMeasurementDto;
+  weight?: WeightMeasurementDto | null;
 }
 
 export class ExamFinishedPacketDto {

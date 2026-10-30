@@ -1,6 +1,14 @@
 # Architecture Decision Log
 
-> Plan revision hiện hành là v1-approved-r11, approved by `APPROVE PLAN v1` and amended through approved CR-012 on 2026-10-25. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
+
+## CR-024 — Unified supply delivery authority
+
+- Date: 2026-10-29. ACCEPTED by exact human command `APPROVE CR-024`.
+- Definitive contract: CHANGES.md section 7, incorporated into v1-approved-r23; 21 paths in sequential slices with one combined QA gate.
+- Manager approval dispatches DELIVERING; dedicated supply capability ACK after 8s or persistent Backend 20s fallback completes an atomic single stock credit. Real catalogue/zone stock and nullable capacity replace independent Simulator inventory. Legacy APPROVED rows retain explicit CM receipt. Existing workout/exam guards are preserved.
+- Drafting/approval does not execute application changes or migration. Await fresh START TASK-018 in AGY; no TASK-019 authority.
+
+> Current plan: v1-approved-r28, incorporating Human-approved CR-029. Current gate: TASK-019 DONE, execution IDLE; authoritative execution state is STATE.md. Older ADR/revision narratives below are historical; requirement changes still require Human-approved CR.
 
 ## ADR-001 — Backend là system of record
 - **Date:** 2026-10-23
@@ -21,9 +29,9 @@
 
 ## ADR-003 — Simulator không có secondary login
 - **Date:** 2026-10-23
-- **Status:** ACCEPTED by `APPROVE PLAN v1` on 2026-10-24
+- **Status:** ACCEPTED by `APPROVE PLAN v1` on 2026-10-24; refined by `APPROVE CR-014` on 2026-10-26
 - **Evidence:** quyết định trong `CLAUDE.md` ngày 23/10/2026; `_v3` còn luồng login trực tiếp cũ.
-- **Decision:** Main Web tạo/nhận session rồi mở Simulator; Simulator bootstrap bằng session ngắn hạn, không có form login hoặc access token dài hạn trong URL/localStorage.
+- **Decision:** Main Web tạo/nhận session rồi mở Simulator; Simulator bootstrap bằng session ngắn hạn, không có form login hoặc access token dài hạn trong URL/localStorage. REST context và Socket.IO cùng xác thực session; Backend không được fallback sang actor Head Trainer mặc định.
 - **Trade-off:** phải xử lý expired/forbidden session rõ ràng.
 - **Impacted tasks:** TASK-013, TASK-015–018.
 
@@ -144,5 +152,126 @@
 - **Data safety:** cleanup QA chỉ dùng các ID đã capture, thực hiện atomically, khôi phục trạng thái ngựa ban đầu và xác nhận không còn target residue.
 - **Impacted task:** TASK-010.
 
+## ADR-020 — Dataset manual-QA là additive, deterministic và local-only
+- **Date:** 2026-10-26
+- **Status:** ACCEPTED by `APPROVE CR-013` on 2026-10-26
+- **Decision:** thêm TASK-020 sau TASK-011 và trước TASK-012 để tạo dữ liệu QA phong phú trong PostgreSQL local hiện có bằng một script riêng. Không tạo database/schema thứ hai và không sửa seed baseline hiện tại.
+- **Safety boundary:** script bắt buộc nhận `--confirm-local-qa`, từ chối production, in rõ target database, dùng identity/code có tiền tố QA và chỉ upsert dữ liệu thuộc QA. Cấm delete/truncate hoặc sửa bản ghi không thuộc QA.
+- **Acceptance:** chạy hai lần phải idempotent; non-QA counts/fingerprints bất biến; kiểm tra năm role qua NestJS API thật và xác nhận persistence sau restart. Runtime mock/fallback không được dùng.
+- **Sequence:** TASK-012 phụ thuộc TASK-020. Approval CR không tự chạy seed; TASK-020 cần lệnh `START TASK-020` riêng.
+- **Impacted tasks:** TASK-020, TASK-012, TASK-019.
+
+## ADR-021 — Canonical Git Simulator là sản phẩm v3; transport dùng session capability
+- **Date:** 2026-10-26
+- **Status:** ACCEPTED by `APPROVE CR-014` on 2026-10-26
+- **Decision:** `Racehorse_Simulator_Web/` là repository GitHub và source duy nhất của sản phẩm v3; thư mục `Racehorse_Simulator_Web_v3/` chỉ là bản sao tham chiếu, không được sửa, test hoặc dùng làm acceptance runtime. Main Web cấp một `sessionId` không đoán được; Simulator dùng cùng session cho REST context và Socket.IO thay vì secondary login.
+- **Security boundary:** chỉ session `PENDING`/`RUNNING` hợp lệ được dùng; `PENDING` quá năm phút, session thiếu/sai/terminal hoặc actor không tồn tại bị từ chối. Socket không có session không được gán một tài khoản mặc định. Không thêm schema nếu có thể kiểm tra timeout từ `createdAt` và status hiện có.
+- **Runtime boundary:** giai đoạn TASK-013 dùng khởi động Docker/npm thủ công. `.bat` vẫn thuộc TASK-014, giữ TODO và cần lệnh `START TASK-014` riêng.
+- **Impacted tasks:** TASK-013, TASK-014, TASK-015–019.
+
+## ADR-022 — Browser real-stack là gate và master data trong Simulator phải đến từ PostgreSQL
+
+- **Date:** 2026-10-27
+- **Status:** ACCEPTED by `APPROVE CR-015` on 2026-10-27
+- **Decision:** TASK-013 chỉ được quay lại Human Manual QA sau khi Head Trainer và Veterinarian hoàn thành các luồng UI thật trên Main Web và canonical Simulator bằng Playwright/Chromium, NestJS, Socket.IO và PostgreSQL. API-only verifier không thay thế browser gate. Mọi trường horse master data đã tồn tại trong PostgreSQL phải đi qua session context và khớp DB; hash/default không được trình bày như dữ liệu thật. Chỉ số do engine tạo phải được phân loại rõ là kết quả mô phỏng.
+- **EXAM consequence:** UI EXAM phải phát hợp đồng `sim:exam_finished` hiện có, nhận ACK, lưu đúng một kết quả và cho Main Web tải kết quả mới nhất sau reload. Không có kết quả thì phải báo không có dữ liệu; không giữ giá trị mặc định 480 kg như thể đã đo.
+- **Operational consequence:** AGY tái sử dụng stack Docker/npm đang chạy khi healthy, chuẩn bị một QA trial đủ điều kiện và để Human chỉ reload trang để kiểm tra. Không sửa `.bat`, `_v3`, schema/migration hoặc tự khởi chạy TASK-014.
+- **Impacted tasks:** TASK-013; TASK-015 tái sử dụng baseline real horse/stall này cho phần cross-role rộng hơn.
+
+## ADR-023 — Main-Web-issued simulation is prescribed; EXAM handoff minimizes manual steps
+
+- **Date:** 2026-10-27
+- **Status:** ACCEPTED by `APPROVE CR-016` on 2026-10-27
+- **Workout decision:** a workout launched from Main Web is execution of the approved workout, not a Simulator authoring screen. Surface, distance and intensity are immutable. Obstacles are shown only when a future authoritative contract supplies them; absence means no prescribed obstacles, not permission to invent them. The runner stops at the prescribed distance and one logical finish is emitted/persisted.
+- **Phase boundary:** TASK-013 owns correct Simulator completion semantics. TASK-016 continues to own Main Web trial-result formatting, live monitoring, disconnect/timeout handling and the complete Web-created trial round trip.
+- **EXAM decision:** a session-bound EXAM skips the decorative intro, opens the Vet workflow directly, completes once with ACK and lets Main Web auto-load the latest result on focus. Manual load remains a recovery path. Vet remains the human decision-maker; Simulator does not automatically diagnose, create/finalize the medical record, apply horse status or mutate Medical Lock.
+- **Clinical semantics:** `Within reference range` describes only a measured vital. Horse injury status and Medical Lock are separate persisted states and must be displayed separately rather than inferred from normal-range vitals.
+- **Impacted tasks:** TASK-013; TASK-016 retains trial result/live-monitor completion; TASK-017 retains incident-to-Vet-to-lock synchronization.
+
+## ADR-024 — Terminal simulation history stays terminal; incomplete clinical measurements stay truthful
+
+- **Date:** 2026-10-27
+- **Status:** ACCEPTED by `APPROVE CR-017` on 2026-10-27
+- **Terminal-session decision:** a completed or injury-aborted SimulatorSession is immutable history. Starting the same workout again returns 409 `SIMULATOR_SESSION_FINISHED`; it must not return a launch URL or silently reopen/create replacement history. A fresh manual-QA run uses a freshly prepared deterministic QA workout/session.
+- **Clinical measurement decision:** missing horse master weight remains unavailable through Simulator packet, Backend validation/result storage and Main-Web form loading. The system may persist the other available measurements but must never fabricate a weight.
+- **Identity decision:** medical-record list contracts expose and render the real horse name and horse code as the primary identity. UUID remains an internal identifier, not the primary human label.
+- **QA operability:** TASK-013 uses deterministic `QA T013` names/markers, idempotent local-only preparation and exact-target cleanup so the human needs only reload, login, search and action. No new database/schema and no non-QA mutation are allowed.
+- **Impacted task:** TASK-013 corrective Slice F; TASK-014 remains unauthorized.
+
+## ADR-025 — Simulated-time charting stays separate from real-time transport
+
+- **Date:** 2026-10-27
+- **Status:** ACCEPTED by `APPROVE CR-018` on 2026-10-27
+- **Playback decision:** playback speed changes wall-clock viewing duration, not model semantics. Socket.IO telemetry remains 1 Hz real time, while the trial chart samples against simulated elapsed time so accelerated playback remains readable and deterministic.
+- **Scheduling decision:** the Trial Runs scheduling entry point initializes the existing workout dialog as `TRIAL`; existing Backend validation remains authoritative.
+- **Executor exception:** Codex may execute only the approved TASK-013 Slice G continuation after direct `START TASK-013 CODEX`; AGY remains the default executor for later tasks.
+- **Boundary:** no Backend/schema/migration, new dependency, database recreation, broad data deletion or downstream TASK-016–018 implementation is included.
+- **Impacted task:** TASK-013 corrective Slice G; TASK-014 remains unauthorized.
+
 Do not silently amend accepted decisions; create an ADR and/or CR entry and request approval where scope changes.
 
+## CR-019 — Trial timing and result-draft authority
+
+- Future workouts remain non-launchable until their scheduled time; Main Web must show that reason and exact time visibly, while Backend remains authoritative.
+- Simulator result draft loading is permitted on result-page mount, focus and explicit retry until a persisted Head Trainer result exists.
+- Objective Simulator values may hydrate the draft. Completion may be derived only from terminal status plus completed versus prescribed distance. Recovery HR, performance score, professional comment and abnormal-sign judgment are never fabricated.
+- This limited hydration/visibility slice moves into TASK-013; final trainer-approved persistence and broader live-monitor workflow remain TASK-016.
+- Accepted limitation: after the Head Trainer edits imported result fields in `SessionResultPage.tsx`, the Simulator reload button (`Tải chỉ số từ Simulator` / `Tải lại`) becomes disabled until the page is reloaded or edits are discarded, preventing unintended overwrite of in-progress trainer manual edits.
+
+## ADR-026 — Windows local lifecycle is split into setup, start and force-stop scripts
+
+- **Date:** 2026-10-28
+- **Status:** ACCEPTED by `APPROVE CR-020` on 2026-10-28.
+- **Decision:** root `setup-db.bat` is the only script that intentionally resets/seeds the local database; root `start.bat` starts the non-destructive runtime in one four-tab Windows Terminal; root `stop.bat` force-stops the EquiFlow local listeners and PostgreSQL container.
+- **Startup truthfulness:** fixed delay is not readiness. Success requires bounded checks of Backend health/database connectivity, Frontend and canonical Simulator. No launcher references `_v3` or enables runtime mock/fallback.
+- **Shutdown truthfulness:** forced termination is explicitly authorized for the local EquiFlow ports/container, but success requires verifying the listeners and container are stopped.
+- **Delivery trade-off:** the three scripts remain at the user-required workspace-root paths, which are outside all current Git repositories. They are local deliverables until a separate repository-layout decision authorizes a tracked distribution mechanism.
+- **Impacted task:** TASK-014 only.
+
+## ADR-027 — Simulator areas are functions, not Main-Web role views
+
+- **Date:** 2026-10-28
+- **Status:** ACCEPTED by `APPROVE CR-021` on 2026-10-28.
+- **Decision:** canonical Simulator has no secondary login and direct access loads the complete real horse/stall catalogue from Backend/PostgreSQL. Groom, Vet, Track and other Simulator areas describe simulation functions; they do not inherit Main-Web persona filtering.
+- **Authority boundary:** Backend/PostgreSQL remains the only master-data source. Direct Simulator mode may browse and run local simulation interactions but cannot mutate horse/stall master data or persist an official business outcome without the matching Backend-issued workflow session.
+- **Session boundary:** `sessionId` is required for authoritative workout, exam and later approved workflow write-back, not for catalogue browsing. Session URLs never contain access or refresh tokens.
+- **Rejected expansion:** no Club Manager/Groom inspection endpoint, role-filtered Groom catalogue, Main-Web inspection-launch UI, `INSPECTION` enum or schema migration is added.
+- **Task boundary:** TASK-015 validates direct real catalogue loading and persistence/no-fallback behavior; TASK-016 owns trial telemetry/results, TASK-017 owns incident/Vet/Medical Lock and TASK-018 owns supplies.
+- **Impacted tasks:** TASK-015–TASK-018.
+
+## CR-025 — Existing Simulator sound is included in task delivery
+
+- Accepted by exact human command `APPROVE CR-025`, 2026-10-29; incorporated into r24.
+- Include current music/SFX/control source dependencies and 12 used runtime assets in TASK-018; total 39 exact paths per CHANGES.md. Do not commit unused theme-main.wav, music source duplicates or NOW notes.
+- Audio cannot block business workflows; verify combined build, autoplay failures, settings and delivery with sound enabled/disabled. Fresh START TASK-018 required; no completion/commit authorization.
+
+## CR-026 — Reproducible migration baseline and isolated acceptance
+
+- Accepted 2026-10-29 by exact human command `APPROVE CR-026`; plan r25.
+- Preserve original migration checksums, generate pre-simulator baseline from 537a919 parent schema, reconcile only reviewed additive drift, prove empty replay and schema equality on named disposable databases.
+- At most eight Backend paths per definitive CHANGES.md contract. Original equiflow DB writes/history/deletion separately gated; preserve failed DB evidence. Fresh START TASK-019 required before AGY implementation and full acceptance.
+
+## CR-027 — Disposable RFID reconciliation and date-safe acceptance fixture
+
+- Accepted 2026-10-29 by Human statement recorded verbatim in APPROVALS.md; Plan r26.
+- Exact RFID column/index removal and nullable weightKg addition allowed only in named disposable migration DBs. Original equiflow/populated DB writes and DB deletion remain separately gated.
+- FE simulator-real-stack.spec.ts date fixture may be calculated in Asia/Bangkok with matching selectors/cleanup. No Backend timing validation change. Max nine repair paths; harness isolation/explicit URL fixes remain mandatory. Fresh START TASK-019 required in AGY.
+
+
+## CR-028 — Real-stack acceptance closure and Playwright modernization
+
+Human command `aprrove CR-028` (2026-10-29; original spelling preserved) approves CR-028 including definitive planner supplement V. Plan v1-approved-r27 authorizes exactly 15 additional test/config paths in CR-028 section III, preserving prior CR-026/027 scope. Supplement V overrides conflicting proposal wording. Execution IDLE; TASK-019 TODO awaiting fresh START TASK-019 in AGY. No application/schema changes, original equiflow writes, acceptance waiver, task approval, commit/push/merge/deploy authority.
+
+Use real Prisma/PostgreSQL, valid lifecycle timing, exact-ID cleanup, repeat/concurrent lock and one-time prize credit, role auth reuse and actual throttler-window pacing. Targeted checks then one final FE regression; no guard weakening or acceptance waiver.
+
+## CR-029 approved — Serialized tournament finalization
+
+2026-10-30: Human explicitly APPROVE CR-029 and START TASK-019 CODEX. Plan v1-approved-r28 incorporates CR-029 definitive section IV (3 paths plus existing authorized CR-028 test). Codex replaces AGY for this TASK-019 continuation. Preserve prior scopes and uncommitted changes; no commit/push/merge/deploy, original equiflow writes or new schema changes. Execution IN_PROGRESS; finish at AWAITING_USER_QA. PostgreSQL tournament-row lock shared by both finalization paths and draft writes; validate again under lock, preserve atomic result/horse/credit changes, side effects after commit.
+
+## CR-029 execution evidence
+
+2026-10-30: Codex completed the approved CR-029 correction under Plan v1-approved-r28. Focused BE service 59/59 and real PostgreSQL lifecycle/concurrency/rollback 8/8 passed. One full FE run: 207 passed, 1 helper failure, 3 serial skips (211 discovered); after correcting the token-bootstrap race, targeted follow-up 17/17 passed across both viewports, closing the failed/skipped cases. 211 unique cases have passing latest recorded outcomes across those two runs; this is incremental closure, NOT a single fresh 211/211 full run. Historical PNGs unchanged, scoped fixtures cleaned, no commit/push/merge/deploy. Status AWAITING_USER_QA; STOP. The full-run helper failure was a browser-test bootstrap race, corrected within the existing approved test file; it did not require an application auth change.
+
+## TASK-019 Human acceptance and scoped commit authority
+
+2026-10-30: Human command `approve và authorize task-019` approves TASK-019 under Plan v1-approved-r28 and authorizes scoped commit preparation/execution in separate Backend and Frontend commits. Exact wording preserved; no claim that Human personally executed manual QA. Acceptance evidence remains one full FE run (207 pass / 1 fail / 3 skips) followed by green targeted 17/17, not a fresh all-green full run. No push, merge, deploy, original database writes, new feature or next task is authorized.

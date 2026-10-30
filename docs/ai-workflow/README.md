@@ -4,6 +4,10 @@
 **Executor:** Google Antigravity IDE (one task, code, verification and report)  
 **Approver:** Human project owner
 
+For new chats and future fixes, use [the cross-agent maintenance guide and copy/paste prompt](MAINTENANCE.md). It is the portable entrypoint for AGY, Codex and Claude; actual approvals and execution still follow AGENTS.md and STATE.md.
+
+Current executor exception: Human explicitly authorized `START TASK-019 CODEX` under approved CR-029 / Plan r28. Codex executed only that continuation; TASK-019 is now Human-approved DONE with execution IDLE and scoped BE/FE commits authorized. AGY remains the default executor otherwise. Read STATE.md for the current gate.
+
 ## Start here
 1. ChatGPT inspects codebase and creates draft `PLAN.md`, `TASKS.md`, `DECISIONS.md` and `HANDOFF.md`.
 2. Human replies `APPROVE PLAN v1` to ChatGPT. ChatGPT records this in `APPROVALS.md` and sets `STATE.md` to `APPROVED` with `next_task: TASK-001`.

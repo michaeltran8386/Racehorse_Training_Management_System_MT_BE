@@ -175,6 +175,7 @@ enum IncidentStatus {
 enum RestockStatus {
   PENDING
   APPROVED
+  DELIVERING
   DELIVERED
   REJECTED
 }
@@ -1121,6 +1122,7 @@ model StockBalance {
   supply            SupplyCatalog @relation(fields: [supplyId], references: [id], onDelete: Restrict)
   quantity          Decimal       @default(0) @db.Decimal(12, 2)
   minThreshold      Decimal       @default(10) @db.Decimal(12, 2)
+  capacity          Decimal?      @db.Decimal(12, 2)
   lastInventoryDate DateTime?
   lastAdjustedById  String?
   lastAdjustedBy    User?         @relation("StockBalanceAdjustedBy", fields: [lastAdjustedById], references: [id], onDelete: SetNull)

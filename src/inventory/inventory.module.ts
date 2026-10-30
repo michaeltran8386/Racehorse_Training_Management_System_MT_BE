@@ -4,11 +4,12 @@ import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
+import { SupplyDeliveryGateway } from './supply-delivery.gateway';
 
 @Module({
   imports: [PrismaModule, AuditModule, NotificationsModule],
   controllers: [InventoryController],
-  providers: [InventoryService],
-  exports: [InventoryService],
+  providers: [InventoryService, SupplyDeliveryGateway],
+  exports: [InventoryService, SupplyDeliveryGateway],
 })
 export class InventoryModule {}

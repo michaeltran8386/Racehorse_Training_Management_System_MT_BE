@@ -55,6 +55,8 @@ export class TrainingPlansService {
     }
     if (user.role === UserRole.HORSE_OWNER) {
       where.horse = { deletedAt: null, ownerId: user.userId };
+    } else if (user.role === UserRole.HEAD_TRAINER) {
+      where.trainerUserId = user.userId;
     }
     if (search && search.trim()) {
       const term = search.trim();
@@ -115,7 +117,9 @@ export class TrainingPlansService {
     });
 
     const outOfScope =
-      !plan || (user.role === UserRole.HORSE_OWNER && plan.horse.ownerId !== user.userId);
+      !plan ||
+      (user.role === UserRole.HORSE_OWNER && plan.horse.ownerId !== user.userId) ||
+      (user.role === UserRole.HEAD_TRAINER && plan.trainerUserId !== user.userId);
     if (outOfScope) {
       throw apiError(HttpStatus.NOT_FOUND, 'PLAN_NOT_FOUND', 'Training plan not found.');
     }
@@ -216,6 +220,9 @@ export class TrainingPlansService {
     if (!existing) {
       throw apiError(HttpStatus.NOT_FOUND, 'PLAN_NOT_FOUND', 'Training plan not found.');
     }
+    if (user.role === UserRole.HEAD_TRAINER && existing.trainerUserId !== user.userId) {
+      throw apiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'This plan belongs to another trainer.');
+    }
     if (existing.status !== PlanStatus.DRAFT && existing.status !== PlanStatus.ACTIVE) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -310,6 +317,9 @@ export class TrainingPlansService {
       const plan = await tx.trainingPlan.findUnique({ where: { id } });
       if (!plan) {
         throw apiError(HttpStatus.NOT_FOUND, 'PLAN_NOT_FOUND', 'Training plan not found.');
+      }
+      if (user.role === UserRole.HEAD_TRAINER && plan.trainerUserId !== user.userId) {
+        throw apiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'This plan belongs to another trainer.');
       }
       await tx.$queryRaw`SELECT "id" FROM "Horse" WHERE "id" = ${plan.horseId} FOR UPDATE`;
       const horse = await tx.horse.findUnique({ where: { id: plan.horseId } });
@@ -492,6 +502,9 @@ export class TrainingPlansService {
     if (!plan) {
       throw apiError(HttpStatus.NOT_FOUND, 'PLAN_NOT_FOUND', 'Training plan not found.');
     }
+    if (user.role === UserRole.HEAD_TRAINER && plan.trainerUserId !== user.userId) {
+      throw apiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'This plan belongs to another trainer.');
+    }
     if (plan.status !== PlanStatus.DRAFT || plan.workoutSessions.length > 0) {
       throw apiError(
         HttpStatus.CONFLICT,
@@ -526,6 +539,9 @@ export class TrainingPlansService {
     });
     if (!source) {
       throw apiError(HttpStatus.NOT_FOUND, 'PLAN_NOT_FOUND', 'Training plan not found.');
+    }
+    if (user.role === UserRole.HEAD_TRAINER && source.trainerUserId !== user.userId) {
+      throw apiError(HttpStatus.FORBIDDEN, 'FORBIDDEN', 'This plan belongs to another trainer.');
     }
     const horse = await this.prisma.horse.findUnique({
       where: { id: dto.targetHorseId, deletedAt: null },

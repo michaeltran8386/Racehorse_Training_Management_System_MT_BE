@@ -53,6 +53,7 @@ describe('TournamentsService', () => {
       workoutSession: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn((callbackOrPromises) => {
         if (typeof callbackOrPromises === 'function') {
           return callbackOrPromises(prisma);
@@ -791,6 +792,53 @@ describe('TournamentsService', () => {
   });
 
   describe('recordResults & lockResults', () => {
+    it.each(['draft', 'combined', 'lock'] as const)(
+      'rejects a stale %s writer after another transaction finalizes the tournament',
+      async (mode) => {
+        const completed = {
+          id: 't-race',
+          name: 'Concurrent Cup',
+          distanceMeters: 1600,
+          status: TournamentStatus.COMPLETED,
+          raceDate: new Date(0),
+          registrations: [],
+        };
+        prisma.tournament.findUnique.mockResolvedValue({
+          ...completed,
+          status: TournamentStatus.CLOSED_REGISTRATION,
+        });
+        // The authoritative row changes while this caller waits for the shared row lock.
+        prisma.$queryRaw.mockImplementationOnce(async () => {
+          prisma.tournament.findUnique.mockResolvedValue(completed);
+          return [{ id: completed.id }];
+        });
+        const actor = { id: 'cm', name: 'Manager', role: 'CLUB_MANAGER' };
+        const operation =
+          mode === 'lock'
+            ? service.lockResults(completed.id, actor)
+            : service.recordResults(
+                completed.id,
+                { results: [], lockResults: mode === 'combined' },
+                actor,
+              );
+        await expect(operation).rejects.toMatchObject({
+          response: expect.objectContaining({
+            code: mode === 'lock' ? 'ALREADY_COMPLETED' : 'ALREADY_LOCKED',
+          }),
+        });
+        expect(prisma.$queryRaw).toHaveBeenCalledWith(
+          expect.arrayContaining([expect.stringContaining('FOR UPDATE')]),
+          completed.id,
+        );
+        expect(prisma.tournament.update).not.toHaveBeenCalled();
+        expect(prisma.tournamentResult.upsert).not.toHaveBeenCalled();
+        expect(prisma.horse.update).not.toHaveBeenCalled();
+        expect(prisma.financialInvoice.create).not.toHaveBeenCalled();
+        expect(audit.record).not.toHaveBeenCalled();
+        expect(notifications.notifyRoles).not.toHaveBeenCalled();
+      },
+    );
+
     it('should reject recording results on CANCELLED tournament', async () => {
       prisma.tournament.findUnique.mockResolvedValue({
         id: 't-cancelled',

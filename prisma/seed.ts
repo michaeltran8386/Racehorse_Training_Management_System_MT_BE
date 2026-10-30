@@ -2,6 +2,7 @@ import {
   PrismaClient,
   Role,
   UserStatus,
+  PermissionRequestStatus,
   HorseStatus,
   StallStatus,
   PlanStatus,
@@ -21,24 +22,35 @@ import {
   InvoiceStatus,
   SupplyCategory,
   SupplyUnit,
+  DailyTaskType,
+  IncidentStatus,
+  RestockStatus,
+  NutritionPlanStatus,
+  InsightType,
+  InsightStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('--- Seeding 100% Comprehensive EquiFlow Database ---');
+  console.log('--- Seeding 100% Comprehensive EquiFlow Memorable Database ---');
 
   const defaultPassword = await bcrypt.hash('EquiFlow@2026', 10);
+  const now = new Date();
+  const clubDay = (offset: number) =>
+    new Date(now.getTime() + 7 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
 
-  // 1. Users Covering All Roles and Account Lifecycles (ACTIVE, PENDING_APPROVAL, INVITED, LOCKED)
+  // ----------------------------------------------------------------
+  // 1. Users Covering All 5 Roles and 7 Account Lifecycles (SC-1.01)
+  // ----------------------------------------------------------------
   const manager = await prisma.user.upsert({
     where: { email: 'manager@gmail.com' },
-    update: {},
+    update: { fullName: 'Trần Quang Minh (Quản Lý)' },
     create: {
       email: 'manager@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'Michael Tran (Club Manager)',
+      fullName: 'Trần Quang Minh (Quản Lý)',
       phoneNumber: '+84901234567',
       role: Role.CLUB_MANAGER,
       status: UserStatus.ACTIVE,
@@ -47,12 +59,25 @@ async function main() {
 
   const trainer = await prisma.user.upsert({
     where: { email: 'trainer@gmail.com' },
-    update: {},
+    update: { fullName: 'Nguyễn Văn Tuấn (HLV Trưởng)' },
     create: {
       email: 'trainer@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'David Nguyen (Head Trainer)',
+      fullName: 'Nguyễn Văn Tuấn (HLV Trưởng)',
       phoneNumber: '+84901234568',
+      role: Role.HEAD_TRAINER,
+      status: UserStatus.ACTIVE,
+    },
+  });
+
+  const trainer2 = await prisma.user.upsert({
+    where: { email: 'trainer2@gmail.com' },
+    update: { fullName: 'Lê Hoàng Nam (HLV Tuyển)' },
+    create: {
+      email: 'trainer2@gmail.com',
+      passwordHash: defaultPassword,
+      fullName: 'Lê Hoàng Nam (HLV Tuyển)',
+      phoneNumber: '+84901234574',
       role: Role.HEAD_TRAINER,
       status: UserStatus.ACTIVE,
     },
@@ -60,11 +85,11 @@ async function main() {
 
   const vet = await prisma.user.upsert({
     where: { email: 'vet@gmail.com' },
-    update: {},
+    update: { fullName: 'BS. Phạm Minh Trí (Thú Y Trưởng)' },
     create: {
       email: 'vet@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'Dr. Sarah Connor (Chief Veterinarian)',
+      fullName: 'BS. Phạm Minh Trí (Thú Y Trưởng)',
       phoneNumber: '+84901234569',
       role: Role.VETERINARIAN,
       status: UserStatus.ACTIVE,
@@ -73,11 +98,11 @@ async function main() {
 
   const groom1 = await prisma.user.upsert({
     where: { email: 'groom@gmail.com' },
-    update: {},
+    update: { fullName: 'Lê Văn Bình (Groom Chăm Sóc)' },
     create: {
       email: 'groom@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'John Smith (Groom Hand)',
+      fullName: 'Lê Văn Bình (Groom Chăm Sóc)',
       phoneNumber: '+84901234570',
       role: Role.GROOM,
       status: UserStatus.ACTIVE,
@@ -86,11 +111,11 @@ async function main() {
 
   const groom2 = await prisma.user.upsert({
     where: { email: 'groom2@gmail.com' },
-    update: {},
+    update: { fullName: 'Hoàng Văn Phúc (Groom Cao Cấp)' },
     create: {
       email: 'groom2@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'Lê Văn Phúc (Senior Groom)',
+      fullName: 'Hoàng Văn Phúc (Groom Cao Cấp)',
       phoneNumber: '+84901234572',
       role: Role.GROOM,
       status: UserStatus.ACTIVE,
@@ -99,11 +124,11 @@ async function main() {
 
   const owner1 = await prisma.user.upsert({
     where: { email: 'owner@gmail.com' },
-    update: {},
+    update: { fullName: 'Đặng Gia Bảo (Chủ Ngựa)' },
     create: {
       email: 'owner@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'Robert Sterling (Horse Owner)',
+      fullName: 'Đặng Gia Bảo (Chủ Ngựa)',
       phoneNumber: '+84901234571',
       role: Role.HORSE_OWNER,
       status: UserStatus.ACTIVE,
@@ -112,25 +137,25 @@ async function main() {
 
   const owner2 = await prisma.user.upsert({
     where: { email: 'owner2@gmail.com' },
-    update: {},
+    update: { fullName: 'Vũ Hoàng Long (Chủ Ngựa VIP)' },
     create: {
       email: 'owner2@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'Phan Đức Long (VIP Owner)',
+      fullName: 'Vũ Hoàng Long (Chủ Ngựa VIP)',
       phoneNumber: '+84901234573',
       role: Role.HORSE_OWNER,
       status: UserStatus.ACTIVE,
     },
   });
 
-  // Account test cases for Club Manager governance:
-  await prisma.user.upsert({
+  // Account Lifecycle Edge Cases (PENDING_APPROVAL, INVITED, LOCKED, INACTIVE, REJECTED, PENDING_EMAIL)
+  const pendingUser = await prisma.user.upsert({
     where: { email: 'pending.groom@gmail.com' },
-    update: {},
+    update: { fullName: 'Trần Văn Nam (Chờ Duyệt)' },
     create: {
       email: 'pending.groom@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'Trần Văn Nam (Pending Groom)',
+      fullName: 'Trần Văn Nam (Chờ Duyệt)',
       phoneNumber: '+84909888111',
       role: Role.GROOM,
       status: UserStatus.PENDING_APPROVAL,
@@ -139,11 +164,11 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: 'invited.vet@gmail.com' },
-    update: {},
+    update: { fullName: 'BS. Alexander Bell (Được Mời)' },
     create: {
       email: 'invited.vet@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'Dr. Alexander Bell (Invited Vet)',
+      fullName: 'BS. Alexander Bell (Được Mời)',
       phoneNumber: '+84909888222',
       role: Role.VETERINARIAN,
       status: UserStatus.INVITED,
@@ -152,22 +177,95 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: 'locked.user@gmail.com' },
-    update: {},
+    update: { fullName: 'Đặng Tuấn Kiệt (Bị Khóa)' },
     create: {
       email: 'locked.user@gmail.com',
       passwordHash: defaultPassword,
-      fullName: 'Đặng Tuấn Kiệt (Locked Account)',
+      fullName: 'Đặng Tuấn Kiệt (Bị Khóa)',
       phoneNumber: '+84909888333',
       role: Role.GROOM,
       status: UserStatus.LOCKED,
     },
   });
 
+  await prisma.user.upsert({
+    where: { email: 'inactive.user@gmail.com' },
+    update: { fullName: 'Nguyễn Văn Tạm (Ngừng Hoạt Động)' },
+    create: {
+      email: 'inactive.user@gmail.com',
+      passwordHash: defaultPassword,
+      fullName: 'Nguyễn Văn Tạm (Ngừng Hoạt Động)',
+      phoneNumber: '+84909888444',
+      role: Role.GROOM,
+      status: UserStatus.INACTIVE,
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: 'rejected.user@gmail.com' },
+    update: { fullName: 'Lê Văn Từ Chối (Bị Từ Chối)' },
+    create: {
+      email: 'rejected.user@gmail.com',
+      passwordHash: defaultPassword,
+      fullName: 'Lê Văn Từ Chối (Bị Từ Chối)',
+      phoneNumber: '+84909888555',
+      role: Role.GROOM,
+      status: UserStatus.REJECTED,
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { email: 'email.pending@gmail.com' },
+    update: { fullName: 'Hoàng Thị Thảo (Chờ Xác Thực Email)' },
+    create: {
+      email: 'email.pending@gmail.com',
+      passwordHash: defaultPassword,
+      fullName: 'Hoàng Thị Thảo (Chờ Xác Thực Email)',
+      phoneNumber: '+84909888666',
+      role: Role.HORSE_OWNER,
+      status: UserStatus.PENDING_EMAIL,
+    },
+  });
+
+  // Permission Requests covering PermissionRequestStatus: OPEN, GRANTED, DISMISSED
+  await prisma.permissionRequest.deleteMany({
+    where: { userId: { in: [groom1.id, trainer.id, groom2.id] } },
+  });
+
+  await prisma.permissionRequest.createMany({
+    data: [
+      {
+        userId: groom1.id,
+        screen: 'MedicalRecords',
+        reference: 'Groom Lê Văn Bình xin quyền xem hồ sơ bệnh án chi tiết để hỗ trợ điều trị',
+        status: PermissionRequestStatus.OPEN,
+      },
+      {
+        userId: trainer.id,
+        screen: 'Tournaments',
+        reference: 'HLV Nguyễn Văn Tuấn xin cấp quyền phê duyệt kết quả thi đấu nội bộ',
+        status: PermissionRequestStatus.GRANTED,
+        resolvedAt: new Date(Date.now() - 2 * 86400000),
+        resolvedBy: manager.fullName,
+      },
+      {
+        userId: groom2.id,
+        screen: 'Financials',
+        reference: 'Groom Hoàng Văn Phúc xin quyền điều chỉnh hóa đơn tài chính',
+        status: PermissionRequestStatus.DISMISSED,
+        resolvedAt: new Date(Date.now() - 5 * 86400000),
+        resolvedBy: manager.fullName,
+      },
+    ],
+  });
+
   console.log(
-    `[1/9] Seeded 10 Users across all Roles and Account Lifecycles (ACTIVE, PENDING_APPROVAL, INVITED, LOCKED)`,
+    `[1/12] Seeded 14 Users across all 5 Roles and 7 Account Lifecycles & 3 Permission Requests`,
   );
 
+  // ----------------------------------------------------------------
   // 2. Khu chuồng (Stall Zones)
+  // ----------------------------------------------------------------
   const zoneDefs = [
     {
       code: 'ZONE-A',
@@ -175,7 +273,7 @@ async function main() {
       rows: 2,
       cols: 4,
       sortOrder: 1,
-      description: 'Chuồng đua tiêu chuẩn số 1',
+      description: 'Khu chuồng đua tiêu chuẩn số 1 (8 ô chuồng)',
     },
     {
       code: 'ZONE-B',
@@ -183,7 +281,7 @@ async function main() {
       rows: 2,
       cols: 4,
       sortOrder: 2,
-      description: 'Chuồng tập huấn luyện số 2',
+      description: 'Khu chuồng huấn luyện & phục hồi số 2 (8 ô chuồng)',
     },
     {
       code: 'ZONE-C',
@@ -191,7 +289,7 @@ async function main() {
       rows: 1,
       cols: 4,
       sortOrder: 3,
-      description: 'Khu cách ly thú y & kiểm dịch',
+      description: 'Khu cách ly kiểm dịch y tế (4 ô chuồng)',
     },
   ];
 
@@ -203,9 +301,12 @@ async function main() {
       create: z,
     });
     zoneIds[z.name] = zone.id;
+    zoneIds[z.code] = zone.id;
   }
 
+  // ----------------------------------------------------------------
   // 3. Toàn bộ 20 ô chuồng với các trạng thái: OCCUPIED, AVAILABLE, MAINTENANCE, INACTIVE
+  // ----------------------------------------------------------------
   const stallDefs: Array<{
     code: string;
     zone: string;
@@ -266,10 +367,12 @@ async function main() {
     });
   }
   console.log(
-    `[2/9] Seeded 3 Zones and 20 Stalls (covering AVAILABLE, OCCUPIED, MAINTENANCE, INACTIVE)`,
+    `[2/12] Seeded 3 Zones and 20 Stalls (covering AVAILABLE, OCCUPIED, MAINTENANCE, INACTIVE)`,
   );
 
+  // ----------------------------------------------------------------
   // 4. Danh mục Giống & Màu lông (SC-1.06)
+  // ----------------------------------------------------------------
   const catalog: Array<{ type: HorseCatalogType; names: string[] }> = [
     {
       type: HorseCatalogType.BREED,
@@ -300,12 +403,14 @@ async function main() {
     }
   }
 
-  // 5. Đàn ngựa bao quát 100% tất cả trạng thái HorseStatus:
-  // ACTIVE, IN_TRAINING, UNDER_OBSERVATION, INJURED, ISOLATED, RESTING, RETIRED
+  // ----------------------------------------------------------------
+  // 5. Đàn ngựa tên dễ nhớ, bao quát 100% tất cả 7 trạng thái HorseStatus:
+  // ACTIVE, INJURED, IN_TRAINING, UNDER_OBSERVATION, RESTING, ISOLATED, RETIRED
+  // ----------------------------------------------------------------
   const horsesData = [
     {
       horseCode: 'HR-000001',
-      name: 'Thunderbolt Swift',
+      name: 'Bạch Long Mã',
       microchip: '985141002341001',
       breed: 'Thoroughbred',
       dob: new Date('2021-04-12'),
@@ -319,7 +424,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000002',
-      name: 'Northern Dancer Legacy',
+      name: 'Xích Thố',
       microchip: '985141002342002',
       breed: 'Thoroughbred',
       dob: new Date('2020-03-15'),
@@ -327,98 +432,70 @@ async function main() {
       color: 'Chestnut',
       status: HorseStatus.INJURED,
       isMedicalLocked: true,
-      ownerId: owner2.id,
+      ownerId: owner1.id,
       stallCode: 'STALL-A02',
       groomId: groom1.id,
     },
     {
       horseCode: 'HR-000003',
-      name: 'Shadowfax Wonder',
+      name: 'Hắc Báo',
       microchip: '985141002343003',
       breed: 'Arabian Cross',
       dob: new Date('2022-01-20'),
       gender: 'Filly',
       color: 'Gray Roaming',
-      status: HorseStatus.UNDER_OBSERVATION,
-      isMedicalLocked: false,
-      ownerId: owner2.id,
-      stallCode: 'STALL-B01',
-      groomId: groom2.id,
-    },
-    {
-      horseCode: 'HR-000004',
-      name: 'Pegasus Dream',
-      microchip: '985141002344004',
-      breed: 'Thoroughbred',
-      dob: new Date('2021-08-05'),
-      gender: 'Gelding',
-      color: 'Bay',
-      status: HorseStatus.ACTIVE,
+      status: HorseStatus.IN_TRAINING,
       isMedicalLocked: false,
       ownerId: owner1.id,
       stallCode: 'STALL-A03',
       groomId: groom1.id,
     },
     {
+      horseCode: 'HR-000004',
+      name: 'Thần Phong',
+      microchip: '985141002344004',
+      breed: 'Thoroughbred',
+      dob: new Date('2021-08-05'),
+      gender: 'Gelding',
+      color: 'Bay',
+      status: HorseStatus.UNDER_OBSERVATION,
+      isMedicalLocked: false,
+      ownerId: owner2.id,
+      stallCode: 'STALL-A04',
+      groomId: groom2.id,
+    },
+    {
       horseCode: 'HR-000005',
-      name: 'Golden Eclipse',
+      name: 'Kim Quy',
       microchip: '985141002345005',
       breed: 'Quarter Horse',
       dob: new Date('2022-05-18'),
       gender: 'Mare',
       color: 'Palomino',
-      status: HorseStatus.IN_TRAINING,
+      status: HorseStatus.RESTING,
       isMedicalLocked: false,
-      ownerId: owner1.id,
-      stallCode: 'STALL-A04',
+      ownerId: owner2.id,
+      stallCode: 'STALL-B01',
       groomId: groom2.id,
     },
     {
       horseCode: 'HR-000006',
-      name: 'Storm Runner',
+      name: 'Phi Long',
       microchip: '985141002346006',
-      breed: 'Thoroughbred',
-      dob: new Date('2020-11-10'),
-      gender: 'Stallion',
-      color: 'Black',
-      status: HorseStatus.IN_TRAINING,
-      isMedicalLocked: false,
-      ownerId: owner2.id,
-      stallCode: 'STALL-B02',
-      groomId: groom1.id,
-    },
-    {
-      horseCode: 'HR-000007',
-      name: 'Midnight Mirage',
-      microchip: '985141002347007',
       breed: 'Standardbred',
       dob: new Date('2021-02-14'),
       gender: 'Mare',
       color: 'Black',
       status: HorseStatus.ISOLATED,
-      isMedicalLocked: true,
-      ownerId: owner1.id,
+      isMedicalLocked: false,
+      ownerId: owner2.id,
       stallCode: 'STALL-C01',
       groomId: groom2.id,
     },
     {
-      horseCode: 'HR-000008',
-      name: 'Red Velvet',
-      microchip: '985141002348008',
-      breed: 'Warmblood',
-      dob: new Date('2022-09-01'),
-      gender: 'Mare',
-      color: 'Chestnut',
-      status: HorseStatus.RESTING,
-      isMedicalLocked: false,
-      ownerId: owner2.id,
-      stallCode: 'STALL-B03',
-      groomId: groom2.id,
-    },
-    {
-      horseCode: 'HR-000009',
-      name: 'Silver Comet',
-      microchip: '985141002349009',
+      horseCode: 'HR-000007',
+      name: 'Chiến Mã Hoàng Gia',
+      microchip: '985141002347007',
       breed: 'Thoroughbred',
       dob: new Date('2017-06-25'),
       gender: 'Gelding',
@@ -430,102 +507,32 @@ async function main() {
       groomId: null,
     },
     {
-      horseCode: 'HR-000010',
-      name: 'Apollo Chariot',
-      microchip: '985141002341010',
-      breed: 'Thoroughbred',
-      dob: new Date('2021-05-10'),
-      gender: 'Gelding',
-      color: 'Bay',
-      status: HorseStatus.ACTIVE,
-      isMedicalLocked: false,
-      ownerId: owner1.id,
-      stallCode: 'STALL-A05',
-      groomId: groom1.id,
-    },
-    {
-      horseCode: 'HR-000011',
-      name: 'Desert Mirage',
-      microchip: '985141002341011',
-      breed: 'Arabian',
-      dob: new Date('2021-03-22'),
-      gender: 'Stallion',
+      horseCode: 'HR-000008',
+      name: 'Hỏa Phụng',
+      microchip: '985141002348008',
+      breed: 'Warmblood',
+      dob: new Date('2021-07-30'),
+      gender: 'Colt',
       color: 'Chestnut',
       status: HorseStatus.ACTIVE,
       isMedicalLocked: false,
-      ownerId: owner2.id,
-      stallCode: 'STALL-A06',
-      groomId: groom2.id,
+      ownerId: owner1.id,
+      stallCode: 'STALL-B02',
+      groomId: groom1.id,
     },
     {
-      horseCode: 'HR-000012',
-      name: 'Starlight Express',
-      microchip: '985141002341012',
+      horseCode: 'HR-000009',
+      name: 'Băng Thiên Mã',
+      microchip: '985141002349009',
       breed: 'Thoroughbred',
-      dob: new Date('2022-02-14'),
-      gender: 'Mare',
+      dob: new Date('2021-12-05'),
+      gender: 'Gelding',
       color: 'Grey',
       status: HorseStatus.ACTIVE,
       isMedicalLocked: false,
-      ownerId: owner1.id,
-      stallCode: 'STALL-A07',
-      groomId: groom1.id,
-    },
-    {
-      horseCode: 'HR-000013',
-      name: 'Ironclad Titan',
-      microchip: '985141002341013',
-      breed: 'Quarter Horse',
-      dob: new Date('2020-09-18'),
-      gender: 'Colt',
-      color: 'Bay Dark',
-      status: HorseStatus.ACTIVE,
-      isMedicalLocked: false,
       ownerId: owner2.id,
-      stallCode: 'STALL-B04',
+      stallCode: 'STALL-B03',
       groomId: groom2.id,
-    },
-    {
-      horseCode: 'HR-000014',
-      name: 'Crimson Flash',
-      microchip: '985141002341014',
-      breed: 'Warmblood',
-      dob: new Date('2021-07-30'),
-      gender: 'Filly',
-      color: 'Roan',
-      status: HorseStatus.ACTIVE,
-      isMedicalLocked: false,
-      ownerId: owner1.id,
-      stallCode: 'STALL-B05',
-      groomId: groom1.id,
-    },
-    {
-      horseCode: 'HR-000015',
-      name: 'Ocean Breeze',
-      microchip: '985141002341015',
-      breed: 'Standardbred',
-      dob: new Date('2021-12-05'),
-      gender: 'Gelding',
-      color: 'Bay',
-      status: HorseStatus.ACTIVE,
-      isMedicalLocked: false,
-      ownerId: owner2.id,
-      stallCode: 'STALL-B06',
-      groomId: groom2.id,
-    },
-    {
-      horseCode: 'HR-000016',
-      name: 'Bucephalus Brave',
-      microchip: '985141002341016',
-      breed: 'Thoroughbred',
-      dob: new Date('2022-04-01'),
-      gender: 'Stallion',
-      color: 'Black',
-      status: HorseStatus.IN_TRAINING,
-      isMedicalLocked: false,
-      ownerId: owner1.id,
-      stallCode: 'STALL-B07',
-      groomId: groom1.id,
     },
   ];
 
@@ -533,7 +540,7 @@ async function main() {
 
   for (const h of horsesData) {
     const horse = await prisma.horse.upsert({
-      where: { microchipRfid: h.microchip },
+      where: { horseCode: h.horseCode },
       update: {
         horseCode: h.horseCode,
         name: h.name,
@@ -548,7 +555,7 @@ async function main() {
         retireReason: h.status === HorseStatus.RETIRED ? RetireReason.RETIRED : null,
         deleteReason:
           h.status === HorseStatus.RETIRED
-            ? 'Tuổi tác đạt ngưỡng và nghỉ hưu vinh danh sau chức vô địch Derby 2024'
+            ? 'Tuổi tác đạt ngưỡng và nghỉ hưu vinh danh sau chức vô địch Derby'
             : null,
         deletedAt: h.status === HorseStatus.RETIRED ? new Date('2025-11-20') : null,
       },
@@ -567,7 +574,7 @@ async function main() {
         retireReason: h.status === HorseStatus.RETIRED ? RetireReason.RETIRED : null,
         deleteReason:
           h.status === HorseStatus.RETIRED
-            ? 'Tuổi tác đạt ngưỡng và nghỉ hưu vinh danh sau chức vô địch Derby 2024'
+            ? 'Tuổi tác đạt ngưỡng và nghỉ hưu vinh danh sau chức vô địch Derby'
             : null,
         deletedAt: h.status === HorseStatus.RETIRED ? new Date('2025-11-20') : null,
       },
@@ -595,14 +602,22 @@ async function main() {
       }
     }
   }
-  console.log(`[3/9] Seeded 9 Horses covering 100% of HorseStatus values`);
+  console.log(`[3/12] Seeded 9 Horses covering 100% of HorseStatus values with memorable names`);
 
-  // 6. Medical Locks (Cả Active Lock và Released Lock lịch sử)
+  // ----------------------------------------------------------------
+  // 6. Medical Locks (Active Locks và Released Lock lịch sử)
+  // ----------------------------------------------------------------
   const horse1 = createdHorses['HR-000001'];
   const horse2 = createdHorses['HR-000002'];
+  const horse3 = createdHorses['HR-000003'];
+  const horse4 = createdHorses['HR-000004'];
+  const horse5 = createdHorses['HR-000005'];
+  const horse6 = createdHorses['HR-000006'];
   const horse7 = createdHorses['HR-000007'];
+  const horse8 = createdHorses['HR-000008'];
+  const horse9 = createdHorses['HR-000009'];
 
-  // Active Lock 1
+  // Active Lock 1: Xích Thố (INJURED)
   await prisma.medicalLock.upsert({
     where: { lockCode: 'LOCK-HR-000002-001' },
     update: { isLocked: true, appliedMedicalStatus: HorseStatus.INJURED },
@@ -621,25 +636,8 @@ async function main() {
     },
   });
 
-  // Active Lock 2
-  await prisma.medicalLock.upsert({
-    where: { lockCode: 'LOCK-HR-000007-001' },
-    update: { isLocked: true, appliedMedicalStatus: HorseStatus.ISOLATED },
-    create: {
-      lockCode: 'LOCK-HR-000007-001',
-      horseId: horse7.id,
-      veterinarianUserId: vet.id,
-      lockedAt: new Date(Date.now() - 2 * 86400000),
-      expectedRestDays: 21,
-      recheckDate: new Date(Date.now() + 19 * 86400000),
-      appliedMedicalStatus: HorseStatus.ISOLATED,
-      lockReason: 'Cách ly theo dõi nghi ngờ sốt cúm hô hấp EHV-1',
-      unlockConditions: 'Xét nghiệm PCR 2 lần âm tính cách nhau 7 ngày',
-      isLocked: true,
-    },
-  });
 
-  // Released Lock (Lịch sử đã mở khóa)
+  // Released Lock: Bạch Long Mã (Lịch sử đã mở khóa)
   await prisma.medicalLock.upsert({
     where: { lockCode: 'LOCK-HR-000001-HIST' },
     update: { isLocked: false },
@@ -661,14 +659,15 @@ async function main() {
     },
   });
 
-  // 7. Injury Logs (Bản đồ giải phẫu 2D: Cả ACTIVE và RESOLVED)
-  const horse3 = createdHorses['HR-000003'];
+  // ----------------------------------------------------------------
+  // 7. Injury Logs (Covering InjuryStatus: ACTIVE, HEALING, RESOLVED)
+  // ----------------------------------------------------------------
   await prisma.injuryLog.upsert({
-    where: { id: `inj-${horse3.id}-active` },
+    where: { id: `inj-${horse2.id}-active` },
     update: {},
     create: {
-      id: `inj-${horse3.id}-active`,
-      horseId: horse3.id,
+      id: `inj-${horse2.id}-active`,
+      horseId: horse2.id,
       coordinateX: 0.46,
       coordinateY: 0.62,
       viewSide: 'LEFT',
@@ -677,9 +676,9 @@ async function main() {
       bodySide: BodySide.LEFT,
       injuryType: 'Căng gân gấp ngón nông & tràn dịch bao hoạt dịch nhẹ',
       severity: SeverityLevel.MODERATE,
-      stage: 'RECOVERING',
+      stage: 'ACUTE',
       status: InjuryStatus.ACTIVE,
-      description: 'Căng gân gấp ngón nông quan sát thấy sau buổi tập trên đường cỏ.',
+      description: 'Căng gân gấp ngón nông quan sát thấy sau buổi tập trên đường cát.',
       discoveryDate: new Date(Date.now() - 10 * 86400000),
       recoveryHistory: [
         {
@@ -688,15 +687,38 @@ async function main() {
           evaluationDate: new Date(Date.now() - 10 * 86400000).toISOString(),
           severity: 'MODERATE',
           notes: 'Nóng cục bộ và nhạy cảm đau dọc vùng bàn chân giữa.',
-          updatedByName: 'Dr. Sarah Connor',
+          updatedByName: vet.fullName,
         },
+      ],
+    },
+  });
+
+  await prisma.injuryLog.upsert({
+    where: { id: `inj-${horse3.id}-healing` },
+    update: {},
+    create: {
+      id: `inj-${horse3.id}-healing`,
+      horseId: horse3.id,
+      coordinateX: 0.35,
+      coordinateY: 0.55,
+      viewSide: 'RIGHT',
+      layer: 'MUSCLE',
+      anatomicalZone: 'Right Hind Biceps Femoris',
+      bodySide: BodySide.RIGHT,
+      injuryType: 'Căng cơ đùi sau',
+      severity: SeverityLevel.MILD,
+      stage: 'RECOVERING',
+      status: InjuryStatus.HEALING,
+      description: 'Căng cơ đùi sau chân phải trong bài tập bứt tốc, đang phục hồi tốt.',
+      discoveryDate: new Date(Date.now() - 15 * 86400000),
+      recoveryHistory: [
         {
-          id: 'rec-02',
+          id: 'rec-h2',
           stage: 'RECOVERING',
-          evaluationDate: new Date(Date.now() - 2 * 86400000).toISOString(),
+          evaluationDate: new Date(Date.now() - 3 * 86400000).toISOString(),
           severity: 'MILD',
-          notes: 'Giảm nhiệt độ nóng, chịu lực tốt hơn; cho phép bài tập đi bộ nhẹ.',
-          updatedByName: 'Dr. Sarah Connor',
+          notes: 'Đã giảm sưng 80%, cho phép tập đi bộ nhẹ và ngâm chân đá.',
+          updatedByName: vet.fullName,
         },
       ],
     },
@@ -726,15 +748,16 @@ async function main() {
           stage: 'HEALED',
           evaluationDate: new Date(Date.now() - 30 * 86400000).toISOString(),
           severity: 'MILD',
-          notes: 'Vết thương biểu mô hóa hoàn toàn, không để lại dị tật.',
-          updatedByName: 'Dr. Sarah Connor',
+          notes: 'Vết thương biểu mô hóa hoàn toàn, không để lại di chứng.',
+          updatedByName: vet.fullName,
         },
       ],
     },
   });
 
+  // ----------------------------------------------------------------
   // 8. Hồ Sơ Bệnh Án bao quát đầy đủ trạng thái: OPEN, CLOSED, DRAFT
-  // OPEN (Đang điều trị)
+  // ----------------------------------------------------------------
   await prisma.medicalRecord.upsert({
     where: { id: `med-${horse1.id}-1` },
     update: {},
@@ -758,7 +781,6 @@ async function main() {
     },
   });
 
-  // OPEN (Chấn thương nặng)
   await prisma.medicalRecord.upsert({
     where: { id: `med-${horse2.id}-1` },
     update: {},
@@ -786,7 +808,6 @@ async function main() {
     },
   });
 
-  // CLOSED (Bệnh án đã đóng - đã chữa khỏi)
   await prisma.medicalRecord.upsert({
     where: { id: `med-${horse1.id}-closed` },
     update: {},
@@ -812,8 +833,6 @@ async function main() {
     },
   });
 
-  // DRAFT (Bản nháp bệnh án)
-  const horse4 = createdHorses['HR-000004'];
   await prisma.medicalRecord.upsert({
     where: { id: `med-${horse4.id}-draft` },
     update: {},
@@ -831,15 +850,120 @@ async function main() {
     },
   });
   console.log(
-    `[4/9] Seeded Medical Records (OPEN, CLOSED, DRAFT) & Medical Locks (ACTIVE, RELEASED)`,
+    `[4/12] Seeded Medical Records (OPEN, CLOSED, DRAFT) & Injury Logs (ACTIVE, HEALING, RESOLVED)`,
   );
 
-  // 9. Giáo án Huấn Luyện bao quát 100% PlanStatus: ACTIVE, COMPLETED, DRAFT
-  const now = new Date();
-  const clubDay = (offset: number) =>
-    new Date(now.getTime() + 7 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
+  // ----------------------------------------------------------------
+  // 9. Kế Hoạch Dinh Dưỡng bao quát NutritionPlanStatus:
+  // APPROVED, PENDING_APPROVAL, DRAFT, REJECTED, ARCHIVED
+  // ----------------------------------------------------------------
+  await prisma.nutritionPlan.upsert({
+    where: { id: `np-${horse1.id}` },
+    update: {},
+    create: {
+      id: `np-${horse1.id}`,
+      planCode: 'DD-000001',
+      horseId: horse1.id,
+      status: NutritionPlanStatus.APPROVED,
+      dailyFeedWeightKg: 12.5,
+      targetWeightRatioPct: 2.5,
+      horseWeightSnapshot: 495.0,
+      hayFeedKg: 8.5,
+      grainFeedKg: 4.0,
+      specialInstructions: 'Bổ sung điện giải sau bài tập chạy nước rút và vitamin E chống oxy hóa.',
+      createdById: trainer.id,
+      approvedById: vet.id,
+      approvedAt: new Date(Date.now() - 15 * 86400000),
+      mealsJson: [
+        { time: '06:00', type: 'Sáng', hayKg: 3.0, grainKg: 1.5, notes: 'Cỏ khô Timothy + Cám yến mạch' },
+        { time: '12:00', type: 'Trưa', hayKg: 2.5, grainKg: 1.0, notes: 'Cỏ khô Alfalfa' },
+        { time: '17:30', type: 'Chiều', hayKg: 3.0, grainKg: 1.5, notes: 'Hạt dinh dưỡng + Bột điện giải' },
+      ],
+    },
+  });
 
-  // ACTIVE Plan
+  await prisma.nutritionPlan.upsert({
+    where: { id: `np-${horse2.id}` },
+    update: {},
+    create: {
+      id: `np-${horse2.id}`,
+      planCode: 'DD-000002',
+      horseId: horse2.id,
+      status: NutritionPlanStatus.PENDING_APPROVAL,
+      dailyFeedWeightKg: 9.0,
+      targetWeightRatioPct: 1.8,
+      horseWeightSnapshot: 510.0,
+      hayFeedKg: 7.5,
+      grainFeedKg: 1.5,
+      specialInstructions:
+        'Chế độ ăn giảm năng lượng trong thời gian nghỉ dưỡng điều trị gân, tăng chất xơ và glucosamine.',
+      createdById: trainer.id,
+      mealsJson: [
+        { time: '06:30', type: 'Sáng', hayKg: 3.5, grainKg: 0.5, notes: 'Cỏ khô đồng cỏ tự nhiên' },
+        { time: '17:00', type: 'Chiều', hayKg: 4.0, grainKg: 1.0, notes: 'Bổ sung khoáng phục hồi khớp' },
+      ],
+    },
+  });
+
+  await prisma.nutritionPlan.upsert({
+    where: { id: `np-${horse3.id}` },
+    update: {},
+    create: {
+      id: `np-${horse3.id}`,
+      planCode: 'DD-000003',
+      horseId: horse3.id,
+      status: NutritionPlanStatus.DRAFT,
+      dailyFeedWeightKg: 11.0,
+      targetWeightRatioPct: 2.3,
+      horseWeightSnapshot: 480.0,
+      hayFeedKg: 7.5,
+      grainFeedKg: 3.5,
+      specialInstructions: 'Kế hoạch thử nghiệm tăng tỷ lệ chất béo thực vật để tối ưu sức bền.',
+      createdById: trainer.id,
+    },
+  });
+
+  await prisma.nutritionPlan.upsert({
+    where: { id: `np-${horse4.id}` },
+    update: {},
+    create: {
+      id: `np-${horse4.id}`,
+      planCode: 'DD-000004',
+      horseId: horse4.id,
+      status: NutritionPlanStatus.REJECTED,
+      dailyFeedWeightKg: 14.0,
+      targetWeightRatioPct: 2.9,
+      horseWeightSnapshot: 490.0,
+      rejectionReason: 'Hàm lượng tinh bột quá cao, có nguy cơ gây viêm móng (Laminitis). Cần giảm cám hạt.',
+      vetNotes: 'Đề nghị điều chỉnh lại lượng cám hạt xuống dưới 4kg/ngày.',
+      createdById: trainer.id,
+      approvedById: vet.id,
+      approvedAt: new Date(Date.now() - 5 * 86400000),
+    },
+  });
+
+  await prisma.nutritionPlan.upsert({
+    where: { id: `np-${horse7.id}` },
+    update: {},
+    create: {
+      id: `np-${horse7.id}`,
+      planCode: 'DD-000000',
+      horseId: horse7.id,
+      status: NutritionPlanStatus.ARCHIVED,
+      dailyFeedWeightKg: 8.0,
+      targetWeightRatioPct: 1.6,
+      horseWeightSnapshot: 505.0,
+      specialInstructions: 'Chế độ ăn lưu trữ thời kỳ nghỉ hưu vinh danh.',
+      createdById: trainer.id,
+      approvedById: vet.id,
+    },
+  });
+  console.log(`[5/12] Seeded Nutrition Plans covering all 5 NutritionPlanStatus values`);
+
+  // ----------------------------------------------------------------
+  // 10. Giáo án Huấn Luyện bao quát 100% PlanStatus:
+  // ACTIVE, COMPLETED, DRAFT, CANCELLED
+  // ----------------------------------------------------------------
   const plan1 = await prisma.trainingPlan.upsert({
     where: { id: `plan-${horse1.id}` },
     update: {},
@@ -883,7 +1007,6 @@ async function main() {
     },
   });
 
-  // COMPLETED Plan
   await prisma.trainingPlan.upsert({
     where: { id: `plan-${horse1.id}-completed` },
     update: {},
@@ -903,12 +1026,9 @@ async function main() {
     },
   });
 
-  // DRAFT Plan
-  const horse5 = createdHorses['HR-000005'];
-  const horse6 = createdHorses['HR-000006'];
   await prisma.trainingPlan.upsert({
     where: { id: `plan-${horse6.id}-draft` },
-    update: {},
+    update: { status: PlanStatus.DRAFT },
     create: {
       id: `plan-${horse6.id}-draft`,
       planCode: 'GA-000004',
@@ -925,8 +1045,96 @@ async function main() {
     },
   });
 
-  // 10. Bài Tập (Workouts) bao quát tất cả WorkoutStatus:
-  // COMPLETED, SCHEDULED, BLOCKED (do Khóa y tế), MISSED
+  await prisma.trainingPlan.upsert({
+    where: { id: `plan-${horse2.id}-cancelled` },
+    update: {},
+    create: {
+      id: `plan-${horse2.id}-cancelled`,
+      planCode: 'GA-000005',
+      horseId: horse2.id,
+      trainerUserId: trainer.id,
+      phaseName: 'Giáo án huấn luyện hè đã hủy (Chuyển sang điều trị gân)',
+      objective: 'Hủy bài chạy nước rút do phát hiện chấn thương dây chằng.',
+      targetSpeed: 52.0,
+      targetDistance: 1600,
+      trackSurface: TrackSurface.TURF,
+      startDate: new Date(now.getTime() - 10 * 86400000),
+      endDate: new Date(now.getTime() + 20 * 86400000),
+      status: PlanStatus.CANCELLED,
+    },
+  });
+
+  // Active Plan for Horse 2 (Xích Thố) - Phục hồi nhẹ
+  const plan2 = await prisma.trainingPlan.upsert({
+    where: { id: `plan-${horse2.id}` },
+    update: {},
+    create: {
+      id: `plan-${horse2.id}`,
+      planCode: 'GA-000002',
+      horseId: horse2.id,
+      trainerUserId: trainer.id,
+      phaseName: 'Phục hồi chức năng & Vận động nhẹ',
+      objective: 'Chỉ cho phép bài tập đi bộ nhẹ không quá 800m.',
+      targetSpeed: 20.0,
+      targetDistance: 800,
+      trackSurface: TrackSurface.TURF,
+      startDate: new Date(now.getTime() - 5 * 86400000),
+      endDate: new Date(now.getTime() + 25 * 86400000),
+      status: PlanStatus.ACTIVE,
+    },
+  });
+
+  // Active Plan for Horse 8 & 9 with 4 completed workouts to satisfy Flow 5 Tournament eligibility
+  const planHorse8 = await prisma.trainingPlan.upsert({
+    where: { id: `plan-${horse8.id}-active` },
+    update: { status: PlanStatus.ACTIVE },
+    create: {
+      id: `plan-${horse8.id}-active`,
+      planCode: 'GA-000008',
+      horseId: horse8.id,
+      trainerUserId: trainer.id,
+      phaseName: 'Huấn luyện chuẩn bị thi đấu cự ly trung bình',
+      objective: 'Đạt chuẩn thể lực và tốc độ giải đấu.',
+      targetSpeed: 58.0,
+      targetDistance: 1600,
+      trackSurface: TrackSurface.TURF,
+      startDate: new Date(now.getTime() - 25 * 86400000),
+      endDate: new Date(now.getTime() + 35 * 86400000),
+      status: PlanStatus.ACTIVE,
+    },
+  });
+
+  for (let i = 1; i <= 4; i++) {
+    const daysAgo = 22 - i * 4;
+    await prisma.workoutSession.upsert({
+      where: { id: `w${i}-${horse8.id}` },
+      update: {
+        status: WorkoutStatus.COMPLETED,
+        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+      },
+      create: {
+        id: `w${i}-${horse8.id}`,
+        trainingPlanId: planHorse8.id,
+        horseId: horse8.id,
+        assignedStaffUserId: groom1.id,
+        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
+        distanceMeters: 1400,
+        actualTimeSeconds: 84 + i,
+        heartRatePeak: 174,
+        heartRateRecovery: 108,
+        performanceScore: 8.7,
+        status: WorkoutStatus.COMPLETED,
+        workoutType: 'CANTER',
+        intensity: 'MEDIUM',
+        trackSurface: 'TURF',
+        averageSpeedKmh: 59.2,
+        topSpeedKmh: 63.8,
+        trainerNotes: `Hoàn thành bài tập chuẩn bị thi đấu ${i}/4`,
+      },
+    });
+  }
+
+  // Workouts Covering All WorkoutStatus: COMPLETED, SCHEDULED, BLOCKED, MISSED, CANCELLED
   await prisma.workoutSession.upsert({
     where: { id: `w1-${horse1.id}` },
     update: {},
@@ -1003,26 +1211,6 @@ async function main() {
     },
   });
 
-  // BLOCKED workout: Bài tập nặng bị chặn do Khóa y tế (RULE-MED-01)
-  const plan2 = await prisma.trainingPlan.upsert({
-    where: { id: `plan-${horse2.id}` },
-    update: {},
-    create: {
-      id: `plan-${horse2.id}`,
-      planCode: 'GA-000002',
-      horseId: horse2.id,
-      trainerUserId: trainer.id,
-      phaseName: 'Phục hồi chức năng & Vận động nhẹ',
-      objective: 'Chỉ cho phép bài tập đi bộ nhẹ không quá 800m.',
-      targetSpeed: 20.0,
-      targetDistance: 800,
-      trackSurface: TrackSurface.TURF,
-      startDate: new Date(now.getTime() - 5 * 86400000),
-      endDate: new Date(now.getTime() + 25 * 86400000),
-      status: PlanStatus.ACTIVE,
-    },
-  });
-
   await prisma.workoutSession.upsert({
     where: { id: `w-blocked-${horse2.id}` },
     update: {},
@@ -1041,7 +1229,6 @@ async function main() {
     },
   });
 
-  // MISSED workout: Bài tập bị lỡ ngày hôm qua
   await prisma.workoutSession.upsert({
     where: { id: `w-missed-${horse1.id}` },
     update: {},
@@ -1056,243 +1243,35 @@ async function main() {
       workoutType: 'TROT',
       intensity: 'LIGHT',
       trackSurface: 'TURF',
-      trainerNotes: 'Bỏ lỡ do thời tiết mưa bão ngập đường chạy.',
+      trainerNotes: 'Bỏ lỡ do thời tiết mưa to ngập đường chạy.',
     },
   });
 
-  // Seed active training plan & 4 completed workouts for horse5 (Golden Eclipse, HR-000005)
-  // to ensure reproducible eligible unregistered horse for race registration (Flow 5)
-  const planHorse5 = await prisma.trainingPlan.upsert({
-    where: { id: `plan-${horse5.id}-active` },
-    update: { status: PlanStatus.ACTIVE },
+  await prisma.workoutSession.upsert({
+    where: { id: `w-cancelled-${horse3.id}` },
+    update: {},
     create: {
-      id: `plan-${horse5.id}-active`,
-      planCode: 'GA-000095',
-      horseId: horse5.id,
-      trainerUserId: trainer.id,
-      phaseName: 'Huấn luyện tốc độ & Thể lực mùa xuân',
-      objective: 'Tích lũy khối lượng và nâng cao tốc độ cự ly 1200m.',
-      targetSpeed: 58.0,
-      targetDistance: 1200,
-      trackSurface: TrackSurface.SYNTHETIC,
-      startDate: new Date(now.getTime() - 25 * 86400000),
-      endDate: new Date(now.getTime() + 35 * 86400000),
-      status: PlanStatus.ACTIVE,
+      id: `w-cancelled-${horse3.id}`,
+      trainingPlanId: plan1.id,
+      horseId: horse3.id,
+      assignedStaffUserId: groom1.id,
+      scheduledDate: new Date(now.getTime() - 2 * 86400000),
+      distanceMeters: 1200,
+      status: WorkoutStatus.CANCELLED,
+      workoutType: 'CANTER',
+      intensity: 'MEDIUM',
+      trackSurface: 'TURF',
+      trainerNotes: 'Hủy buổi tập do điều chỉnh lịch khám thú y đột xuất.',
     },
   });
 
-  for (let i = 1; i <= 4; i++) {
-    const daysAgo = 22 - i * 4; // 18, 14, 10, 6 days ago (all within 30 days)
-    await prisma.workoutSession.upsert({
-      where: { id: `w${i}-${horse5.id}` },
-      update: {
-        status: WorkoutStatus.COMPLETED,
-        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
-      },
-      create: {
-        id: `w${i}-${horse5.id}`,
-        trainingPlanId: planHorse5.id,
-        horseId: horse5.id,
-        assignedStaffUserId: groom2.id,
-        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
-        distanceMeters: 1200,
-        actualTimeSeconds: 72 + i,
-        heartRatePeak: 172,
-        heartRateRecovery: 106,
-        performanceScore: 8.8,
-        status: WorkoutStatus.COMPLETED,
-        workoutType: 'CANTER',
-        intensity: 'MEDIUM',
-        trackSurface: 'SYNTHETIC',
-        averageSpeedKmh: 59.0,
-        topSpeedKmh: 63.5,
-        trainerNotes: `Hoàn thành bài tập chuẩn bị thi đấu ${i}/4`,
-      },
-    });
-  }
-
-  // Also seed active training plan & 4 completed workouts for horse6 (Storm Runner, HR-000006)
-  const planHorse6 = await prisma.trainingPlan.upsert({
-    where: { id: `plan-${horse6.id}-active` },
-    update: { status: PlanStatus.ACTIVE },
-    create: {
-      id: `plan-${horse6.id}-active`,
-      planCode: 'GA-000096',
-      horseId: horse6.id,
-      trainerUserId: trainer.id,
-      phaseName: 'Huấn luyện tăng tốc đường cỏ',
-      objective: 'Tích lũy thể lực bứt phá cự ly ngắn.',
-      targetSpeed: 57.0,
-      targetDistance: 1200,
-      trackSurface: TrackSurface.TURF,
-      startDate: new Date(now.getTime() - 25 * 86400000),
-      endDate: new Date(now.getTime() + 35 * 86400000),
-      status: PlanStatus.ACTIVE,
-    },
-  });
-
-  for (let i = 1; i <= 4; i++) {
-    const daysAgo = 24 - i * 4; // 20, 16, 12, 8 days ago
-    await prisma.workoutSession.upsert({
-      where: { id: `w${i}-${horse6.id}` },
-      update: {
-        status: WorkoutStatus.COMPLETED,
-        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
-      },
-      create: {
-        id: `w${i}-${horse6.id}`,
-        trainingPlanId: planHorse6.id,
-        horseId: horse6.id,
-        assignedStaffUserId: groom1.id,
-        scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
-        distanceMeters: 1200,
-        actualTimeSeconds: 73 + i,
-        heartRatePeak: 170,
-        heartRateRecovery: 104,
-        performanceScore: 8.7,
-        status: WorkoutStatus.COMPLETED,
-        workoutType: 'CANTER',
-        intensity: 'MEDIUM',
-        trackSurface: 'TURF',
-        averageSpeedKmh: 58.5,
-        topSpeedKmh: 62.8,
-        trainerNotes: `Hoàn thành bài tập chuẩn bị thi đấu ${i}/4`,
-      },
-    });
-  }
-
-  // Seed active training plans & 4 completed workouts for horses 10 through 15 (Abundant eligible horses)
-  const eligibleHorsesDefs = [
-    { code: 'HR-000010', planCode: 'GA-000097', surface: TrackSurface.SYNTHETIC, groom: groom1, name: 'Tốc độ tổng hợp' },
-    { code: 'HR-000011', planCode: 'GA-000098', surface: TrackSurface.TURF, groom: groom2, name: 'Đường cỏ cự ly trung' },
-    { code: 'HR-000012', planCode: 'GA-000099', surface: TrackSurface.SYNTHETIC, groom: groom1, name: 'Bứt phá nước rút' },
-    { code: 'HR-000013', planCode: 'GA-000100', surface: TrackSurface.DIRT, groom: groom2, name: 'Sức bền đường cát' },
-    { code: 'HR-000014', planCode: 'GA-000101', surface: TrackSurface.TURF, groom: groom1, name: 'Tăng tốc chặng cuối' },
-    { code: 'HR-000015', planCode: 'GA-000102', surface: TrackSurface.SYNTHETIC, groom: groom2, name: 'Thể lực bền bỉ' },
-  ];
-
-  for (const item of eligibleHorsesDefs) {
-    const h = createdHorses[item.code];
-    if (!h) continue;
-
-    const plan = await prisma.trainingPlan.upsert({
-      where: { id: `plan-${h.id}-active` },
-      update: { status: PlanStatus.ACTIVE },
-      create: {
-        id: `plan-${h.id}-active`,
-        planCode: item.planCode,
-        horseId: h.id,
-        trainerUserId: trainer.id,
-        phaseName: item.name,
-        objective: 'Duy trì phong độ thi đấu đỉnh cao và thể lực xuất sắc.',
-        targetSpeed: 58.0,
-        targetDistance: 1400,
-        trackSurface: item.surface,
-        startDate: new Date(now.getTime() - 25 * 86400000),
-        endDate: new Date(now.getTime() + 35 * 86400000),
-        status: PlanStatus.ACTIVE,
-      },
-    });
-
-    for (let i = 1; i <= 4; i++) {
-      const daysAgo = 24 - i * 4; // 20, 16, 12, 8 days ago
-      await prisma.workoutSession.upsert({
-        where: { id: `w${i}-${h.id}` },
-        update: {
-          status: WorkoutStatus.COMPLETED,
-          scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
-        },
-        create: {
-          id: `w${i}-${h.id}`,
-          trainingPlanId: plan.id,
-          horseId: h.id,
-          assignedStaffUserId: item.groom.id,
-          scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
-          distanceMeters: 1400,
-          actualTimeSeconds: 84 + i,
-          heartRatePeak: 172,
-          heartRateRecovery: 106,
-          performanceScore: 8.8,
-          status: WorkoutStatus.COMPLETED,
-          workoutType: 'CANTER',
-          intensity: 'MEDIUM',
-          trackSurface: item.surface === TrackSurface.TURF ? 'TURF' : item.surface === TrackSurface.DIRT ? 'DIRT' : 'SYNTHETIC',
-          averageSpeedKmh: 59.0,
-          topSpeedKmh: 63.5,
-          trainerNotes: `Hoàn thành bài tập chuẩn bị thi đấu ${i}/4`,
-        },
-      });
-    }
-  }
-
-  // Horse 16 (Bucephalus Brave) with only 2 completed workouts (ineligible due to < 4 workouts)
-  const horse16 = createdHorses['HR-000016'];
-  if (horse16) {
-    const plan16 = await prisma.trainingPlan.upsert({
-      where: { id: `plan-${horse16.id}-active` },
-      update: { status: PlanStatus.ACTIVE },
-      create: {
-        id: `plan-${horse16.id}-active`,
-        planCode: 'GA-000103',
-        horseId: horse16.id,
-        trainerUserId: trainer.id,
-        phaseName: 'Huấn luyện cơ bản ngựa trẻ',
-        objective: 'Làm quen nhịp độ đường đua.',
-        targetSpeed: 53.0,
-        targetDistance: 1000,
-        trackSurface: TrackSurface.TURF,
-        startDate: new Date(now.getTime() - 15 * 86400000),
-        endDate: new Date(now.getTime() + 45 * 86400000),
-        status: PlanStatus.ACTIVE,
-      },
-    });
-
-    for (let i = 1; i <= 2; i++) {
-      const daysAgo = 10 - i * 4;
-      await prisma.workoutSession.upsert({
-        where: { id: `w${i}-${horse16.id}` },
-        update: { status: WorkoutStatus.COMPLETED },
-        create: {
-          id: `w${i}-${horse16.id}`,
-          trainingPlanId: plan16.id,
-          horseId: horse16.id,
-          assignedStaffUserId: groom1.id,
-          scheduledDate: new Date(now.getTime() - daysAgo * 86400000),
-          distanceMeters: 1000,
-          actualTimeSeconds: 66 + i,
-          heartRatePeak: 165,
-          heartRateRecovery: 112,
-          performanceScore: 8.0,
-          status: WorkoutStatus.COMPLETED,
-          workoutType: 'TROT',
-          intensity: 'LOW',
-          trackSurface: 'TURF',
-          averageSpeedKmh: 53.0,
-          topSpeedKmh: 56.5,
-          trainerNotes: `Bài tập căn bản ${i}/2`,
-        },
-      });
-    }
-  }
-
-  const existingPlanCount = await prisma.trainingPlan.count();
-  await prisma.counter.upsert({
-    where: { name: 'training_plan' },
-    update: { value: Math.max(existingPlanCount + 50, 150) },
-    create: { name: 'training_plan', value: Math.max(existingPlanCount + 50, 150) },
-  });
-
-  const existingHorseCount = await prisma.horse.count();
-  await prisma.counter.upsert({
-    where: { name: 'horse_code' },
-    update: { value: Math.max(existingHorseCount + 50, 100) },
-    create: { name: 'horse_code', value: Math.max(existingHorseCount + 50, 100) },
-  });
   console.log(
-    `[5/9] Seeded Training Plans (ACTIVE, COMPLETED, DRAFT) & Workouts (COMPLETED, SCHEDULED, BLOCKED, MISSED)`,
+    `[6/12] Seeded Training Plans (ACTIVE, COMPLETED, DRAFT, CANCELLED) & Workouts (COMPLETED, SCHEDULED, BLOCKED, MISSED, CANCELLED)`,
   );
 
+  // ----------------------------------------------------------------
   // 11. Chăm Sóc Định Kỳ (Catalogs & Schedules: PENDING, COMPLETED, OVERDUE)
+  // ----------------------------------------------------------------
   const catTetanus = await prisma.preventiveTypeCatalog.upsert({
     where: { code: 'VAC_TETANUS' },
     update: {},
@@ -1372,189 +1351,204 @@ async function main() {
 
   // COMPLETED
   await prisma.preventiveSchedule.upsert({
-    where: { id: `prev-dew-${horse2.id}` },
+    where: { id: `prev-deworm-${horse1.id}` },
     update: {},
     create: {
-      id: `prev-dew-${horse2.id}`,
-      horseId: horse2.id,
+      id: `prev-deworm-${horse1.id}`,
+      horseId: horse1.id,
       typeCatalogId: catDeworm.id,
       veterinarianUserId: vet.id,
       scheduleType: PreventiveType.DEWORMING,
-      dueDate: new Date(now.getTime() + 80 * 86400000),
-      lastCompletedDate: new Date(now.getTime() - 10 * 86400000),
+      dueDate: new Date(now.getTime() - 10 * 86400000),
       completedDate: new Date(now.getTime() - 10 * 86400000),
+      lastCompletedDate: new Date(now.getTime() - 10 * 86400000),
       productAdministered: 'Equimax Paste 14g',
-      batchNumber: 'LOT-2026-DW03',
+      batchNumber: 'LOT-EQM-2026',
       performedByMode: 'SELF',
       performedByName: vet.fullName,
       status: PreventiveStatus.COMPLETED,
-      notes: 'Đã cho uống thuốc tẩy giun đầy đủ liều lượng theo thể trọng.',
+      notes: 'Tẩy giun định kỳ quý 3, thể trạng hấp thụ tốt.',
     },
   });
 
   // OVERDUE
   await prisma.preventiveSchedule.upsert({
-    where: { id: `prev-far-${horse2.id}` },
+    where: { id: `prev-dental-${horse2.id}` },
     update: {},
     create: {
-      id: `prev-far-${horse2.id}`,
+      id: `prev-dental-${horse2.id}`,
       horseId: horse2.id,
-      typeCatalogId: catFarrier.id,
+      typeCatalogId: catDental.id,
       veterinarianUserId: vet.id,
-      scheduleType: PreventiveType.FARRIER_HOOF_CARE,
-      dueDate: new Date(now.getTime() - 5 * 86400000),
-      lastCompletedDate: new Date(now.getTime() - 50 * 86400000),
-      performedByMode: 'EXTERNAL',
-      performedByName: 'Farrier Team',
+      scheduleType: PreventiveType.DENTAL,
+      dueDate: new Date(now.getTime() - 15 * 86400000),
+      lastCompletedDate: new Date(now.getTime() - 380 * 86400000),
+      performedByMode: 'EXTERNAL_SPECIALIST',
+      performedByName: 'BS. Lê Minh Hoàng (Chuyên gia Nha khoa)',
       status: PreventiveStatus.OVERDUE,
-      notes: 'Quá hạn bảo dưỡng móng do đang nghỉ dưỡng thương (cần bảo dưỡng nhẹ tại chuồng).',
+      notes: 'Đã quá hạn khám nha khoa định kỳ, cần lên lịch mài răng sau khi hồi phục gân.',
     },
   });
-  console.log(`[6/9] Seeded Preventive Care (PENDING, COMPLETED, OVERDUE)`);
+  console.log(`[7/12] Seeded Preventive Care across all 4 Types and 3 Statuses (PENDING, COMPLETED, OVERDUE)`);
 
-  // 12. Thông Báo Mẫu (Notifications: Cả chưa đọc và đã đọc)
-  const notificationsData = [
-    {
-      userId: manager.id,
-      type: 'ACCOUNT_REGISTRATION_SUBMITTED',
-      category: NotificationCategory.ACCOUNT,
-      title: 'New Account Pending Approval',
-      message: 'Trần Văn Nam has registered for Groom Hand role and is pending approval.',
-      senderName: 'System Registration',
-      readAt: null,
-    },
-    {
-      userId: manager.id,
-      type: 'HORSE_STATUS_CHANGED',
-      category: NotificationCategory.HORSE,
-      title: 'Horse Status Update',
-      message: 'Northern Dancer Legacy was placed on Medical Lock due to acute desmitis.',
-      senderName: vet.fullName,
-      readAt: null,
-    },
-    {
-      userId: trainer.id,
-      type: 'TRAINING_LOCK_PLACED',
-      category: NotificationCategory.LOCK,
-      title: 'Training Lock Placed',
-      message:
-        'Medical Lock LOCK-HR-000002-001 placed on Northern Dancer Legacy. Heavy workouts blocked.',
-      senderName: vet.fullName,
-      readAt: null,
-    },
-    {
-      userId: vet.id,
-      type: 'PREVENTIVE_OVERDUE',
-      category: NotificationCategory.MEDICAL,
-      title: 'Care Schedule Overdue',
-      message: 'Farrier Hoof Care schedule for Northern Dancer Legacy is overdue by 5 days.',
-      senderName: 'System Monitor',
-      readAt: null,
-    },
-    {
-      userId: groom1.id,
-      type: 'STALL_ASSIGNED',
-      category: NotificationCategory.HORSE,
-      title: 'New Stall Allocation',
-      message: 'You have been assigned as primary groom for Thunderbolt Swift at STALL-A01.',
-      senderName: manager.fullName,
-      readAt: new Date(Date.now() - 2 * 86400000),
-    },
-    {
-      userId: owner1.id,
-      type: 'WORKOUT_COMPLETED',
-      category: NotificationCategory.TRAINING,
-      title: 'Workout Completed',
-      message: 'Thunderbolt Swift completed a trial workout session with score 8.9.',
-      senderName: trainer.fullName,
-      readAt: null,
-    },
-  ];
-
-  for (const [i, n] of notificationsData.entries()) {
-    await prisma.notification.upsert({
-      where: { dedupeKey: `seed-notif-${i + 1}` },
-      update: {},
-      create: {
-        ...n,
-        dedupeKey: `seed-notif-${i + 1}`,
-      },
-    });
-  }
-  console.log(`[7/9] Seeded In-app Notifications (Unread & Read)`);
-
-  // 13. Nhật Ký Hệ Thống (Audit Logs: Đa dạng loại hành động)
-  const auditLogs = [
-    {
-      userId: manager.id,
-      action: 'USER_REGISTERED',
-      entityName: 'User',
-      entityId: 'pending-groom-id',
-      newValuesJson: JSON.stringify({
-        email: 'pending.groom@gmail.com',
-        role: 'GROOM',
-        status: 'PENDING_APPROVAL',
-      }),
-      timestamp: new Date(Date.now() - 5 * 86400000),
-    },
-    {
-      userId: manager.id,
-      action: 'STALL_ALLOCATION_CREATED',
-      entityName: 'StallAllocation',
-      entityId: `alloc-${horse1.id}`,
-      newValuesJson: JSON.stringify({
-        horseCode: horse1.horseCode,
-        stallCode: 'STALL-A01',
-        groom: groom1.fullName,
-      }),
-      timestamp: new Date(Date.now() - 4 * 86400000),
-    },
-    {
-      userId: vet.id,
-      action: 'MEDICAL_LOCK_APPLIED',
-      entityName: 'MedicalLock',
-      entityId: 'LOCK-HR-000002-001',
-      newValuesJson: JSON.stringify({
-        horseCode: horse2.horseCode,
-        reason: 'Suspensory ligament acute desmitis',
-        restDays: 14,
-      }),
-      timestamp: new Date(Date.now() - 3 * 86400000),
-    },
-    {
-      userId: trainer.id,
-      action: 'TRAINING_PLAN_CREATED',
-      entityName: 'TrainingPlan',
-      entityId: plan1.id,
-      newValuesJson: JSON.stringify({
-        planCode: 'GA-000001',
-        horseCode: horse1.horseCode,
-        phaseName: plan1.phaseName,
-      }),
-      timestamp: new Date(Date.now() - 2 * 86400000),
-    },
-    {
-      userId: groom1.id,
-      action: 'WORKOUT_SESSION_COMPLETED',
-      entityName: 'WorkoutSession',
-      entityId: `w1-${horse1.id}`,
-      newValuesJson: JSON.stringify({ horseCode: horse1.horseCode, score: 8.9, duration: 72.0 }),
-      timestamp: new Date(Date.now() - 1 * 86400000),
-    },
-  ];
-
-  for (const a of auditLogs) {
-    await prisma.auditLog.create({ data: a });
-  }
-  console.log(`[8/9] Seeded Audit Trail Records`);
-
-  // 14. Flow 5: Tournaments, Registrations, Results & Financial Invoices
-  const t1 = await prisma.tournament.upsert({
-    where: { id: 'seed-tourn-1' },
+  // ----------------------------------------------------------------
+  // 12. Báo Cáo Sự Cố Chuồng Trại (Incident Reports: REPORTED, UNDER_REVIEW, RESOLVED, DISMISSED)
+  // ----------------------------------------------------------------
+  await prisma.incidentReport.upsert({
+    where: { id: `inc-${horse1.id}-001` },
     update: {},
     create: {
+      id: `inc-${horse1.id}-001`,
+      incidentNumber: 'INC-20261025-001',
+      horseId: horse1.id,
+      stallZoneId: zoneIds['ZONE-A'],
+      reportedById: groom1.id,
+      severity: SeverityLevel.MILD,
+      status: IncidentStatus.REPORTED,
+      symptomsJson: ['trầy xước nhẹ', 'va chạm rào'],
+      description: 'Bạch Long Mã va quẹt nhẹ vào cánh cửa chuồng khi dắt ra bãi thả sáng nay.',
+      vetNotes: 'Chưa có dấu hiệu sưng nóng, theo dõi tiếp.',
+    },
+  });
+
+  await prisma.incidentReport.upsert({
+    where: { id: `inc-${horse4.id}-002` },
+    update: {},
+    create: {
+      id: `inc-${horse4.id}-002`,
+      incidentNumber: 'INC-20261026-002',
+      horseId: horse4.id,
+      stallZoneId: zoneIds['ZONE-A'],
+      reportedById: groom2.id,
+      reviewedById: vet.id,
+      reviewedAt: new Date(Date.now() - 1 * 86400000),
+      severity: SeverityLevel.MODERATE,
+      status: IncidentStatus.UNDER_REVIEW,
+      symptomsJson: ['khập khiễng', 'ngại tiếp đất'],
+      description: 'Thần Phong có biểu hiện hơi khựng lại khi tiếp đất chân trước ở cuối bài chạy.',
+      vetNotes: 'Đang tiến hành chụp X-quang khớp bàn ngón để loại trừ nứt xương kín.',
+    },
+  });
+
+  await prisma.incidentReport.upsert({
+    where: { id: `inc-${horse2.id}-003` },
+    update: {},
+    create: {
+      id: `inc-${horse2.id}-003`,
+      incidentNumber: 'INC-20261020-003',
+      horseId: horse2.id,
+      stallZoneId: zoneIds['ZONE-B'],
+      reportedById: groom1.id,
+      reviewedById: manager.id,
+      reviewedAt: new Date(Date.now() - 8 * 86400000),
+      severity: SeverityLevel.MILD,
+      status: IncidentStatus.RESOLVED,
+      symptomsJson: ['vật cản nguy hiểm'],
+      description: 'Phát hiện mảnh đinh rỉ rơi ở lối đi chuồng B, có thể gây nguy cơ đâm thủng móng.',
+      vetNotes: 'Đã dọn dẹp sạch sẽ toàn bộ lối đi bằng xe hút nam châm từ tính.',
+    },
+  });
+
+  await prisma.incidentReport.upsert({
+    where: { id: `inc-${horse3.id}-004` },
+    update: {},
+    create: {
+      id: `inc-${horse3.id}-004`,
+      incidentNumber: 'INC-20261015-004',
+      horseId: horse3.id,
+      stallZoneId: zoneIds['ZONE-A'],
+      reportedById: groom2.id,
+      reviewedById: manager.id,
+      reviewedAt: new Date(Date.now() - 12 * 86400000),
+      severity: SeverityLevel.MILD,
+      status: IncidentStatus.DISMISSED,
+      symptomsJson: ['tiếng ồn bất thường'],
+      description: 'Báo cáo tiếng động lạ ban đêm nghi có động vật hoang dã xâm nhập.',
+      vetNotes: 'Kiểm tra camera an ninh không phát hiện bất thường, đóng hồ sơ.',
+    },
+  });
+  console.log(`[8/12] Seeded Incident Reports covering all 4 IncidentStatus values`);
+
+  // ----------------------------------------------------------------
+  // 13. AI Insights (Covering InsightStatus & InsightType)
+  // ----------------------------------------------------------------
+  await prisma.aIInsight.upsert({
+    where: { id: `insight-${horse1.id}-1` },
+    update: {},
+    create: {
+      id: `insight-${horse1.id}-1`,
+      horseId: horse1.id,
+      insightType: InsightType.WORKOUT_RECOMMENDATION,
+      trainingLoadIndex: 82.5,
+      riskScore: 12.0,
+      status: InsightStatus.GENERATED,
+      recommendationsJson: JSON.stringify([
+        'Tăng cự ly bài tập lên 2000m trong tuần tới do thể lực phục hồi cực nhanh.',
+        'Duy trì bài tập nước rút vào sáng sớm khi thời tiết mát mẻ.',
+      ]),
+    },
+  });
+
+  await prisma.aIInsight.upsert({
+    where: { id: `insight-${horse2.id}-2` },
+    update: {},
+    create: {
+      id: `insight-${horse2.id}-2`,
+      horseId: horse2.id,
+      insightType: InsightType.INJURY_RISK_WARNING,
+      trainingLoadIndex: 45.0,
+      riskScore: 78.5,
+      status: InsightStatus.ACKNOWLEDGED,
+      recommendationsJson: JSON.stringify([
+        'Cảnh báo tải trọng: Nguy cơ tái phát viêm gân nếu quay lại tập chạy trước 14 ngày.',
+        'Đề xuất duy trì Khóa Y Tế và vật lý trị liệu chườm lạnh.',
+      ]),
+    },
+  });
+
+  await prisma.aIInsight.upsert({
+    where: { id: `insight-${horse3.id}-3` },
+    update: {},
+    create: {
+      id: `insight-${horse3.id}-3`,
+      horseId: horse3.id,
+      insightType: InsightType.RECOVERY_ADVICE,
+      trainingLoadIndex: 68.0,
+      riskScore: 28.0,
+      status: InsightStatus.APPLIED,
+      recommendationsJson: JSON.stringify([
+        'Áp dụng liệu pháp ngâm chân đá 20 phút ngay sau buổi tập bứt tốc.',
+        'Bổ sung điện giải và vitamin C trong khẩu phần ăn trưa.',
+      ]),
+    },
+  });
+
+  await prisma.aIInsight.upsert({
+    where: { id: `insight-${horse4.id}-4` },
+    update: {},
+    create: {
+      id: `insight-${horse4.id}-4`,
+      horseId: horse4.id,
+      insightType: InsightType.WORKOUT_RECOMMENDATION,
+      trainingLoadIndex: 55.0,
+      riskScore: 35.0,
+      status: InsightStatus.DISMISSED,
+      recommendationsJson: JSON.stringify([
+        'Đề xuất chạy thử sân cát (đã bác bỏ vì ngựa chỉ phù hợp sân cỏ).',
+      ]),
+    },
+  });
+  console.log(`[9/12] Seeded AI Insights covering all InsightType and InsightStatus values`);
+
+  // ----------------------------------------------------------------
+  // 14. Flow 5: Tournaments, Registrations, Results & Financial Invoices
+  // ----------------------------------------------------------------
+  const t1 = await prisma.tournament.upsert({
+    where: { id: 'seed-tourn-1' },
+    update: { name: 'Grand Autumn Cup 2026 (Cúp Mùa Thu)' },
+    create: {
       id: 'seed-tourn-1',
-      name: 'Grand Autumn Cup 2026',
+      name: 'Grand Autumn Cup 2026 (Cúp Mùa Thu)',
       raceDate: new Date('2026-10-10'),
       location: 'Saigon Racecourse - Track A',
       distanceMeters: 2400,
@@ -1568,13 +1562,14 @@ async function main() {
   await prisma.tournament.upsert({
     where: { id: 'seed-tourn-2' },
     update: {
+      name: 'Saigon Spring Sprint 2026 (Giải Tốc Độ Mùa Xuân)',
       status: TournamentStatus.OPEN_REGISTRATION,
       registrationDeadline: new Date(now.getTime() + 15 * 86400000),
       raceDate: new Date(now.getTime() + 25 * 86400000),
     },
     create: {
       id: 'seed-tourn-2',
-      name: 'Saigon Spring Sprint 2026',
+      name: 'Saigon Spring Sprint 2026 (Giải Tốc Độ Mùa Xuân)',
       raceDate: new Date(now.getTime() + 25 * 86400000),
       location: 'Saigon Racecourse - Sprint Track',
       distanceMeters: 1200,
@@ -1587,10 +1582,10 @@ async function main() {
 
   await prisma.tournament.upsert({
     where: { id: 'seed-tourn-3' },
-    update: {},
+    update: { name: 'National Endurance Derby 2026 (Đại Hội Thể Lực Quốc Gia)' },
     create: {
       id: 'seed-tourn-3',
-      name: 'National Endurance Derby 2026',
+      name: 'National Endurance Derby 2026 (Đại Hội Thể Lực Quốc Gia)',
       raceDate: new Date('2026-12-20'),
       location: 'Da Lat Highland Turf Club',
       distanceMeters: 3200,
@@ -1603,10 +1598,10 @@ async function main() {
 
   await prisma.tournament.upsert({
     where: { id: 'seed-tourn-cancelled' },
-    update: {},
+    update: { name: 'Phu Tho Summer Classic 2026 (Giải Hè Phú Thọ)' },
     create: {
       id: 'seed-tourn-cancelled',
-      name: 'Phu Tho Summer Classic 2026',
+      name: 'Phu Tho Summer Classic 2026 (Giải Hè Phú Thọ)',
       raceDate: new Date('2026-08-15'),
       location: 'Phu Tho Racecourse - Track B',
       distanceMeters: 1600,
@@ -1617,36 +1612,17 @@ async function main() {
     },
   });
 
-  const tOpen2 = await prisma.tournament.upsert({
-    where: { id: 'seed-tourn-open-2' },
-    update: {
-      status: TournamentStatus.OPEN_REGISTRATION,
-      registrationDeadline: new Date(now.getTime() + 20 * 86400000),
-      raceDate: new Date(now.getTime() + 30 * 86400000),
-    },
-    create: {
-      id: 'seed-tourn-open-2',
-      name: 'Mekong Delta Championship 2026',
-      raceDate: new Date(now.getTime() + 30 * 86400000),
-      location: 'Can Tho Equestrian Arena - Green Turf',
-      distanceMeters: 1600,
-      trackType: TrackSurface.TURF,
-      prizePool: 350000000,
-      registrationDeadline: new Date(now.getTime() + 20 * 86400000),
-      status: TournamentStatus.OPEN_REGISTRATION,
-    },
-  });
-
-  const tClosed1 = await prisma.tournament.upsert({
+  await prisma.tournament.upsert({
     where: { id: 'seed-tourn-closed-1' },
     update: {
+      name: 'Central Highlands Gold Cup 2026 (Cúp Vàng Cao Nguyên)',
       status: TournamentStatus.CLOSED_REGISTRATION,
       registrationDeadline: new Date(now.getTime() - 2 * 86400000),
       raceDate: new Date(now.getTime() + 10 * 86400000),
     },
     create: {
       id: 'seed-tourn-closed-1',
-      name: 'Central Highlands Gold Cup 2026',
+      name: 'Central Highlands Gold Cup 2026 (Cúp Vàng Cao Nguyên)',
       raceDate: new Date(now.getTime() + 10 * 86400000),
       location: 'Pleiku Racecourse - Plateau Turf',
       distanceMeters: 2000,
@@ -1657,12 +1633,12 @@ async function main() {
     },
   });
 
-  const tComp2 = await prisma.tournament.upsert({
+  await prisma.tournament.upsert({
     where: { id: 'seed-tourn-comp-2' },
-    update: {},
+    update: { name: 'Da Nang Grand Sprint 2026 (Giải Đà Nẵng)' },
     create: {
       id: 'seed-tourn-comp-2',
-      name: 'Da Nang Grand Sprint 2026',
+      name: 'Da Nang Grand Sprint 2026 (Giải Đà Nẵng)',
       raceDate: new Date(now.getTime() - 15 * 86400000),
       location: 'Da Nang Coastal Track - Synthetic',
       distanceMeters: 1200,
@@ -1673,7 +1649,7 @@ async function main() {
     },
   });
 
-  // Registrations & Results for t1 (Completed Grand Autumn Cup 2026)
+  // Registrations & Results for t1
   const reg1 = await prisma.tournamentRegistration.upsert({
     where: { tournamentId_horseId: { tournamentId: t1.id, horseId: horse1.id } },
     update: {},
@@ -1684,7 +1660,7 @@ async function main() {
       registeredByTrainerId: trainer.id,
       status: RegistrationStatus.CONFIRMED,
       registrationDate: new Date('2026-09-28'),
-      notes: 'Peak fitness for Autumn Cup',
+      notes: 'Bạch Long Mã đạt phong độ đỉnh cao cho cúp mùa thu',
     },
   });
 
@@ -1698,7 +1674,7 @@ async function main() {
       finishTimeSeconds: 142.5,
       avgSpeedKmh: 60.63,
       prizeMoneyWon: 250000000,
-      officialNotes: 'Champion of Grand Autumn Cup 2026 - Outstanding finish',
+      officialNotes: 'Vô địch Grand Autumn Cup 2026 - Bứt phá xuất sắc 400m cuối',
     },
   });
 
@@ -1712,7 +1688,7 @@ async function main() {
       registeredByTrainerId: trainer.id,
       status: RegistrationStatus.CONFIRMED,
       registrationDate: new Date('2026-09-29'),
-      notes: 'Strong pace in mid section',
+      notes: 'Tốc độ bám đuổi tốt ở giữa chặng',
     },
   });
 
@@ -1726,7 +1702,7 @@ async function main() {
       finishTimeSeconds: 143.8,
       avgSpeedKmh: 60.08,
       prizeMoneyWon: 150000000,
-      officialNotes: 'Runner-up of Grand Autumn Cup 2026',
+      officialNotes: 'Á quân Grand Autumn Cup 2026',
     },
   });
 
@@ -1740,7 +1716,7 @@ async function main() {
       registeredByTrainerId: trainer.id,
       status: RegistrationStatus.CONFIRMED,
       registrationDate: new Date('2026-09-30'),
-      notes: 'Steady finish',
+      notes: 'Cán đích ổn định',
     },
   });
 
@@ -1754,10 +1730,44 @@ async function main() {
       finishTimeSeconds: 145.2,
       avgSpeedKmh: 59.5,
       prizeMoneyWon: 100000000,
-      officialNotes: 'Third place - Bronze medal',
+      officialNotes: 'Hạng ba - Huy chương Đồng',
     },
   });
-  // Financial Invoices (Flow 5 Ledger)
+
+  // Additional registrations covering SCRATCHED_MEDICAL & DISQUALIFIED
+  const tClosed = await prisma.tournament.findUnique({ where: { id: 'seed-tourn-closed-1' } });
+  if (tClosed) {
+    await prisma.tournamentRegistration.upsert({
+      where: { tournamentId_horseId: { tournamentId: tClosed.id, horseId: horse2.id } },
+      update: {},
+      create: {
+        id: 'seed-reg-scratched',
+        tournamentId: tClosed.id,
+        horseId: horse2.id,
+        registeredByTrainerId: trainer.id,
+        status: RegistrationStatus.SCRATCHED_MEDICAL,
+        registrationDate: new Date(now.getTime() - 4 * 86400000),
+        notes: 'Rút lui khỏi giải do lệnh Khóa Y Tế phát hiện viêm gân chi trước',
+      },
+    });
+
+    await prisma.tournamentRegistration.upsert({
+      where: { tournamentId_horseId: { tournamentId: tClosed.id, horseId: horse8.id } },
+      update: {},
+      create: {
+        id: 'seed-reg-dq',
+        tournamentId: tClosed.id,
+        horseId: horse8.id,
+        registeredByTrainerId: trainer.id,
+        status: RegistrationStatus.DISQUALIFIED,
+        registrationDate: new Date(now.getTime() - 3 * 86400000),
+        notes: 'Phạm quy xuất phát trước hiệu lệnh cổng (False Start)',
+      },
+    });
+  }
+
+  // Financial Invoices covering all 5 InvoiceStatus values:
+  // PAID, SENT, DRAFT, OVERDUE, CANCELLED
   await prisma.financialInvoice.upsert({
     where: { id: 'seed-inv-1' },
     update: {},
@@ -1769,7 +1779,7 @@ async function main() {
       boardingFee: 15000000,
       medicalFee: 8500000,
       trainingFee: 12000000,
-      prizeCredit: 50000000, // 70% of ~71.4M VND
+      prizeCredit: 50000000, // 70% of prize money
       netAmount: -14500000, // Negative means Club Payout to Owner!
       status: InvoiceStatus.PAID,
       invoiceUrl: '/invoices/INV-2026-10-HR-000001.pdf',
@@ -1778,7 +1788,7 @@ async function main() {
 
   await prisma.financialInvoice.upsert({
     where: { id: 'seed-inv-2' },
-    update: {},
+    update: { status: InvoiceStatus.SENT },
     create: {
       id: 'seed-inv-2',
       horseId: horse1.id,
@@ -1789,7 +1799,7 @@ async function main() {
       trainingFee: 12000000,
       prizeCredit: 0,
       netAmount: 30200000,
-      status: InvoiceStatus.PAID,
+      status: InvoiceStatus.SENT,
       invoiceUrl: '/invoices/INV-2026-09-HR-000001.pdf',
     },
   });
@@ -1812,10 +1822,48 @@ async function main() {
     },
   });
 
-  console.log(`[9/10] Seeded Flow 5 Tournaments, Results & Financial Invoices`);
+  await prisma.financialInvoice.upsert({
+    where: { id: 'seed-inv-overdue' },
+    update: {},
+    create: {
+      id: 'seed-inv-overdue',
+      horseId: horse4.id,
+      ownerId: owner2.id,
+      billingPeriod: '2026-08',
+      boardingFee: 15000000,
+      medicalFee: 5000000,
+      trainingFee: 10000000,
+      prizeCredit: 0,
+      netAmount: 30000000,
+      status: InvoiceStatus.OVERDUE,
+      invoiceUrl: '/invoices/INV-2026-08-HR-000004.pdf',
+    },
+  });
+
+  await prisma.financialInvoice.upsert({
+    where: { id: 'seed-inv-cancelled' },
+    update: {},
+    create: {
+      id: 'seed-inv-cancelled',
+      horseId: horse5.id,
+      ownerId: owner2.id,
+      billingPeriod: '2026-07',
+      boardingFee: 15000000,
+      medicalFee: 0,
+      trainingFee: 8000000,
+      prizeCredit: 0,
+      netAmount: 23000000,
+      status: InvoiceStatus.CANCELLED,
+      invoiceUrl: null,
+    },
+  });
+
+  console.log(
+    `[10/12] Seeded Tournaments (5 statuses), Registrations (4 statuses) & Financial Invoices (5 statuses)`,
+  );
 
   // ----------------------------------------------------------------
-  // Flow 4 Phase 1: Danh mục Ca trực (ShiftCatalog)
+  // 15. Flow 4 Phase 1: Danh mục Ca trực (ShiftCatalog)
   // ----------------------------------------------------------------
   const shiftDefs = [
     {
@@ -1856,207 +1904,411 @@ async function main() {
         startTime: s.startTime,
         endTime: s.endTime,
         isOvernight: s.isOvernight,
-        sortOrder: s.sortOrder,
         description: s.description,
       },
       create: s,
     });
     shiftIds[s.code] = shift.id;
   }
-  console.log(`[*] Seeded 3 Standard Shift Catalogs (Morning, Afternoon, Night)`);
 
   // ----------------------------------------------------------------
-  // Flow 4 Phase 1: Danh mục Vật tư & Y tế (SupplyCatalog)
+  // 16. Flow 4 Phase 1: Danh mục Vật tư & Y tế (SupplyCatalog) & RestockRequests (5 statuses)
   // ----------------------------------------------------------------
   const supplyDefs = [
     {
-      code: 'SUP_HAY_ALFALFA',
-      name: 'Cỏ khô Alfalfa (Lục lăng cao cấp)',
+      code: 'SUP-HAY-TIMOTHY',
+      name: 'Cỏ khô Timothy nhập khẩu (Bao 25kg)',
       category: SupplyCategory.FEED_HAY,
       unit: SupplyUnit.KG,
-      unitPrice: 45000,
-      description: 'Cỏ Alfalfa giàu đạm và canxi cho ngựa đua đang trong chu kỳ tải cao',
+      unitPrice: 35000,
+      description: 'Cỏ khô giàu chất xơ cho ngựa đua tiêu chuẩn',
     },
     {
-      code: 'SUP_HAY_TIMOTHY',
-      name: 'Cỏ khô Timothy nhập khẩu',
+      code: 'SUP-HAY-ALFALFA',
+      name: 'Cỏ Alfalfa đạm cao (Bao 20kg)',
       category: SupplyCategory.FEED_HAY,
       unit: SupplyUnit.KG,
-      unitPrice: 55000,
-      description: 'Cỏ Timothy chất xơ cao, lượng đường thấp, cân bằng tiêu hóa',
+      unitPrice: 48000,
+      description: 'Cỏ đạm cao bổ sung cho ngựa trong giai đoạn tập nặng',
     },
     {
-      code: 'SUP_GRAIN_OATS',
-      name: 'Yến mạch cán vỡ tiêu hóa nhanh',
+      code: 'SUP-GRAIN-OATS',
+      name: 'Yến mạch nguyên cám (Bao 40kg)',
       category: SupplyCategory.FEED_GRAIN,
       unit: SupplyUnit.KG,
-      unitPrice: 38000,
-      description: 'Ngũ cốc cung cấp carbohydrate chuyển hóa nhanh cho buổi tập cường độ cao',
+      unitPrice: 28000,
+      description: 'Nguồn năng lượng chính cho ngựa chuẩn bị xuất trận',
     },
     {
-      code: 'SUP_GRAIN_BARLEY',
-      name: 'Đại mạch hấp cán mỏng',
-      category: SupplyCategory.FEED_GRAIN,
-      unit: SupplyUnit.KG,
-      unitPrice: 42000,
-      description: 'Cung cấp năng lượng bền bỉ và tạo cơ bắp',
-    },
-    {
-      code: 'SUP_VIT_E_SELENIUM',
-      name: 'Vitamin E & Selenium EquiMuscle',
-      category: SupplyCategory.SUPPLEMENT_VITAMIN,
-      unit: SupplyUnit.PACKET,
-      unitPrice: 120000,
-      description: 'Chống oxy hóa, bảo vệ tế bào cơ bắp sau các bài phi nước đại',
-    },
-    {
-      code: 'SUP_ELECTROLYTE_PLUS',
-      name: 'Bột điện giải bù khoáng HydratePlus',
-      category: SupplyCategory.SUPPLEMENT_ELECTROLYTE,
-      unit: SupplyUnit.PACKET,
-      unitPrice: 85000,
-      description: 'Bù nước, Natri, Kali, Magie ngay sau khi hoàn thành buổi tập',
-    },
-    {
-      code: 'SUP_PROBIOTIC_PASTE',
-      name: 'Men vi sinh đường ruột EquiFlora dạng ống',
-      category: SupplyCategory.SUPPLEMENT_GENERAL,
-      unit: SupplyUnit.VIAL,
-      unitPrice: 150000,
-      description: 'Ổn định hệ vi sinh vật manh tràng, giảm nguy cơ đau bụng colics',
-    },
-    {
-      code: 'SUP_MED_PHENYLBUTAZONE',
-      name: 'Phenylbutazone 20% dung dịch tiêm',
-      category: SupplyCategory.MEDICINE,
-      unit: SupplyUnit.BOTTLE,
-      unitPrice: 320000,
-      withdrawalDays: 7,
-      description: 'Kháng viêm giảm đau NSAID cho chấn thương gân cơ',
-    },
-    {
-      code: 'SUP_MED_FLUNIXIN',
-      name: 'Flunixin Meglumine 50mg/ml',
-      category: SupplyCategory.MEDICINE,
-      unit: SupplyUnit.BOTTLE,
-      unitPrice: 410000,
-      withdrawalDays: 5,
-      description: 'Hạ sốt, giảm đau nội tạng và đau bụng cấp tính',
-    },
-    {
-      code: 'SUP_DEWORM_IVERMECTIN',
-      name: 'Thuốc tẩy giun Ivermectin Paste 1.87%',
-      category: SupplyCategory.DEWORMER,
-      unit: SupplyUnit.VIAL,
-      unitPrice: 180000,
-      withdrawalDays: 0,
-      description: 'Tẩy ký sinh trùng đường ruột định kỳ',
-    },
-    {
-      code: 'SUP_TOOL_LEG_WRAP',
-      name: 'Bộ băng quấn ống chân bảo vệ gân',
-      category: SupplyCategory.TOOL_EQUIPMENT,
-      unit: SupplyUnit.SET,
-      unitPrice: 250000,
-      description: 'Dụng cụ bảo vệ khớp cổ chân và gân chuối',
-    },
-    {
-      code: 'SUP_CLEAN_BETADINE',
-      name: 'Dung dịch sát trùng Povidone Iodine 10%',
+      code: 'SUP-DISINFECT-SPRAY',
+      name: 'Dung dịch sát trùng chuồng trại Virkon S (Can 5L)',
       category: SupplyCategory.CLEANING_SUPPLY,
       unit: SupplyUnit.BOTTLE,
-      unitPrice: 95000,
-      description: 'Sát trùng vết trầy xước và vệ sinh móng chân',
+      unitPrice: 650000,
+      description: 'Khử trùng diệt khuẩn bề mặt ô chuồng và lối đi',
+    },
+    {
+      code: 'SUP-VITA-MULTI',
+      name: 'Vitamin tổng hợp EquiVita (Hộp 100 gói)',
+      category: SupplyCategory.SUPPLEMENT_VITAMIN,
+      unit: SupplyUnit.PACKET,
+      unitPrice: 18000,
+      description: 'Vi khoáng tăng cường miễn dịch và độ bóng mượt lông',
     },
   ];
 
+  const createdSupplies: Record<string, any> = {};
   for (const sup of supplyDefs) {
-    await prisma.supplyCatalog.upsert({
+    const item = await prisma.supplyCatalog.upsert({
       where: { code: sup.code },
       update: {
         name: sup.name,
         category: sup.category,
         unit: sup.unit,
         unitPrice: sup.unitPrice,
-        withdrawalDays: sup.withdrawalDays,
         description: sup.description,
       },
       create: sup,
     });
+    createdSupplies[sup.code] = item;
   }
+
+  // RestockRequests covering all 5 RestockStatus values:
+  // PENDING, APPROVED, DELIVERING, DELIVERED, REJECTED
+  const haySupply = createdSupplies['SUP-HAY-TIMOTHY'];
+  const spraySupply = createdSupplies['SUP-DISINFECT-SPRAY'];
+  const vitaSupply = createdSupplies['SUP-VITA-MULTI'];
+  const oatSupply = createdSupplies['SUP-GRAIN-OATS'];
+  const zoneAId = zoneIds['ZONE-A'];
+
+  await prisma.restockRequest.upsert({
+    where: { id: 'req-restock-pending' },
+    update: {},
+    create: {
+      id: 'req-restock-pending',
+      requestNumber: 'REQ-20261028-001',
+      zoneId: zoneAId,
+      supplyId: haySupply.id,
+      requestedQuantity: 30.0,
+      status: RestockStatus.PENDING,
+      urgencyReason: 'Dự phòng nhu cầu tăng cường khẩu phần cho đợt tập huấn mới',
+      requestedById: groom1.id,
+    },
+  });
+
+  await prisma.restockRequest.upsert({
+    where: { id: 'req-restock-approved' },
+    update: {},
+    create: {
+      id: 'req-restock-approved',
+      requestNumber: 'REQ-20261027-002',
+      zoneId: zoneAId,
+      supplyId: spraySupply.id,
+      requestedQuantity: 15.0,
+      approvedQuantity: 15.0,
+      status: RestockStatus.APPROVED,
+      requestedById: groom1.id,
+      reviewedById: manager.id,
+      reviewedAt: new Date(Date.now() - 1 * 86400000),
+    },
+  });
+
+  await prisma.restockRequest.upsert({
+    where: { id: 'req-restock-delivering' },
+    update: {},
+    create: {
+      id: 'req-restock-delivering',
+      requestNumber: 'REQ-20261026-003',
+      zoneId: zoneAId,
+      supplyId: vitaSupply.id,
+      requestedQuantity: 10.0,
+      approvedQuantity: 10.0,
+      status: RestockStatus.DELIVERING,
+      requestedById: groom2.id,
+      reviewedById: manager.id,
+      reviewedAt: new Date(Date.now() - 2 * 86400000),
+    },
+  });
+
+  await prisma.restockRequest.upsert({
+    where: { id: 'req-restock-delivered' },
+    update: {},
+    create: {
+      id: 'req-restock-delivered',
+      requestNumber: 'REQ-20261025-004',
+      zoneId: zoneAId,
+      supplyId: oatSupply.id,
+      requestedQuantity: 20.0,
+      approvedQuantity: 20.0,
+      status: RestockStatus.DELIVERED,
+      requestedById: groom1.id,
+      reviewedById: manager.id,
+      reviewedAt: new Date(Date.now() - 3 * 86400000),
+      deliveredById: manager.id,
+      deliveredAt: new Date(Date.now() - 1 * 86400000),
+    },
+  });
+
+  await prisma.restockRequest.upsert({
+    where: { id: 'req-restock-rejected' },
+    update: {},
+    create: {
+      id: 'req-restock-rejected',
+      requestNumber: 'REQ-20261024-005',
+      zoneId: zoneAId,
+      supplyId: haySupply.id,
+      requestedQuantity: 100.0,
+      status: RestockStatus.REJECTED,
+      urgencyReason: 'Đề xuất nhập trữ số lượng lớn ngoài kế hoạch',
+      rejectionReason: 'Vượt quá hạn mức ngân sách tháng 10 và kho bãi chưa đủ chỗ chứa',
+      requestedById: groom2.id,
+      reviewedById: manager.id,
+      reviewedAt: new Date(Date.now() - 4 * 86400000),
+    },
+  });
+
+  // ----------------------------------------------------------------
+  // 17. Daily Care Tasks (Covering DailyTaskType: FEEDING, CLEANING, GROOMING, ICE_BOOT_REST, WALKING)
+  // ----------------------------------------------------------------
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+
+  const stallA1 = await prisma.stall.findUnique({ where: { code: 'STALL-A01' } });
+  const stallA2 = await prisma.stall.findUnique({ where: { code: 'STALL-A02' } });
+
+  await prisma.dailyCareTask.upsert({
+    where: {
+      date_horseId_taskType_mealType_scheduledTime: {
+        date: todayDate,
+        horseId: horse1.id,
+        taskType: DailyTaskType.FEEDING,
+        mealType: 'MORNING',
+        scheduledTime: '06:00',
+      },
+    },
+    update: {},
+    create: {
+      taskCode: 'TASK-20261030-001',
+      date: todayDate,
+      horseId: horse1.id,
+      stallZoneId: zoneAId,
+      stallId: stallA1?.id,
+      taskType: DailyTaskType.FEEDING,
+      title: 'Cho ăn sáng: Cỏ khô Timothy + Cám yến mạch',
+      mealType: 'MORNING',
+      scheduledTime: '06:00',
+      isCompleted: true,
+      completedAt: new Date(),
+      completedById: groom1.id,
+      assignedGroomUserId: groom1.id,
+    },
+  });
+
+  await prisma.dailyCareTask.upsert({
+    where: {
+      date_horseId_taskType_mealType_scheduledTime: {
+        date: todayDate,
+        horseId: horse1.id,
+        taskType: DailyTaskType.CLEANING,
+        mealType: 'MORNING',
+        scheduledTime: '07:30',
+      },
+    },
+    update: {},
+    create: {
+      taskCode: 'TASK-20261030-002',
+      date: todayDate,
+      horseId: horse1.id,
+      stallZoneId: zoneAId,
+      stallId: stallA1?.id,
+      taskType: DailyTaskType.CLEANING,
+      title: 'Dọn vệ sinh chuồng A01 & thay đệm lót rơm mới',
+      mealType: 'MORNING',
+      scheduledTime: '07:30',
+      isCompleted: true,
+      completedAt: new Date(),
+      completedById: groom1.id,
+      assignedGroomUserId: groom1.id,
+    },
+  });
+
+  await prisma.dailyCareTask.upsert({
+    where: {
+      date_horseId_taskType_mealType_scheduledTime: {
+        date: todayDate,
+        horseId: horse2.id,
+        taskType: DailyTaskType.ICE_BOOT_REST,
+        mealType: 'NOON',
+        scheduledTime: '11:00',
+      },
+    },
+    update: {},
+    create: {
+      taskCode: 'TASK-20261030-003',
+      date: todayDate,
+      horseId: horse2.id,
+      stallZoneId: zoneAId,
+      stallId: stallA2?.id,
+      taskType: DailyTaskType.ICE_BOOT_REST,
+      title: 'Chườm đá lạnh phục hồi gân chân (Hydrotherapy Ice Boot)',
+      mealType: 'NOON',
+      scheduledTime: '11:00',
+      isCompleted: true,
+      completedAt: new Date(),
+      completedById: groom1.id,
+      assignedGroomUserId: groom1.id,
+      isMedicalLocked: true,
+      medicalLockNotes: 'Thực hiện theo chỉ định phác đồ điều trị của BS. Trí',
+    },
+  });
+
+  await prisma.dailyCareTask.upsert({
+    where: {
+      date_horseId_taskType_mealType_scheduledTime: {
+        date: todayDate,
+        horseId: horse1.id,
+        taskType: DailyTaskType.GROOMING,
+        mealType: 'AFTERNOON',
+        scheduledTime: '15:30',
+      },
+    },
+    update: {},
+    create: {
+      taskCode: 'TASK-20261030-004',
+      date: todayDate,
+      horseId: horse1.id,
+      stallZoneId: zoneAId,
+      stallId: stallA1?.id,
+      taskType: DailyTaskType.GROOMING,
+      title: 'Chải lông và massage cơ bắp chiều',
+      mealType: 'AFTERNOON',
+      scheduledTime: '15:30',
+      isCompleted: false,
+      assignedGroomUserId: groom1.id,
+    },
+  });
+
+  await prisma.dailyCareTask.upsert({
+    where: {
+      date_horseId_taskType_mealType_scheduledTime: {
+        date: todayDate,
+        horseId: horse2.id,
+        taskType: DailyTaskType.WALKING,
+        mealType: 'AFTERNOON',
+        scheduledTime: '16:30',
+      },
+    },
+    update: {},
+    create: {
+      taskCode: 'TASK-20261030-005',
+      date: todayDate,
+      horseId: horse2.id,
+      stallZoneId: zoneAId,
+      stallId: stallA2?.id,
+      taskType: DailyTaskType.WALKING,
+      title: 'Dắt đi dạo nhẹ nhàng 15 phút quanh sân chuồng',
+      mealType: 'AFTERNOON',
+      scheduledTime: '16:30',
+      isCompleted: false,
+      assignedGroomUserId: groom1.id,
+    },
+  });
+
   console.log(
-    `[*] Seeded 12 Comprehensive Supply Catalog Items across Feeds, Supplements, Medicine & Tools`,
+    `[11/12] Seeded Supplies, Restock Requests (5 statuses) & Daily Care Tasks (completed + pending)`,
   );
 
   // ----------------------------------------------------------------
-  // Flow 4 Phase 1: Phân ca trực mẫu (ShiftRoster) cho tuần hiện tại
+  // 18. Thông Báo & Nhật Ký Hệ Thống (Notifications & Audit Logs)
   // ----------------------------------------------------------------
-  const today = new Date();
-  const currentMonday = new Date(today);
-  const dayOfWeek = currentMonday.getDay(); // 0 is Sunday
-  const diffToMonday = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
-  currentMonday.setDate(currentMonday.getDate() + diffToMonday);
-  currentMonday.setHours(0, 0, 0, 0);
+  await prisma.notification.deleteMany({
+    where: { userId: { in: [manager.id, trainer.id, vet.id, groom1.id, owner1.id] } },
+  });
 
-  const zoneAId = zoneIds['Zone A - Barn 1'];
-  const zoneBId = zoneIds['Zone B - Barn 2'];
+  await prisma.notification.createMany({
+    data: [
+      {
+        userId: manager.id,
+        type: 'SYSTEM_ALERT',
+        category: NotificationCategory.SYSTEM,
+        title: 'Báo cáo vận hành hàng tuần',
+        message: 'Hệ thống đã tự động sao lưu dữ liệu và kiểm tra toàn vẹn an toàn.',
+        senderName: 'Hệ thống Quản trị',
+        readAt: null,
+      },
+      {
+        userId: trainer.id,
+        type: 'WORKOUT_COMPLETED',
+        category: NotificationCategory.TRAINING,
+        title: 'Hoàn thành bài tập xuất sắc',
+        message: 'Bạch Long Mã đã hoàn thành bài tập chạy 1200m với điểm số 8.9.',
+        senderName: trainer.fullName,
+        readAt: null,
+      },
+      {
+        userId: vet.id,
+        type: 'TRAINING_LOCK_PLACED',
+        category: NotificationCategory.LOCK,
+        title: 'Lệnh Khóa Y Tế đang có hiệu lực',
+        message: 'Xích Thố (HR-000002) đang trong thời gian nghỉ dưỡng điều trị viêm gân chi trước.',
+        senderName: vet.fullName,
+        readAt: null,
+      },
+      {
+        userId: groom1.id,
+        type: 'STALL_ASSIGNED',
+        category: NotificationCategory.HORSE,
+        title: 'Phân công chăm sóc chính',
+        message: 'Bạn đã được phân công chăm sóc chính cho Bạch Long Mã tại ô chuồng STALL-A01.',
+        senderName: manager.fullName,
+        readAt: new Date(Date.now() - 2 * 86400000),
+      },
+      {
+        userId: owner1.id,
+        type: 'PREVENTIVE_COMPLETED',
+        category: NotificationCategory.MEDICAL,
+        title: 'Cập nhật tình trạng sức khỏe',
+        message: 'Bạch Long Mã đã hoàn thành mũi tiêm phòng định kỳ uốn ván & cúm ngựa.',
+        senderName: vet.fullName,
+        readAt: new Date(Date.now() - 1 * 86400000),
+      },
+    ],
+  });
 
-  if (zoneAId && zoneBId && shiftIds['SHIFT_MORNING'] && shiftIds['SHIFT_AFTERNOON']) {
-    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-      const rosterDate = new Date(currentMonday);
-      rosterDate.setDate(rosterDate.getDate() + dayOffset);
+  await prisma.auditLog.createMany({
+    data: [
+      {
+        userId: manager.id,
+        action: 'USER_REGISTER',
+        entityName: 'User',
+        entityId: pendingUser.id,
+        newValuesJson: JSON.stringify({ email: pendingUser.email, role: pendingUser.role, status: 'PENDING_APPROVAL' }),
+      },
+      {
+        userId: vet.id,
+        action: 'LOCK_APPLIED',
+        entityName: 'MedicalLock',
+        entityId: 'LOCK-HR-000002-001',
+        newValuesJson: JSON.stringify({ horseCode: 'HR-000002', reason: 'Viêm gân cấp tính' }),
+      },
+      {
+        userId: trainer.id,
+        action: 'WORKOUT_COMPLETED',
+        entityName: 'WorkoutSession',
+        entityId: `w1-${horse1.id}`,
+        newValuesJson: JSON.stringify({ horseCode: 'HR-000001', distanceMeters: 1200, score: 8.9 }),
+      },
+    ],
+  });
 
-      // Groom 1 trực Ca Sáng Khu A
-      await prisma.shiftRoster.upsert({
-        where: {
-          date_shiftId_zoneId_groomUserId: {
-            date: rosterDate,
-            shiftId: shiftIds['SHIFT_MORNING'],
-            zoneId: zoneAId,
-            groomUserId: groom1.id,
-          },
-        },
-        update: {},
-        create: {
-          date: rosterDate,
-          shiftId: shiftIds['SHIFT_MORNING'],
-          zoneId: zoneAId,
-          groomUserId: groom1.id,
-          createdById: manager.id,
-          notes: 'Phân ca định kỳ đầu tuần',
-        },
-      });
-
-      // Groom 2 trực Ca Chiều Khu A
-      await prisma.shiftRoster.upsert({
-        where: {
-          date_shiftId_zoneId_groomUserId: {
-            date: rosterDate,
-            shiftId: shiftIds['SHIFT_AFTERNOON'],
-            zoneId: zoneAId,
-            groomUserId: groom2.id,
-          },
-        },
-        update: {},
-        create: {
-          date: rosterDate,
-          shiftId: shiftIds['SHIFT_AFTERNOON'],
-          zoneId: zoneAId,
-          groomUserId: groom2.id,
-          createdById: manager.id,
-          notes: 'Phân ca định kỳ đầu tuần',
-        },
-      });
-    }
-    console.log(`[*] Seeded 14 Shift Roster Allocations for current week across Zone A`);
-  }
-
-  console.log('[10/10] --- Comprehensive EquiFlow Database Seeding Completed 100%! ---');
+  console.log(
+    `[12/12] Seeded In-app Notifications & Audit Trail Records. Seeding 100% Completed Successfully!`,
+  );
 }
 
 main()
   .catch((e) => {
-    console.error('Seeding error:', e);
+    console.error('Error during database seed:', e);
     process.exit(1);
   })
   .finally(async () => {

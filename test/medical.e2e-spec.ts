@@ -183,7 +183,7 @@ describe('Flow 3 medical HTTP contract (mock database, real JWT/guards)', () => 
         reason: 'Swelling on the left fetlock',
       })
       .expect(403);
-    expect(JSON.stringify(res.body)).toContain('VET_ONLY');
+    expect(res.body.code).toBe('FORBIDDEN');
     expect(prisma.medicalRecord.create).not.toHaveBeenCalled();
   });
 

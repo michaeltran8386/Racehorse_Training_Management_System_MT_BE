@@ -19,6 +19,7 @@ import {
 } from './simulator.types';
 import { ExamFinishedPacketDto } from './dto/exam-packet.dto';
 import {
+  HorseStatus,
   SimulatorSession,
   SimulatorSessionStatus,
   SimulatorSessionType,
@@ -96,6 +97,9 @@ export class SimulatorService {
           'The workout has not reached its scheduled start time.',
         );
       }
+      if (workout.horse.status === HorseStatus.RETIRED) {
+        throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
+      }
       const locked = workout.horse.isMedicalLocked || workout.horse.medicalLocks.length > 0;
       if (locked && isHeavy(workout.workoutType ?? '', workout.intensity ?? '')) {
         throw apiError(
@@ -103,6 +107,39 @@ export class SimulatorService {
           'MEDICAL_LOCK_ACTIVE',
           'A medical lock prevents this high-intensity workout.',
         );
+      }
+
+      const existing = await tx.simulatorSession.findUnique({
+        where: { workoutSessionId: workout.id },
+      });
+
+      if (
+        existing &&
+        (existing.status === SimulatorSessionStatus.COMPLETED ||
+          existing.status === SimulatorSessionStatus.ABORTED_INJURY)
+      ) {
+        throw apiError(
+          HttpStatus.CONFLICT,
+          'SIMULATOR_SESSION_FINISHED',
+          'This workout session has already been simulated and finished.',
+        );
+      }
+
+      if (existing && existing.status === SimulatorSessionStatus.PENDING) {
+        const isExpired = Date.now() - new Date(existing.createdAt).getTime() > 5 * 60 * 1000;
+        if (isExpired) {
+          await tx.simulatorSession.delete({ where: { id: existing.id } });
+          return tx.simulatorSession.create({
+            data: {
+              id: randomUUID(),
+              type: SimulatorSessionType.WORKOUT,
+              status: SimulatorSessionStatus.PENDING,
+              workoutSessionId: workout.id,
+              horseIds: [workout.horse.id],
+              actorUserId: actor.userId,
+            },
+          });
+        }
       }
 
       return tx.simulatorSession.upsert({
@@ -166,7 +203,26 @@ export class SimulatorService {
         },
         orderBy: { updatedAt: 'desc' },
       });
-      if (existing) return existing;
+
+      if (existing) {
+        if (existing.status === SimulatorSessionStatus.PENDING) {
+          const isExpired = Date.now() - new Date(existing.createdAt).getTime() > 5 * 60 * 1000;
+          if (isExpired) {
+            await tx.simulatorSession.delete({ where: { id: existing.id } });
+            return tx.simulatorSession.create({
+              data: {
+                id: randomUUID(),
+                type: SimulatorSessionType.EXAM,
+                status: SimulatorSessionStatus.PENDING,
+                horseIds: [horseId],
+                actorUserId: actor.userId,
+                medicalRecordId,
+              },
+            });
+          }
+        }
+        return existing;
+      }
 
       return tx.simulatorSession.create({
         data: {
@@ -186,7 +242,7 @@ export class SimulatorService {
     return {
       sessionId: session.id,
       status: session.status,
-      launchUrl: `${baseUrl}/?sessionId=${encodeURIComponent(session.id)}`,
+      launchUrl: `${baseUrl}/?sessionId=${encodeURIComponent(session.id)}&type=EXAM`,
     };
   }
 
@@ -205,6 +261,7 @@ export class SimulatorService {
         dob: true,
         status: true,
         isMedicalLocked: true,
+        weightKg: true,
         stallAllocations: {
           where: { isActive: true },
           select: {
@@ -223,16 +280,30 @@ export class SimulatorService {
     }));
   }
 
+  private maskMicrochip(chip?: string | null): string {
+    if (!chip) return '';
+    if (chip.length <= 4) return '****';
+    return '*'.repeat(chip.length - 4) + chip.slice(-4);
+  }
+
   async getContext(
     sessionId: string,
-    actor?: CurrentUserPayload,
+    actor?: CurrentUserPayload | null,
   ): Promise<WorkoutSimulationContext | ExamSimulationContext> {
     const session = await this.prisma.simulatorSession.findUnique({
       where: { id: sessionId },
       include: {
         workoutSession: {
           include: {
-            horse: true,
+            horse: {
+              include: {
+                stallAllocations: {
+                  where: { isActive: true },
+                  include: { stall: true, assignedGroom: true },
+                  take: 1,
+                },
+              },
+            },
             trainingPlan: { select: { trainerUserId: true } },
           },
         },
@@ -245,18 +316,105 @@ export class SimulatorService {
         'Simulation session not found.',
       );
     }
+
+    if (
+      session.status === SimulatorSessionStatus.COMPLETED ||
+      session.status === SimulatorSessionStatus.ABORTED_INJURY
+    ) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'SIMULATOR_SESSION_FINISHED',
+        'Simulation session has already finished.',
+      );
+    }
+
+    if (
+      session.status === SimulatorSessionStatus.PENDING &&
+      Date.now() - new Date(session.createdAt).getTime() > 5 * 60 * 1000
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'SIMULATOR_SESSION_EXPIRED',
+        'Simulation session launch window has expired.',
+      );
+    }
+
+    if (
+      session.status !== SimulatorSessionStatus.PENDING &&
+      session.status !== SimulatorSessionStatus.RUNNING
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'SIMULATOR_SESSION_INVALID',
+        'Simulation session is not eligible.',
+      );
+    }
+
+    // R-2: Bind REST context to the persisted SimulatorSession actor from PostgreSQL
+    const sessionActor = await this.prisma.user.findUnique({
+      where: { id: session.actorUserId },
+      select: { id: true, email: true, role: true, status: true },
+    });
+    if (!sessionActor || sessionActor.status !== 'ACTIVE') {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_SESSION_FORBIDDEN',
+        'Session actor is invalid or inactive.',
+      );
+    }
+
+    // Caller check: an arbitrary JWT cannot override or hijack another actor's session (except CM cross-role observation)
+    if (actor && actor.userId !== session.actorUserId && actor.role !== UserRole.CLUB_MANAGER) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_SESSION_FORBIDDEN',
+        'This simulation session belongs to another user.',
+      );
+    }
+
     if (session.type === SimulatorSessionType.EXAM) {
-      if (actor && (actor.role !== UserRole.VETERINARIAN || session.actorUserId !== actor.userId)) {
-        throw apiError(
-          HttpStatus.FORBIDDEN,
-          'SIMULATOR_SESSION_FORBIDDEN',
-          'This examination simulation belongs to another veterinarian.',
-        );
-      }
-      const horse = await this.prisma.horse.findUnique({ where: { id: session.horseIds[0] } });
+      const horse = await this.prisma.horse.findUnique({
+        where: { id: session.horseIds[0] },
+        include: {
+          stallAllocations: {
+            where: { isActive: true },
+            include: { stall: true, assignedGroom: true },
+            take: 1,
+          },
+        },
+      });
       if (!horse) {
         throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', 'Horse not found.');
       }
+
+      const activeStall = horse.stallAllocations?.[0];
+      const activeStallCode = activeStall?.stall?.code ?? null;
+      let isGroom = false;
+
+      if (sessionActor.role === UserRole.GROOM) {
+        if (!activeStall || activeStall.assignedGroomUserId !== sessionActor.id) {
+          throw apiError(
+            HttpStatus.FORBIDDEN,
+            'SIMULATOR_SESSION_FORBIDDEN',
+            'You are not assigned to groom this horse.',
+          );
+        }
+        isGroom = true;
+      } else if (sessionActor.role === UserRole.VETERINARIAN) {
+        isGroom = false;
+      } else if (sessionActor.role === UserRole.CLUB_MANAGER) {
+        isGroom = false;
+      } else {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'SIMULATOR_SESSION_FORBIDDEN',
+          'Access to this examination simulation is not permitted for your role.',
+        );
+      }
+
+      const rawChip = horse.microchipRfid || horse.microchip || '';
+      const microchip = isGroom ? this.maskMicrochip(rawChip) : rawChip;
+
       return {
         type: 'EXAM',
         sessionId: session.id,
@@ -266,34 +424,19 @@ export class SimulatorService {
           id: horse.id,
           horseCode: horse.horseCode,
           name: horse.name,
-          microchipRfid: horse.microchipRfid,
+          microchipRfid: microchip,
           breed: horse.breed,
           dob: horse.dob,
           gender: horse.gender,
           color: horse.color,
           status: horse.status,
           isMedicalLocked: horse.isMedicalLocked,
+          weightKg: horse.weightKg ?? null,
+          stall: activeStallCode,
         },
       };
     }
-    if (actor && actor.role !== UserRole.HEAD_TRAINER) {
-      throw apiError(
-        HttpStatus.FORBIDDEN,
-        'SIMULATOR_TRAINER_REQUIRED',
-        'Only the assigned head trainer can open this simulation.',
-      );
-    }
-    if (
-      actor &&
-      (session.actorUserId !== actor.userId ||
-        session.workoutSession?.trainingPlan.trainerUserId !== actor.userId)
-    ) {
-      throw apiError(
-        HttpStatus.FORBIDDEN,
-        'SIMULATOR_SESSION_FORBIDDEN',
-        'This simulation session belongs to another trainer.',
-      );
-    }
+
     const workout = session.workoutSession;
     if (!workout) {
       throw apiError(
@@ -303,21 +446,65 @@ export class SimulatorService {
       );
     }
 
+    const horse = workout.horse;
+    const activeStall = horse.stallAllocations?.[0];
+    const activeStallCode = activeStall?.stall?.code ?? null;
+    let isGroom = false;
+
+    if (sessionActor.role === UserRole.GROOM) {
+      if (!activeStall || activeStall.assignedGroomUserId !== sessionActor.id) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'SIMULATOR_SESSION_FORBIDDEN',
+          'You are not assigned to groom this horse.',
+        );
+      }
+      isGroom = true;
+    } else if (sessionActor.role === UserRole.HEAD_TRAINER) {
+      if (workout.trainingPlan.trainerUserId !== sessionActor.id) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'SIMULATOR_SESSION_FORBIDDEN',
+          'This simulation session belongs to another trainer.',
+        );
+      }
+      isGroom = false;
+    } else if (sessionActor.role === UserRole.CLUB_MANAGER) {
+      isGroom = false;
+    } else if (sessionActor.role === UserRole.HORSE_OWNER) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_TRAINER_REQUIRED',
+        'Only the assigned head trainer can open this simulation.',
+      );
+    } else {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_SESSION_FORBIDDEN',
+        'Only the assigned head trainer can open this simulation.',
+      );
+    }
+
+    const rawChip = horse.microchipRfid || horse.microchip || '';
+    const microchip = isGroom ? this.maskMicrochip(rawChip) : rawChip;
+
     return {
       type: 'WORKOUT',
       sessionId: session.id,
       status: session.status,
       horse: {
-        id: workout.horse.id,
-        horseCode: workout.horse.horseCode,
-        name: workout.horse.name,
-        microchipRfid: workout.horse.microchipRfid,
-        breed: workout.horse.breed,
-        dob: workout.horse.dob,
-        gender: workout.horse.gender,
-        color: workout.horse.color,
-        status: workout.horse.status,
-        isMedicalLocked: workout.horse.isMedicalLocked,
+        id: horse.id,
+        horseCode: horse.horseCode,
+        name: horse.name,
+        microchipRfid: microchip,
+        breed: horse.breed,
+        dob: horse.dob,
+        gender: horse.gender,
+        color: horse.color,
+        status: horse.status,
+        isMedicalLocked: horse.isMedicalLocked,
+        weightKg: horse.weightKg ?? null,
+        stall: activeStallCode,
       },
       workout: {
         id: workout.id,
@@ -459,7 +646,7 @@ export class SimulatorService {
   async recordFinished(
     dto: SessionFinishedPacketDto,
     actor: CurrentUserPayload,
-  ): Promise<SimulatorSession> {
+  ): Promise<{ session: SimulatorSession | null; transitioned: boolean }> {
     const status =
       dto.status === 'ABORTED_INJURY'
         ? SimulatorSessionStatus.ABORTED_INJURY
@@ -482,7 +669,7 @@ export class SimulatorService {
       issued.status === SimulatorSessionStatus.ABORTED_INJURY
     ) {
       this.active.delete(dto.session_id);
-      return issued;
+      return { session: issued, transitioned: false };
     }
 
     const finishedAt = new Date();
@@ -494,18 +681,64 @@ export class SimulatorService {
           }
         : (dto.results ?? null);
 
-    const session = await this.prisma.simulatorSession.update({
-      where: { id: dto.session_id },
-      data: {
-        status,
-        finishedAt,
-        result: resultPayload as any,
-        ...(horseIds.length > 0 ? { horseIds } : {}),
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.simulatorSession.updateMany({
+        where: {
+          id: dto.session_id,
+          status: { in: [SimulatorSessionStatus.PENDING, SimulatorSessionStatus.RUNNING] },
+        },
+        data: {
+          status,
+          finishedAt,
+          result: resultPayload as any,
+          ...(horseIds.length > 0 ? { horseIds } : {}),
+        },
+      });
 
-    this.active.delete(dto.session_id);
-    return session;
+      this.active.delete(dto.session_id);
+
+      const session = await tx.simulatorSession.findUnique({
+        where: { id: dto.session_id },
+      });
+
+      return {
+        session,
+        transitioned: updateResult.count > 0,
+      };
+    });
+  }
+
+  async abortSession(
+    sessionId: string,
+    reason = 'ABORTED',
+  ): Promise<{ session: SimulatorSession | null; transitioned: boolean }> {
+    return this.prisma.$transaction(async (tx) => {
+      const updateResult = await tx.simulatorSession.updateMany({
+        where: {
+          id: sessionId,
+          status: { in: [SimulatorSessionStatus.PENDING, SimulatorSessionStatus.RUNNING] },
+        },
+        data: {
+          status: SimulatorSessionStatus.ABORTED_INJURY,
+          finishedAt: new Date(),
+          result: {
+            abortReason: reason,
+            abortedAt: new Date().toISOString(),
+          } as any,
+        },
+      });
+
+      this.active.delete(sessionId);
+
+      const session = await tx.simulatorSession.findUnique({
+        where: { id: sessionId },
+      });
+
+      return {
+        session,
+        transitioned: updateResult.count > 0,
+      };
+    });
   }
 
   private async requireIssuedSession(
@@ -595,6 +828,16 @@ export class SimulatorService {
         'Simulation session has already finished.',
       );
     }
+    if (
+      session.status === SimulatorSessionStatus.PENDING &&
+      Date.now() - new Date(session.createdAt).getTime() > 5 * 60 * 1000
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'SIMULATOR_SESSION_EXPIRED',
+        'Simulation session launch window has expired.',
+      );
+    }
     return session;
   }
 
@@ -675,10 +918,10 @@ export class SimulatorService {
       status: session.status,
       resultDraft: value
         ? {
-            temperature: value.metrics.temperature.value,
-            restingHeartRate: value.metrics.resting_heart_rate.value,
-            respiratoryRate: value.metrics.respiratory_rate.value,
-            weightKg: value.metrics.weight.value,
+            temperature: value.metrics?.temperature?.value ?? null,
+            restingHeartRate: value.metrics?.resting_heart_rate?.value ?? null,
+            respiratoryRate: value.metrics?.respiratory_rate?.value ?? null,
+            weightKg: value.metrics?.weight?.value ?? null,
             capturedAt: value.capturedAt,
             modelVersion: value.modelVersion,
             source: value.source,

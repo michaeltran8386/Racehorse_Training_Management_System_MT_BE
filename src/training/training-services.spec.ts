@@ -84,6 +84,7 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
     status: PlanStatus.DRAFT,
     startDate: addDays(today, -1),
     endDate: addDays(today, 30),
+    trainerUserId: 'trainer-1',
   };
   const workoutDto: CreateWorkoutSessionDto = {
     scheduledDate: tomorrow0630.toISOString(),
@@ -611,6 +612,7 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       scheduledDate: new Date(Date.now() - 60 * 60 * 1000),
       resultRecordedAt: null,
       abnormalSigns: false,
+      trainingPlan: { ...draftPlan, status: PlanStatus.ACTIVE },
     };
 
     it('only after the workout has started', async () => {
@@ -810,6 +812,281 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       expect(res.rows[0].loadSpike).toBe(true);
       expect(res.rows[0].currentPhase?.name).toBe('Base');
       expect(res.kpis.loadSpikeHorses).toBe(1);
+    });
+  });
+
+  describe('CR-023 Head Trainer ownership scoping and fail-closed security', () => {
+    const trainerA: CurrentUserPayload = {
+      userId: 'trainer-a',
+      email: 'trainer-a@gmail.com',
+      fullName: 'Trainer Alice',
+      role: UserRole.HEAD_TRAINER,
+    };
+    const trainerB: CurrentUserPayload = {
+      userId: 'trainer-b',
+      email: 'trainer-b@gmail.com',
+      fullName: 'Trainer Bob',
+      role: UserRole.HEAD_TRAINER,
+    };
+    const clubManager: CurrentUserPayload = {
+      userId: 'cm-1',
+      email: 'cm@gmail.com',
+      fullName: 'Manager Mike',
+      role: UserRole.CLUB_MANAGER,
+    };
+    const vet: CurrentUserPayload = {
+      userId: 'vet-1',
+      email: 'vet@gmail.com',
+      fullName: 'Dr. Sarah',
+      role: UserRole.VETERINARIAN,
+    };
+
+    const planA = {
+      id: 'plan-a',
+      horseId: 'horse-1',
+      trainerUserId: 'trainer-a',
+      phaseName: 'Plan A',
+      status: PlanStatus.ACTIVE,
+      startDate: addDays(today, -1),
+      endDate: addDays(today, 30),
+      phases: [phase],
+      horse: healthyHorse,
+    };
+    const planB = {
+      id: 'plan-b',
+      horseId: 'horse-1',
+      trainerUserId: 'trainer-b',
+      phaseName: 'Plan B',
+      status: PlanStatus.ACTIVE,
+      startDate: addDays(today, -1),
+      endDate: addDays(today, 30),
+      phases: [phase],
+      horse: healthyHorse,
+    };
+
+    const workoutA = {
+      id: 'w-a',
+      trainingPlanId: 'plan-a',
+      horseId: 'horse-1',
+      workoutType: 'TRIAL',
+      status: WorkoutStatus.SCHEDULED,
+      scheduledDate: tomorrow0630,
+      intensity: 'HEAVY',
+      trackSurface: 'TURF',
+      distanceMeters: 1000,
+      repetitions: 1,
+      targetSpeedKmh: 55,
+      jockeyName: 'An',
+      assignedStaffUserId: 'groom-1',
+      medicalOverride: false,
+      phaseId: 'ph-1',
+      trainingPlan: planA,
+      horse: healthyHorse,
+    };
+    const workoutB = {
+      id: 'w-b',
+      trainingPlanId: 'plan-b',
+      horseId: 'horse-1',
+      workoutType: 'TRIAL',
+      status: WorkoutStatus.SCHEDULED,
+      scheduledDate: tomorrow0630,
+      intensity: 'HEAVY',
+      trackSurface: 'TURF',
+      distanceMeters: 1000,
+      repetitions: 1,
+      targetSpeedKmh: 55,
+      jockeyName: 'Bob',
+      assignedStaffUserId: 'groom-1',
+      medicalOverride: false,
+      phaseId: 'ph-1',
+      trainingPlan: planB,
+      horse: healthyHorse,
+    };
+
+    describe('TrainingPlansService scoping', () => {
+      it('scopes findAllPlans to current trainer for HEAD_TRAINER', async () => {
+        prisma.trainingPlan.findMany.mockResolvedValue([planA]);
+        prisma.trainingPlan.count.mockResolvedValue(1);
+        await plans.findAllPlans({}, trainerA);
+        expect(prisma.trainingPlan.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ trainerUserId: 'trainer-a' }),
+          }),
+        );
+      });
+
+      it('does not scope findAllPlans by trainerUserId for CLUB_MANAGER or VETERINARIAN', async () => {
+        prisma.trainingPlan.findMany.mockResolvedValue([planA, planB]);
+        prisma.trainingPlan.count.mockResolvedValue(2);
+        await plans.findAllPlans({}, clubManager);
+        expect(prisma.trainingPlan.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.not.objectContaining({ trainerUserId: expect.anything() }),
+          }),
+        );
+
+        await plans.findAllPlans({}, vet);
+        expect(prisma.trainingPlan.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.not.objectContaining({ trainerUserId: expect.anything() }),
+          }),
+        );
+      });
+
+      it('findPlanById returns 404 PLAN_NOT_FOUND when HEAD_TRAINER accesses another trainer plan', async () => {
+        prisma.trainingPlan.findUnique.mockResolvedValue(planB);
+        expect(await codeOf(plans.findPlanById('plan-b', trainerA))).toBe('PLAN_NOT_FOUND');
+      });
+
+      it('findPlanById succeeds when accessing own plan or as CLUB_MANAGER', async () => {
+        prisma.trainingPlan.findUnique.mockResolvedValue(planA);
+        const resA = await plans.findPlanById('plan-a', trainerA);
+        expect(resA.id).toBe('plan-a');
+
+        prisma.trainingPlan.findUnique.mockResolvedValue(planB);
+        const resCM = await plans.findPlanById('plan-b', clubManager);
+        expect(resCM.id).toBe('plan-b');
+      });
+
+      it('mutating another trainer plan fails closed (403 FORBIDDEN)', async () => {
+        prisma.trainingPlan.findUnique.mockResolvedValue(planB);
+        expect(await codeOf(plans.updatePlan('plan-b', { phaseName: 'Hacked' }, trainerA))).toBe(
+          'FORBIDDEN',
+        );
+
+        expect(
+          await codeOf(
+            plans.changePlanStatus(
+              'plan-b',
+              { status: PlanStatus.CANCELLED, reason: 'cancel reason 123' },
+              trainerA,
+            ),
+          ),
+        ).toBe('FORBIDDEN');
+
+        expect(await codeOf(plans.deletePlan('plan-b', trainerA))).toBe('FORBIDDEN');
+
+        expect(
+          await codeOf(plans.clonePlan('plan-b', { targetHorseId: 'horse-1' }, trainerA)),
+        ).toBe('FORBIDDEN');
+      });
+    });
+
+    describe('WorkoutsService scoping & mutations', () => {
+      it('scopes findAllWorkouts and findTrialRuns to current trainer for HEAD_TRAINER', async () => {
+        prisma.workoutSession.findMany.mockResolvedValue([workoutA]);
+        await workouts.findAllWorkouts({}, trainerA);
+        expect(prisma.workoutSession.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ trainingPlan: { trainerUserId: 'trainer-a' } }),
+          }),
+        );
+
+        await workouts.findTrialRuns({}, trainerA);
+        expect(prisma.workoutSession.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              workoutType: 'TRIAL',
+              trainingPlan: { trainerUserId: 'trainer-a' },
+            }),
+          }),
+        );
+      });
+
+      it('does not scope findAllWorkouts by trainingPlan.trainerUserId for CLUB_MANAGER or VETERINARIAN', async () => {
+        prisma.workoutSession.findMany.mockResolvedValue([workoutA, workoutB]);
+        await workouts.findAllWorkouts({}, clubManager);
+        expect(prisma.workoutSession.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.not.objectContaining({ trainingPlan: expect.anything() }),
+          }),
+        );
+
+        await workouts.findAllWorkouts({}, vet);
+        expect(prisma.workoutSession.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.not.objectContaining({ trainingPlan: expect.anything() }),
+          }),
+        );
+      });
+
+      it('createWorkout rejects another trainer plan with 403 FORBIDDEN and allows own plan', async () => {
+        prisma.trainingPlan.findUnique.mockResolvedValue(planB);
+        prisma.horse.findUnique.mockResolvedValue(healthyHorse);
+        expect(await codeOf(workouts.createWorkout('plan-b', workoutDto, trainerA))).toBe(
+          'FORBIDDEN',
+        );
+        const created = await workouts.createWorkout('plan-b', workoutDto, trainerB);
+        expect(created.id).toBe('w-new');
+      });
+
+      it('createRepeatWorkouts rejects another trainer plan with 403 FORBIDDEN', async () => {
+        prisma.trainingPlan.findUnique.mockResolvedValue(planB);
+        expect(
+          await codeOf(
+            workouts.createRepeatWorkouts(
+              'plan-b',
+              { ...workoutDto, weekdays: [1], until: clubDate(addDays(today, 2)) },
+              trainerA,
+            ),
+          ),
+        ).toBe('FORBIDDEN');
+      });
+
+      it('updateWorkout rejects modifying another trainer workout with 403 FORBIDDEN', async () => {
+        prisma.workoutSession.findUnique.mockResolvedValue(workoutB);
+        expect(await codeOf(workouts.updateWorkout('w-b', {}, trainerA))).toBe('FORBIDDEN');
+      });
+
+      it('recordResult rejects recording another trainer workout with 403 FORBIDDEN', async () => {
+        prisma.workoutSession.findUnique.mockResolvedValue({
+          ...workoutB,
+          scheduledDate: new Date(Date.now() - 3600_000),
+        });
+        expect(
+          await codeOf(
+            workouts.recordResult(
+              'w-b',
+              {
+                actualDistanceMeters: 1000,
+                actualTimeSeconds: 60,
+                performanceScore: 8,
+                completionLevel: 'ACHIEVED',
+                trainerNotes: 'Nice trial run.',
+              },
+              trainerA,
+            ),
+          ),
+        ).toBe('FORBIDDEN');
+      });
+
+      it('cancelWorkout and restoreWorkout reject another trainer workout with 403 FORBIDDEN', async () => {
+        prisma.workoutSession.findUnique.mockResolvedValue(workoutB);
+        expect(await codeOf(workouts.cancelWorkout('w-b', { reason: 'WEATHER' }, trainerA))).toBe(
+          'FORBIDDEN',
+        );
+
+        prisma.workoutSession.findUnique.mockResolvedValue({
+          ...workoutB,
+          status: WorkoutStatus.BLOCKED,
+        });
+        expect(await codeOf(workouts.restoreWorkout('w-b', {}, trainerA))).toBe('FORBIDDEN');
+      });
+
+      it('findWorkoutById returns 404 WORKOUT_NOT_FOUND when HEAD_TRAINER accesses another trainer workout', async () => {
+        prisma.workoutSession.findUnique.mockResolvedValue(workoutB);
+        expect(await codeOf(workouts.findWorkoutById('w-b', trainerA))).toBe('WORKOUT_NOT_FOUND');
+      });
+
+      it('findWorkoutById succeeds for own workout and for CLUB_MANAGER', async () => {
+        prisma.workoutSession.findUnique.mockResolvedValue(workoutA);
+        const resA = await workouts.findWorkoutById('w-a', trainerA);
+        expect(resA.id).toBe('w-a');
+
+        prisma.workoutSession.findUnique.mockResolvedValue(workoutB);
+        const resCM = await workouts.findWorkoutById('w-b', clubManager);
+        expect(resCM.id).toBe('w-b');
+      });
     });
   });
 });
