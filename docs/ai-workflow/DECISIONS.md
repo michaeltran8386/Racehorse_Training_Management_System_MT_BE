@@ -8,7 +8,7 @@
 - Manager approval dispatches DELIVERING; dedicated supply capability ACK after 8s or persistent Backend 20s fallback completes an atomic single stock credit. Real catalogue/zone stock and nullable capacity replace independent Simulator inventory. Legacy APPROVED rows retain explicit CM receipt. Existing workout/exam guards are preserved.
 - Drafting/approval does not execute application changes or migration. Await fresh START TASK-018 in AGY; no TASK-019 authority.
 
-> Plan revision hiện hành là v1-approved-r13, approved by `APPROVE PLAN v1` and amended through approved CR-014 on 2026-10-26. Quyết định mới hoặc thay đổi scope vẫn phải mở CR.
+> Current plan: v1-approved-r28, incorporating Human-approved CR-029. Current gate: TASK-019 DONE, execution IDLE; authoritative execution state is STATE.md. Older ADR/revision narratives below are historical; requirement changes still require Human-approved CR.
 
 ## ADR-001 — Backend là system of record
 - **Date:** 2026-10-23
@@ -245,3 +245,33 @@ Do not silently amend accepted decisions; create an ADR and/or CR entry and requ
 - Include current music/SFX/control source dependencies and 12 used runtime assets in TASK-018; total 39 exact paths per CHANGES.md. Do not commit unused theme-main.wav, music source duplicates or NOW notes.
 - Audio cannot block business workflows; verify combined build, autoplay failures, settings and delivery with sound enabled/disabled. Fresh START TASK-018 required; no completion/commit authorization.
 
+## CR-026 — Reproducible migration baseline and isolated acceptance
+
+- Accepted 2026-10-29 by exact human command `APPROVE CR-026`; plan r25.
+- Preserve original migration checksums, generate pre-simulator baseline from 537a919 parent schema, reconcile only reviewed additive drift, prove empty replay and schema equality on named disposable databases.
+- At most eight Backend paths per definitive CHANGES.md contract. Original equiflow DB writes/history/deletion separately gated; preserve failed DB evidence. Fresh START TASK-019 required before AGY implementation and full acceptance.
+
+## CR-027 — Disposable RFID reconciliation and date-safe acceptance fixture
+
+- Accepted 2026-10-29 by Human statement recorded verbatim in APPROVALS.md; Plan r26.
+- Exact RFID column/index removal and nullable weightKg addition allowed only in named disposable migration DBs. Original equiflow/populated DB writes and DB deletion remain separately gated.
+- FE simulator-real-stack.spec.ts date fixture may be calculated in Asia/Bangkok with matching selectors/cleanup. No Backend timing validation change. Max nine repair paths; harness isolation/explicit URL fixes remain mandatory. Fresh START TASK-019 required in AGY.
+
+
+## CR-028 — Real-stack acceptance closure and Playwright modernization
+
+Human command `aprrove CR-028` (2026-10-29; original spelling preserved) approves CR-028 including definitive planner supplement V. Plan v1-approved-r27 authorizes exactly 15 additional test/config paths in CR-028 section III, preserving prior CR-026/027 scope. Supplement V overrides conflicting proposal wording. Execution IDLE; TASK-019 TODO awaiting fresh START TASK-019 in AGY. No application/schema changes, original equiflow writes, acceptance waiver, task approval, commit/push/merge/deploy authority.
+
+Use real Prisma/PostgreSQL, valid lifecycle timing, exact-ID cleanup, repeat/concurrent lock and one-time prize credit, role auth reuse and actual throttler-window pacing. Targeted checks then one final FE regression; no guard weakening or acceptance waiver.
+
+## CR-029 approved — Serialized tournament finalization
+
+2026-10-30: Human explicitly APPROVE CR-029 and START TASK-019 CODEX. Plan v1-approved-r28 incorporates CR-029 definitive section IV (3 paths plus existing authorized CR-028 test). Codex replaces AGY for this TASK-019 continuation. Preserve prior scopes and uncommitted changes; no commit/push/merge/deploy, original equiflow writes or new schema changes. Execution IN_PROGRESS; finish at AWAITING_USER_QA. PostgreSQL tournament-row lock shared by both finalization paths and draft writes; validate again under lock, preserve atomic result/horse/credit changes, side effects after commit.
+
+## CR-029 execution evidence
+
+2026-10-30: Codex completed the approved CR-029 correction under Plan v1-approved-r28. Focused BE service 59/59 and real PostgreSQL lifecycle/concurrency/rollback 8/8 passed. One full FE run: 207 passed, 1 helper failure, 3 serial skips (211 discovered); after correcting the token-bootstrap race, targeted follow-up 17/17 passed across both viewports, closing the failed/skipped cases. 211 unique cases have passing latest recorded outcomes across those two runs; this is incremental closure, NOT a single fresh 211/211 full run. Historical PNGs unchanged, scoped fixtures cleaned, no commit/push/merge/deploy. Status AWAITING_USER_QA; STOP. The full-run helper failure was a browser-test bootstrap race, corrected within the existing approved test file; it did not require an application auth change.
+
+## TASK-019 Human acceptance and scoped commit authority
+
+2026-10-30: Human command `approve và authorize task-019` approves TASK-019 under Plan v1-approved-r28 and authorizes scoped commit preparation/execution in separate Backend and Frontend commits. Exact wording preserved; no claim that Human personally executed manual QA. Acceptance evidence remains one full FE run (207 pass / 1 fail / 3 skips) followed by green targeted 17/17, not a fresh all-green full run. No push, merge, deploy, original database writes, new feature or next task is authorized.

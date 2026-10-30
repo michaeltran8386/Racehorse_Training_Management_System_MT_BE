@@ -865,3 +865,260 @@ Combined TASK-018 scope becomes 39 application/test/migration/asset paths (21 CR
 - Re-run the existing real-stack TASK-018 supply acceptance with sound enabled and disabled. Preserve concurrent user data and existing evidence.
 - Document the combined file manifest and actual results in TASK-018 report. Once Human QA approves TASK-018 and separately authorizes commit, create a self-contained Simulator commit including both supply and approved audio files; no blanket git add.
 - Until APPROVE CR-025, this is a proposal only. Do not implement new audio changes, commit or discard user work. On approval reconcile the plan/task scope and require a fresh START TASK-018 for final combined verification, then AWAITING_USER_QA and STOP.
+
+## CR-026 — TASK-019 fresh-database migration chain failure
+
+**Approval outcome: ACCEPTED by exact human command `APPROVE CR-026` received in current Codex conversation on 2026-10-29. Definitive implementation contract below incorporated into v1-approved-r25. Earlier PROPOSED/BLOCKED wording is proposal history. TASK-019 TODO, execution IDLE awaiting fresh START TASK-019 in AGY. Isolated verification only; original DB writes/deletion and commit/deploy need separate authority.**
+
+> Definitive planner proposal is section "CR-026 implementation contract" below. Awaiting Human APPROVE CR-026; proposal only.
+
+- State: PROPOSED, 2026-10-29, Codex acceptance executor/planner. Not approved; no application/schema repair authorized.
+- Evidence: on isolated empty equiflow_task019_codex, both DATABASE_URL and DIRECT_URL verified, prisma migrate deploy fails P3018/42P01 in first migration 20261021_add_simulator_sessions: ALTER TABLE IncidentReport references a nonexistent table. Three incremental migrations exist without initial baseline. Original DB must remain intact.
+- Impact: clean migration-based provisioning is not reproducible; full DB-backed acceptance pending a deliberate provisioning decision. Existing db-push setup path must be reported separately, not called a successful migration chain.
+- Proposed next step: read-only compare current Prisma schema and complete migration history, then publish an exact repair/baseline SQL and file manifest for human review. Cover both empty DB and existing populated DB, preserve applied historical migrations and data, and test schema equivalence in disposable databases. No migrate reset, existing DB drop or destructive migration. Do not silently substitute db push for migrate deploy.
+- Gate: TASK-019 BLOCKED pending this scope/provisioning decision. This proposal does not authorize implementation, migration repair, commit or approval. Preserve all existing user changes and prior reports.
+
+### CR-026 implementation contract — definitive proposal, 2026-10-29
+
+#### 1. Decision and verified evidence
+
+- Keep the three committed migrations byte-for-byte: 20261021_add_simulator_sessions, 20261023_add_simulator_exam_sessions, 20261029010000_supply_delivery_sync. Do not edit applied migration checksums or rewrite their dates.
+- Verified historical source: `git show 537a919^:prisma/schema.prisma` contains IncidentReport and StockBalance, but no SimulatorSession or sourceEventId. Capture the resolved full parent SHA and schema SHA256 in the repair report. Use this frozen pre-migration schema to generate the missing initial baseline, rather than generating today's full schema ahead of historical ALTER statements.
+- Add a baseline that sorts before 20261021, then run the unchanged historical chain. Generate a final reconciliation migration only from a scratch DB containing that chain to the current committed schema, because historical db-push changes may not be fully represented. Inspect the actual SQL; do not assume the chain equals today's schema.
+- Both DATABASE_URL and DIRECT_URL must be explicit and target the same confirmed isolated DB. Earlier P3005 on equiflow and subsequent P3018 on equiflow_task019_codex are distinct events; do not call either successful provisioning.
+
+#### 2. Exact implementation scope (8 Backend paths)
+
+1. `prisma/baselines/pre-simulator.prisma` — frozen schema from resolved 537a919 parent, provenance header; strip embedded datasource secrets (env references only).
+2. `prisma/migrations/20261020000000_initial_baseline/migration.sql` — generated empty-to-frozen-schema CREATE statements.
+3. `prisma/migrations/20261030000000_reconcile_acceptance_schema/migration.sql` — reviewed diff from baseline plus original three migrations to current schema; no destructive SQL. If diff is empty, omit this file and report seven used paths rather than add an empty migration.
+4. `prisma/migrations/migration_lock.toml` — provider postgresql, if absent.
+5. `scripts/verify-migration-chain.cjs` — guarded disposable-target verification harness, reuse installed Prisma/pg tools; no new dependency.
+6. `scripts/verify-migration-chain.spec.cjs` — isolated tests for target validation/refusal and command failure propagation.
+7. `prisma/baselines/README.md` — fresh/existing DB runbook, provenance, SQL review, recovery and backup steps.
+8. `package.json` — explicit migration verification script; do not replace existing db:setup or silently change setup-db.bat semantics.
+
+Current schema.prisma is the target specification and verification-only; changing domain fields is outside this CR. Root launchers, application source, FE and SIM are unchanged. Canonical workflow/report updates are additional documentation, not application scope. Any extra path or destructive reconciliation statement requires a new scope review before execution.
+
+#### 3. SQL generation and review contract
+
+- Resolve and record source SHA; save its schema as the baseline artifact. Generate SQL with the installed Prisma CLI (`migrate diff --from-empty --to-schema-datamodel <frozen schema> --script`, verify installed CLI flag support first). SQL includes CREATE TYPE/TABLE/INDEX/FOREIGN KEY for the pre-simulator model; it must not already create SimulatorSession or IncidentReport.sourceEventId.
+- Apply baseline plus three unchanged migrations only to a confirmed empty scratch database. Generate diff from that scratch datasource to current schema using migrate diff. Review each statement and its intended object before saving the optional reconciliation migration.
+- No DROP/TRUNCATE, table recreation, lossy type conversion, unapproved default/backfill, or overwrite of domain data. If diff requires those, stop and attach exact SQL for separate decision. No db push or migrate reset as a substitute.
+- Exact generated DDL must be delivered by AGY as reviewable files before applying it to any populated database. This proposal specifies generation and acceptance, not fabricated unverified DDL.
+
+#### 4. Fresh and failed disposable database procedure
+
+- Preferred clean targets: `equiflow_task019_migrations_build` (SQL derivation) and `equiflow_task019_migrations_verify` (independent replay), on the local equiflow-postgres container. Check nonexistence before creation; if either exists, inspect and report rather than drop/reset it automatically. Do not clone production PII.
+- Harness accepts only localhost/127.0.0.1/[::1], PostgreSQL provider, explicit matching DATABASE_URL/DIRECT_URL and the exact approved disposable names; refuses equiflow, remote hosts, production-like targets, mismatched direct URL and pre-existing nonempty verification targets. Log sanitized host/port/database, never passwords/tokens.
+- Existing `equiflow_task019_codex` is quarantined as failed evidence. Do not migrate-resolve --applied on its failed migration, seed it, or attempt to continue it. Fresh targets above avoid manipulating partial DDL or migration history. Preserve it until separately authorized disposal; no DB deletion is authorized here.
+- Replay the full chain on independent fresh verify DB, run migrate status and run deploy again: zero pending/failed migrations and no second-run change. Compare resulting schema against current schema with migrate diff --exit-code (exit 0 required). Then seed baseline and manual-QA fixtures only into the verified disposable acceptance DB, with --confirm-local-qa. No seed on the original equiflow database.
+- After seed, compare counts/non-QA invariants and run the applicable API smoke checks. Point acceptance Backend AND browser test Prisma clients to the same verified DB; ensure existing Backend process cannot keep using equiflow. Preserve and later restore original process configuration; do not edit tracked/untracked .env files to switch targets.
+
+#### 5. Existing populated database adoption (read-only planning by default)
+
+- Inventory schema and _prisma_migrations status/checksums read-only first; exclude migration metadata when comparing domain schema. Record backup location and independently verify restore into a separate disposable target before any original metadata change.
+- If populated DB schema equals final expected schema, prepare explicit migrate resolve --applied commands for only the migrations whose effects are demonstrably present. Do not execute baseline CREATE or historical ALTER SQL against populated tables. Keep already-applied entries/checksums intact. Any failed or modified historical entry requires individual analysis, not blanket resolve.
+- If schema differs, report the exact diff; do not auto-apply reconciliation to original DB. Generate an additive upgrade plan on a restored disposable copy and request approval for its execution.
+- Human approval of this CR plus a fresh START TASK-019 permits isolated implementation/verification only. Original equiflow DB data/schema/history writes and database deletion require separate exact-target authorization. No need to modify original DB to complete disposable-stack acceptance.
+
+#### 6. Tests, evidence and execution gate
+
+- Unit tests: allow only explicit local disposable targets; reject missing/mismatched DIRECT_URL, credentials leakage, unsafe DB names/nonempty DB; propagate Prisma/seed errors, never continue after failure.
+- Integration evidence: generated SQL and provenance/checksums; successful empty replay; unchanged historical SQL hashes; schema diff zero; deploy idempotency; seed success; original equiflow schema/data fingerprint unchanged. Avoid blanket exclusion of changes without recording what was excluded.
+- Run Backend lint/typecheck/full unit, harness tests, and migration integration checks. After migration acceptance, continue original TASK-019 real-stack browser/full E2E, restart/persistence/outage/static no-mock and 1Hz checks against the isolated stack. Correct test-case routes/events from code. Historical results are not current full-suite evidence.
+- Update reports/TASK-019.md with actual commands, exit codes, DB names, revisions, test counts, unrun cases and risks. Failures remain failures; no forced success, skipped tests or test suppression.
+- On APPROVE CR-026: proposed Plan v1-approved-r25; TASK-019 becomes TODO with execution IDLE awaiting fresh START TASK-019 in AGY. Implement only these repair paths and original acceptance scope; stop at AWAITING_USER_QA after completion. No auto-approval, commit, push, merge or deploy.
+
+## CR-027 — Destructive reconciliation SQL approval & Playwright test date fixture correction
+
+**ACCEPTED 2026-10-29 by exact human statement: `approve 2 ý trên, xóa cột rfid và sửa file test`.** Scope interpreted in the immediately preceding explanation: only equiflow_task019_migrations_build and equiflow_task019_migrations_verify; no original/populated DB writes or DB deletion. Exact SQL accepted: DROP INDEX Horse_rfid_idx, DROP INDEX Horse_rfid_key, ALTER TABLE Horse DROP COLUMN rfid and ADD nullable weightKg DOUBLE PRECISION, as in the proposed reconciliation file. One FE file simulator-real-stack.spec.ts may use an Asia/Bangkok future date with matching selectors and safe cleanup. Incorporated into r26; max nine repair paths, execution IDLE awaiting fresh START TASK-019. Proposal wording below is historical. Remaining harness fixes (isolated tests and explicit datasource URLs) still required; no claim of passing acceptance or commit authority.
+
+- **State:** PROPOSED (2026-10-29; executor rejection resolution for TASK-019). Not approved; proposal only.
+- **Motivation & Root Cause:**
+  1. Under CR-026, the reconciliation migration `prisma/migrations/20261030000000_reconcile_acceptance_schema/migration.sql` was derived by `prisma migrate diff` to reconcile historical `db push` drift from PR #112 / #114. It contains destructive schema operations: `DROP INDEX "Horse_rfid_idx"`, `DROP INDEX "Horse_rfid_key"`, and `ALTER TABLE "Horse" DROP COLUMN "rfid"`, alongside additive `ADD COLUMN "weightKg" DOUBLE PRECISION`. Per human rejection R-1, dropping a column and indexes is structurally destructive; using `IF EXISTS` does not make it non-destructive. Exact affected objects must be reviewed, and separate planner/human approval is required. No populated database execution is permitted.
+  2. Full real-stack Playwright E2E execution failed at `tests/e2e/simulator-real-stack.spec.ts:167` (*Slice G: Trial Runs scheduling creates a TRIAL row visible after reload*). Line 179 hardcodes `'2026-10-28'` which was written on October 28th. On today's date (October 29th), the date is in the past, and the Backend correctly rejects it with `DATE_IN_PAST`. Due to `test.describe.serial`, 28 downstream tests were skipped.
+- **Proposed Scope:**
+  1. **Destructive SQL Approval:** Formally review and approve the exact reconciliation DDL in `prisma/migrations/20261030000000_reconcile_acceptance_schema/migration.sql`:
+     - Dropped: index `"Horse_rfid_idx"`, unique index `"Horse_rfid_key"`, column `"Horse"."rfid"`.
+     - Added: column `"Horse"."weightKg"` (nullable float).
+     - Constraint: Strictly isolated to fresh disposable databases (`equiflow_task019_migrations_build`, `equiflow_task019_migrations_verify`). Strictly forbidden against `equiflow` or any populated database without separate exact-target authorization.
+  2. **Scoped Frontend Test Correction (1 file):**
+     - Target File: `tests/e2e/simulator-real-stack.spec.ts` (in `Racehorse_Training_Management_System_MT_FE`).
+     - Modification: Calculate a dynamic future date in the application's Asia/Bangkok timezone (`UTC+7`, e.g. tomorrow or +2 days at `19:45`).
+     - Update row selectors and table assertions to match the dynamically scheduled date.
+     - Ensure deterministic fixture cleanup in `finally` blocks without DB residue.
+     - Strictly preserve Backend scheduled-time validation (`DATE_IN_PAST`) without weakening domain validation or suppressing tests.
+- **Gate:** TASK-019 is BLOCKED pending ChatGPT Planner review and Human approval of CR-027. No modifications to Frontend application/test code or populated DB execution are permitted before approval.
+
+## CR-028 — Real-Stack Tournament Lifecycle Automated Verification & Full-Suite Playwright Modernization Architecture
+
+- **State:** ACCEPTED 2026-10-29 by Human command `aprrove CR-028`, including definitive planner supplement V; Plan r27. Earlier proposal and blocked gate wording below is historical and superseded by this outcome and section VI.
+- **Motivation & Root Cause:**
+  1. **Tournament Real-Stack Verification Gap:** Current automated tests verify tournament rules only via mock Prisma (`src/tournaments/tournaments.service.spec.ts`) and a negative medical lock check (`test/operational-loop.e2e-spec.ts`). A live real-stack test executing the full sequence (registration -> scratch with mandatory reason -> draft race results -> lock official results -> horse status `RESTING` -> financial invoice creation with 70% owner prize credit -> rejection of duplicate lock with `ALREADY_LOCKED` / anti-double credit) against live PostgreSQL is required to prove functional readiness.
+  2. **122 Failed & 13 Skipped Legacy Playwright Tests:** The 122 failures and 13 skips span 14 spec files across 8 distinct functional groups. Modernizing only 3 files cannot and will not resolve the full suite. A comprehensive strategy is required that tackles:
+     - 86 failures caused by obsolete mock-phase credentials (`viet.do@gmail.com` / `equiflow123` / `localStorage.getItem('equiflow.mock.db.v2')`).
+     - 36 failures caused by rapid parallel logins colliding with the NestJS AuthController Throttler (`HTTP 429 Too Many Requests`, 10 req / 60s per IP).
+     - 13 skipped serial tests in `notifications.spec.ts` caused by serial abort after a rate-limit failure.
+
+### I. Auth Reuse, Concurrency Control & Throttler Pacing Plan (Preserving Backend Guards)
+To eliminate HTTP 429 collisions without lowering or bypassing the Backend Throttler guard (`ttl: 60_000, limit: 10`):
+1. **Playwright Storage State Reuse (`storageState.json`):** Implement Playwright global setup to authenticate each of the 5 roles (`CLUB_MANAGER`, `HEAD_TRAINER`, `VETERINARIAN`, `GROOM`, `HORSE_OWNER`) once at the beginning of the test run, caching tokens in storage state files (`.auth/manager.json`, `.auth/trainer.json`, etc.). Tests consume pre-authenticated states instead of issuing fresh `POST /api/auth/login` requests on every `beforeEach` hook. This reduces total login API calls from ~150+ to exactly 5 for the entire suite.
+2. **Worker Concurrency Limit for Auth-Heavy Suites:** Configure Playwright worker concurrency to `--workers=1` (or serial execution mode) for spec files that execute rapid multi-role transitions, eliminating burst token-bucket exhaustion.
+3. **Throttler-Aware Pacing for Auth-Specific Tests:** For tests specifically verifying login errors or unauthenticated flows (`auth.spec.ts`), pace consecutive login attempts with token-bucket awareness (minimum 6.5s interval between fresh logins from the same client IP).
+4. **Guard Integrity:** Strictly preserve the production Throttler configuration in `src/app.module.ts` and `src/auth/auth.controller.ts`; no runtime suppression or guard relaxation.
+
+### II. Real-Stack Tournament Lifecycle Specification (`test/tournament-lifecycle.e2e-spec.ts`)
+- **Execution Target:** Live PostgreSQL database (`equiflow_task019_migrations_verify` on `localhost:5432`) via NestJS supertest with real `PrismaService` (zero mock Prisma).
+- **Dedicated Named Fixtures (Zero Residue / Collision Protection):**
+  - Unique sentinel timestamp prefix: `cr028-tourn-${Date.now()}`, `cr028-horse-a-${Date.now()}`, `cr028-horse-b-${Date.now()}`, `cr028-owner-${Date.now()}`.
+  - Generates dedicated owner user, horse records, and tournament in `CLOSED_REGISTRATION` with past `raceDate` to permit result locking.
+- **Step-by-Step Acceptance Sequence:**
+  1. *Registration:* Head Trainer registers Horse A and Horse B via `POST /api/tournaments/:id/registrations`.
+  2. *Scratch with Reason:* Trainer/Manager scratches Horse B via `DELETE /api/tournaments/:id/registrations/:regId?reason=Acute+tendon+strain`, asserting status becomes `SCRATCHED_MEDICAL` and notes record the reason.
+  3. *Draft Results:* Club Manager posts draft results for Horse A via `POST /api/tournaments/:id/results` with `lockResults=false`. Asserts tournament status remains `CLOSED_REGISTRATION` and no financial invoices exist.
+  4. *Lock Official Results:* Club Manager locks results via `POST /api/tournaments/:id/lock-results` (or `lockResults=true`). Asserts tournament transitions to `COMPLETED`, competing Horse A transitions to `RESTING`, and an invoice is created/updated for Horse A's owner with exact 70% `prizeCredit` and matching negative `netAmount`.
+  5. *Anti-Double Credit Proof:* Second call to lock results returns HTTP 400 `ALREADY_LOCKED`. Direct PostgreSQL query verifies that `prizeCredit` has not been added a second time.
+  6. *Deterministic Cleanup:* `afterAll` / `finally` block deletes exclusively the created test records by exact ID (`TournamentResult`, `FinancialInvoice`, `TournamentRegistration`, `Tournament`, `Horse`, `User`), leaving all baseline data intact and zero DB residue.
+
+### III. Exact File Scope by Failure / Missing Coverage Group
+
+#### A. Backend Real-Stack Verification Path (1 file)
+1. `Racehorse_Training_Management_System_MT_BE/test/tournament-lifecycle.e2e-spec.ts` (new dedicated real-stack test file).
+
+#### B. Frontend Auth Infrastructure & Playwright Configuration (2 files)
+2. `Racehorse_Training_Management_System_MT_FE/playwright.config.ts` (worker concurrency control, global auth setup project configuration).
+3. `Racehorse_Training_Management_System_MT_FE/tests/e2e/helpers/auth-setup.ts` (new Playwright global auth setup generating 5-role `storageState.json` files).
+
+#### C. Frontend E2E Spec Modernization Inventory (12 files grouped by failure category)
+- **Group 1: Authentication & Navigation (14 fails):**
+  4. `Racehorse_Training_Management_System_MT_FE/tests/e2e/auth.spec.ts` (replace mock credentials, pace login tests).
+  5. `Racehorse_Training_Management_System_MT_FE/tests/e2e/dashboards.spec.ts` (consume `storageState.json`, remove mock login).
+- **Group 2: Horse Master & Catalogs (10 fails):**
+  6. `Racehorse_Training_Management_System_MT_FE/tests/e2e/horses.spec.ts` (consume manager `storageState.json`, use real seed horses).
+  7. `Racehorse_Training_Management_System_MT_FE/tests/e2e/flow1-catalogs.spec.ts` (consume manager `storageState.json`).
+- **Group 3: Training & Workouts (18 fails):**
+  8. `Racehorse_Training_Management_System_MT_FE/tests/e2e/training.spec.ts` (consume trainer `storageState.json`, remove `mock-sim-w-106`).
+- **Group 4: Medical Records & Locks (28 fails):**
+  9. `Racehorse_Training_Management_System_MT_FE/tests/e2e/medical.spec.ts` (consume vet `storageState.json`, real seed horses).
+- **Group 5: Tournaments & Racing (8 fails):**
+  10. `Racehorse_Training_Management_System_MT_FE/tests/e2e/tournaments.spec.ts` (consume trainer/manager `storageState.json`, real tournaments).
+- **Group 6: Audit Logs & Localization (12 fails):**
+  11. `Racehorse_Training_Management_System_MT_FE/tests/e2e/audit.spec.ts` (replace `equiflow.mock.db.v2` evaluation with real API audit rows).
+  12. `Racehorse_Training_Management_System_MT_FE/tests/e2e/i18n.spec.ts` (consume manager `storageState.json` for detail pages).
+- **Group 7: Notifications & Viewports (6 fails, 13 skipped):**
+  13. `Racehorse_Training_Management_System_MT_FE/tests/e2e/notifications.spec.ts` (consume pre-auth states, eliminate serial rate-limit abort).
+  14. `Racehorse_Training_Management_System_MT_FE/tests/e2e/modal-viewport.spec.ts` (consume trainer `storageState.json`).
+- **Group 8: RBAC Permission Matrix (26 fails):**
+  15. `Racehorse_Training_Management_System_MT_FE/tests/e2e/rbac-matrix.spec.ts` (consume individual role storage states, eliminating rapid un-paced re-logins).
+
+*Total Proposed Scope:* Exactly 1 Backend file + 14 Frontend files (2 config/setup + 12 spec modernizations) = 15 files. No application code or database schema changes.
+
+### IV. Gate & Next Steps
+- Status of TASK-019 is strictly **BLOCKED**.
+- Execution is **STOPPED**. Antigravity IDE will not create or edit any test/code files until ChatGPT Planner reviews and Human formally approves CR-028.
+
+### V. Planner review — definitive proposed execution constraints
+
+This supplement supersedes conflicting proposal details above. CR-028 remains PROPOSED, not approved. The exact 15-file manifest is retained; no application/schema changes, new dependencies, original equiflow writes, reset/reseed, or deployment are authorized.
+
+1. **Valid tournament lifecycle:** Do not create a CLOSED_REGISTRATION tournament and then attempt registration. Create isolated OPEN_REGISTRATION fixtures with an unexpired registration deadline; register eligible horses through real HTTP, validate mandatory scratch reason and exclude the scratched registration from results. Transition to CLOSED_REGISTRATION before draft/lock, and ensure raceDate has passed at that point. Fixture timing must satisfy production validators without changing guards or mocking the clock in live acceptance. Assert draft makes no financial credit; official lock completes the tournament, changes only active competing horses to RESTING, and credits the owner once. Follow the implemented Math.round(prizeMoneyWon * 0.7) rule and fee-minus-credit netAmount formula. Verify repeat lock and concurrent lock behavior against actual API error contracts, with unchanged credit after rejection.
+2. **Datasource and fixture safety:** Require explicit matching DATABASE_URL/DIRECT_URL and allow only equiflow_task019_migrations_verify on the approved local PostgreSQL endpoint. Refuse other targets before writes. The NestJS test app and direct Prisma verification client must use that same datasource with production guards, pipes, prefix and response/error handling; no Prisma overrides. Track exact created IDs from the start. Cleanup includes test-linked audit/notification records and all other created dependents in FK-safe order, including partial-failure paths. Do not delete by broad prefix or alter baseline records; verify residue absence and preservation of baseline sentinels. Credentials, JWTs and connection secrets must not enter reports.
+3. **Auth reuse and artifacts:** Keep authentication setup once per run, share per-role state across viewport projects, and preserve explicit unauthenticated/login/logout test semantics. Five setup logins are the baseline, not a claim of exactly five logins including auth-specific cases. Store generated auth states under an already ignored test artifact directory with a distinct subdirectory that survives setup dependencies; do not commit or publish token-bearing states. The existing config already uses workers: 1; preserve it rather than claiming a newly fixed parallel-worker defect without evidence.
+4. **Rate limits:** No fixed delay alone guarantees freedom from HTTP 429. Account for the actual throttler window, shared IP/endpoint requests, setup traffic and auth-specific tests; reuse sessions and space remaining attempts accordingly. Respect Retry-After or the configured window with bounded waits and explicit failures. Do not retry mutations blindly, suppress assertions, change production limits, or classify unexplained failures as obsolete.
+5. **Verification and completion:** First run the new tournament case and changed legacy specs, keeping failure evidence and safe teardown. Fix only within these test paths; any actual product defect requires an exact scoped CR. Reuse unaffected checks, then perform one final consolidated Frontend regression run at the recorded revision after targeted checks pass, preserving both existing viewport projects and zero retries/test suppression. Record the actual command, build/environment origins, datasource, exit code and PASS/FAIL/SKIP totals; auth setup counts must be separated from business tests. A green API test does not replace browser tournament result/scratch workflows. No acceptance waiver is implied by this proposal. Stop at AWAITING_USER_QA only with truthful remaining blockers; do not infer deploy authority.
+
+On explicit APPROVE CR-028, the planner will incorporate this supplement and manifest into the next plan revision; execution still requires a fresh START TASK-019 in AGY. Current plan remains v1-approved-r26 and TASK-019 remains BLOCKED until approval.
+
+### VI. Approved outcome — Plan v1-approved-r27
+
+Human command `aprrove CR-028` (2026-10-29; original spelling preserved) approves CR-028 including definitive planner supplement V. Plan v1-approved-r27 authorizes exactly 15 additional test/config paths in CR-028 section III, preserving prior CR-026/027 scope. Supplement V overrides conflicting proposal wording. Execution IDLE; TASK-019 TODO awaiting fresh START TASK-019 in AGY. No application/schema changes, original equiflow writes, acceptance waiver, task approval, commit/push/merge/deploy authority.
+
+Approved section III manifest and section V constraints supersede earlier CLOSED-before-registration fixtures, exact-five-login claims and fixed-delay assumptions. No implementation has started under this revision.
+
+## CR-029 — Atomic Tournament Result Lock Concurrency Guard & Multi-Zone Simulator Fixture Dynamic Resolution
+
+- **State:** ACCEPTED (2026-10-30), exact Human command `APPROVE CR-029`; definitive section IV governs and supersedes earlier two-file proposal. Explicit `START TASK-019 CODEX` authorizes Codex as executor for this continuation; Plan r28.
+- **Raised by:** Antigravity IDE (Targeted Verification Gate TASK-019 under Plan v1-approved-r27)
+- **Related plan:** Plan v1-approved-r27 / TASK-019
+- **Motivation & Root Cause:**
+  Targeted real-stack verification against `equiflow_task019_migrations_verify` under CR-028 identified two distinct blockers requiring scoped resolution:
+
+  1. **Backend Application Defect — Concurrency Race in Result Locking (`tournaments.service.ts`):**
+     In `TournamentsService.lockResults`, status validation (`if (tournament.status === TournamentStatus.COMPLETED)`) is evaluated outside the database transaction. Within `this.prisma.$transaction`, tournament status is updated unconditionally via:
+     ```ts
+     await tx.tournament.update({
+       where: { id: tournamentId },
+       data: { status: TournamentStatus.COMPLETED },
+     });
+     ```
+     When two concurrent HTTP requests arrive simultaneously (`POST /api/tournaments/:id/lock-results`) on a tournament in `CLOSED_REGISTRATION` state, both requests evaluate the pre-transaction check before either transaction commits. Both transactions successfully execute `tx.tournament.update`, and both proceed to execute the prize crediting loop, adding 70% prize credit twice to the owner's `FinancialInvoice` (`3,500,000` + `3,500,000` = `7,000,000`). Both requests return HTTP 201 Created instead of exactly one terminal transition (HTTP 201) and one fail-closed rejection (HTTP 400 `ALREADY_COMPLETED`).
+
+  2. **Frontend Test Defect — Hardcoded Obsolete Zone UUIDs in Simulator Real-Stack Suite (`simulator-real-stack.spec.ts`):**
+     In `TASK-018` delivery synchronization test (`tests/e2e/simulator-real-stack.spec.ts` lines 2087-2088), zone IDs are hardcoded to obsolete static UUIDs (`targetZoneId = '7a6f89cc-eb76-44e9-b6ea-3d5d7bd2d8d1'`, `secondZoneId = 'b4f6b8f7-d132-4f27-8ea7-ec2e9a8826e0'`). In the live verified database (`equiflow_task019_migrations_verify`), active `StallZone` IDs are generated during seed (`ZONE-A`: `9ea79e97-9fe5-48a2-8743-5fee3e875124`, `ZONE-B`: `4a5c8b9e-6354-4994-b187-43e8e0a9633c`). When `preStockB` is missing, inserting a multi-zone `StockBalance` with the hardcoded `secondZoneId` triggers a PostgreSQL foreign key violation: `StockBalance_zoneId_fkey`.
+
+### I. Proposed Scoped Resolution
+
+1. **Backend Application Fix (`Racehorse_Training_Management_System_MT_BE/src/tournaments/tournaments.service.ts`):**
+   In `TournamentsService.lockResults`, replace the unconditional `tx.tournament.update` with an atomic conditional `updateMany`:
+   ```ts
+   const updated = await tx.tournament.updateMany({
+     where: {
+       id: tournamentId,
+       status: TournamentStatus.CLOSED_REGISTRATION,
+     },
+     data: { status: TournamentStatus.COMPLETED },
+   });
+
+   if (updated.count === 0) {
+     throw apiError(
+       HttpStatus.BAD_REQUEST,
+       'ALREADY_COMPLETED',
+       'Tournament results have already been locked.',
+     );
+   }
+   ```
+   *Invariant Guarantee:* Exactly one concurrent transaction transitions the tournament from `CLOSED_REGISTRATION` to `COMPLETED` and calculates prize credits. Any concurrent attempt encounters `updated.count === 0`, rolls back the transaction, returns HTTP 400 with code `ALREADY_COMPLETED`, and leaves owner invoice credits strictly once.
+
+2. **Frontend Test Modernization (`Racehorse_Training_Management_System_MT_FE/tests/e2e/simulator-real-stack.spec.ts`):**
+   In `simulator-real-stack.spec.ts` (TASK-018 block), resolve `targetZoneId` and `secondZoneId` dynamically from PostgreSQL via:
+   ```ts
+   const zoneA = await prisma.stallZone.findUnique({ where: { code: 'ZONE-A' } });
+   const zoneB = await prisma.stallZone.findUnique({ where: { code: 'ZONE-B' } });
+   const targetZoneId = zoneA.id;
+   const secondZoneId = zoneB.id;
+   ```
+   eliminating environment-specific UUID hardcoding and FK constraint violations.
+
+### II. Exact File Scope Manifest (Exactly 2 files)
+1. `Racehorse_Training_Management_System_MT_BE/src/tournaments/tournaments.service.ts` (Application code: atomic status lock).
+2. `Racehorse_Training_Management_System_MT_FE/tests/e2e/simulator-real-stack.spec.ts` (Test code: dynamic zone resolution in TASK-018).
+
+*No database schema changes, no migrations, no alterations to original equiflow database.*
+
+### III. Gate
+Under `AGENTS.md` and user instructions, `tournaments.service.ts` is application code outside the 15-file manifest of CR-028. Therefore, `TASK-019` is marked **BLOCKED**. Execution is STOPPED pending ChatGPT Planner architecture review and Human approval of `CR-029`.
+
+### IV. Planner review — definitive proposed correction contract
+
+CR-029 remains PROPOSED; no implementation authority is granted by this review. This section supersedes conflicting scope/implementation details above.
+
+1. **Protect both authoritative locking APIs:** `lockResults` and `recordResults` with `lockResults=true` operate on the same tournament and financial credit. A guard on only `lockResults` is insufficient. Serialize both paths on the same tournament row inside their database transactions, revalidate authoritative status/results under that serialization, and require exactly one CLOSED_REGISTRATION-to-COMPLETED transition before applying financial credit. A losing request must roll back all result/horse/invoice changes. Draft result writes must not overwrite a concurrently finalized tournament; inspect and protect that path in the same service. Retain current role, race-date, active registration and completeness rules. Do not replace these rules with a generic ALREADY_COMPLETED error for every invalid state. Audit/notifications remain after commit and must not be emitted by losing requests. Preserve existing response contracts and avoid unrelated refactoring.
+2. **Exact scope:** Three paths: BE `src/tournaments/tournaments.service.ts`; BE `src/tournaments/tournaments.service.spec.ts` for meaningful regression coverage and adapting transaction mocks to the valid new implementation; FE `tests/e2e/simulator-real-stack.spec.ts` for stable zone lookup. Previously authorized CR-028 `test/tournament-lifecycle.e2e-spec.ts` may be extended to verify the fix; this is an existing authorized path, not a fourth new scope path. Preserve all prior authorized work. No migration/schema, dependency, API expansion or original equiflow writes.
+3. **Real PostgreSQL concurrency proof:** On dedicated fixtures verify lock-vs-lock, combined-result-lock-vs-combined-result-lock, and mixed lock-vs-combined-result-lock. Use concurrent requests while the tournament is CLOSED_REGISTRATION, not repeat calls only after COMPLETED. Assert exactly one terminal commit, one owner credit using the approved rounding/fee formula, no losing-result overwrite, unchanged balances after retries, and applicable horse states. Verify failure rolls back results/status/horse/financial changes together. Use exact-ID cleanup, residue checks and baseline preservation on the existing approved disposable target. Preserve assertions rather than making both successes acceptable.
+4. **Zone fixture resolution:** Resolve StallZone rows by stable unique codes (ZONE-A/ZONE-B) using the same verified database as Backend; assert both exist and differ before mutation. Reuse existing stock/capacity safeguards and exact cleanup/restoration. Do not insert or reseed baseline zones to hide a lookup failure; do not replace UUID literals with new environment-specific UUIDs.
+5. **Bounded validation and evidence:** First run the focused tournament service suite, real-DB tournament lifecycle case, and affected TASK-018 browser test across the existing viewports. Do not rerun unaffected full BE/SIM suites. After targeted checks pass, run one final FE regression including Web-Simulator. Record commands using the actual Jest E2E config, exit codes, current tested revisions and separate setup/business counts. Label previous 5/5 and 179/179 results historical (the latter excluded Simulator); they cannot remain current full-acceptance evidence. Report real failures and residual risks, then AWAITING_USER_QA and STOP. On a failed targeted check, fix the cause before the final regression rather than rerunning everything.
+
+Proposed approval outcome: next Plan revision r28 incorporates this three-path contract with prior approved scopes preserved, execution returns to IDLE/TASK-019 TODO awaiting a fresh START TASK-019 in AGY. No task completion, commit/push/merge or deployment is authorized by CR approval.
+
+### V. Approved outcome — CR-029 / Plan r28
+
+2026-10-30: Human explicitly APPROVE CR-029 and START TASK-019 CODEX. Plan v1-approved-r28 incorporates CR-029 definitive section IV (3 paths plus existing authorized CR-028 test). Codex replaces AGY for this TASK-019 continuation. Preserve prior scopes and uncommitted changes; no commit/push/merge/deploy, original equiflow writes or new schema changes. Execution IN_PROGRESS; finish at AWAITING_USER_QA. Section IV supersedes earlier two-file proposal; both locking paths and draft protection require shared serialization. No test suppression or acceptance waiver.
+
+### VI. CR-029 execution outcome — Codex, 2026-10-30
+
+2026-10-30: Codex completed the approved CR-029 correction under Plan v1-approved-r28. Focused BE service 59/59 and real PostgreSQL lifecycle/concurrency/rollback 8/8 passed. One full FE run: 207 passed, 1 helper failure, 3 serial skips (211 discovered); after correcting the token-bootstrap race, targeted follow-up 17/17 passed across both viewports, closing the failed/skipped cases. 211 unique cases have passing latest recorded outcomes across those two runs; this is incremental closure, NOT a single fresh 211/211 full run. Historical PNGs unchanged, scoped fixtures cleaned, no commit/push/merge/deploy. Status AWAITING_USER_QA; STOP. Only approved paths changed; original database and historical evidence untouched by this continuation. No pending scope change.
+
+## Delivery gate — TASK-019 accepted (2026-10-30)
+
+2026-10-30: Human command `approve và authorize task-019` approves TASK-019 under Plan v1-approved-r28 and authorizes scoped commit preparation/execution in separate Backend and Frontend commits. Exact wording preserved; no claim that Human personally executed manual QA. Acceptance evidence remains one full FE run (207 pass / 1 fail / 3 skips) followed by green targeted 17/17, not a fresh all-green full run. No push, merge, deploy, original database writes, new feature or next task is authorized. This is acceptance/commit coordination, not a new architecture change. HANDOFF.md records the 22 BE + 15 FE path commit manifest and exclusions.

@@ -1,9 +1,17 @@
 # Implementation Plan — Hoàn thiện WEB, SIM và tích hợp hai chiều
 
-**Version:** v1-approved-r24
+**Version:** v1-approved-r28
 **Status:** APPROVED — `APPROVE PLAN v1` recorded 2026-10-24  
 **Owner:** ChatGPT Planner  
 **Date:** 2026-10-24 (Asia/Bangkok)
+
+Revision r28: 2026-10-30: Human explicitly APPROVE CR-029 and START TASK-019 CODEX. Plan v1-approved-r28 incorporates CR-029 definitive section IV (3 paths plus existing authorized CR-028 test). Codex replaces AGY for this TASK-019 continuation. Preserve prior scopes and uncommitted changes; no commit/push/merge/deploy, original equiflow writes or new schema changes. Execution at authorization was IN_PROGRESS; the continuation was verified and is now Human-approved DONE; current gate is IDLE (STATE.md).
+
+Revision r27: Human command `aprrove CR-028` (2026-10-29; original spelling preserved) approves CR-028 including definitive planner supplement V. Plan v1-approved-r27 authorizes exactly 15 additional test/config paths in CR-028 section III, preserving prior CR-026/027 scope. Supplement V overrides conflicting proposal wording. Execution IDLE; TASK-019 TODO awaiting fresh START TASK-019 in AGY. No application/schema changes, original equiflow writes, acceptance waiver, task approval, commit/push/merge/deploy authority.
+
+Revision r26 incorporates Human approval of CR-027 (2026-10-29, verbatim APPROVALS.md): permit exact reconciliation SQL removing Horse.rfid and its two indexes and adding nullable weightKg ONLY in named disposable migration databases. Add one FE test path for Asia/Bangkok future-date fixture correction with matching selectors/cleanup. Preserve domain validation and historical migrations. Total repair scope max nine paths (eight BE + one FE). Harness isolated tests and explicit datasource requirements still mandatory. Execution IDLE awaiting fresh START TASK-019 in AGY; full acceptance pending.
+
+Revision r25 incorporates APPROVE CR-026 (2026-10-29): TASK-019 gains a maximum eight-path Backend migration-baseline repair exception under CHANGES.md definitive CR-026 implementation contract. Preserve historical migrations, derive pre-simulator baseline from Git, verify fresh replay/schema equality/idempotency in guarded disposable databases, then resume full real-stack acceptance. Original equiflow database changes and deletion remain separately gated. Execution IDLE; fresh START TASK-019 in AGY required.
 
 Revision r24 incorporates APPROVE CR-025 (2026-10-29): include existing Simulator music/SFX/control dependencies and 12 runtime audio assets within TASK-018, total 39 paths (21 CR-024 + 18 CR-025). Source music copies and unused theme-main.wav remain local, excluded. Combined supply acceptance with audio enabled/disabled and audio safety/build checks required. Execution IDLE awaiting fresh START TASK-018; no task approval or commit authority.
 
@@ -236,5 +244,5 @@ Chi tiết và checkpoint nằm trong `TASKS.md`.
 - **CR-022 đã duyệt và hợp nhất:** TASK-016 mở rộng phạm vi chính xác 7 tệp (thêm `simulator.service.spec.ts` và `simulator.gateway.spec.ts`), bắt buộc conditional atomic transition cho abort và normal finish chỉ từ PENDING/RUNNING, đảm bảo single persisted terminal outcome và broadcast, 5m running watchdog timer từ tick đầu tiên, 15s disconnect grace timer và fake-clock/concurrency tests.
 - **CR-023 đã duyệt và hợp nhất:** TASK-016 mở rộng phạm vi thêm 4 tệp (BE `training-plans.service.ts`, `workouts.service.ts`, `training-services.spec.ts`, FE `TrialRunsPage.tsx`; tổng cộng đúng 11 tệp), giới hạn training plans, workouts và trial runs của Head Trainer theo trainerUserId hiện tại, fail-closed khi thao tác plan/workout của trainer khác, chỉ hiển thị nút chạy mô phỏng cho trainer sở hữu và cập nhật dải ngày để thấy ngay trial vừa tạo.
 
-Plan v1 was explicitly approved on 2026-10-24 and amended through approved CR-005 through CR-023 incorporated as v1-approved-r22. TASK-001 through TASK-015 and TASK-020 are DONE and human-approved. Execution is IDLE; next_task is TASK-016 awaiting direct `START TASK-016`. TASK-017 remains unauthorized.
+Current summary (2026-10-30): Plan v1-approved-r28 completed. All TASK-001–019 and TASK-020 are DONE (20 tasks). Human command `approve và authorize task-019` approves TASK-019 and scoped separate BE/FE commits. Execution IDLE, next_task NONE. No push/merge/deploy authority; technical evidence remains incremental as recorded.
 

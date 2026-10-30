@@ -22,8 +22,8 @@
 | TASK-015 | Complete real horse/stall catalogue→SIM data flow | 002, 006, 007, 014 | DONE |
 | TASK-016 | Complete trial session realtime flow | 004, 015 | DONE |
 | TASK-017 | Complete incident→Vet→Lock round trip | 005, 009, 016 | DONE |
-| TASK-018 | Complete supply request/delivery simulation | 006, 015 | AWAITING_USER_QA |
-| TASK-019 | Full system acceptance and evidence | 010, 014–018, 020 | TODO |
+| TASK-018 | Complete supply request/delivery simulation | 006, 015 | DONE |
+| TASK-019 | Full system acceptance and evidence | 010, 014–018, 020 | DONE |
 
 ## TASK-001 — FE/BE permission contract alignment
 
@@ -319,9 +319,20 @@
 
 ## TASK-019 — Full system acceptance
 
+- **Status:** DONE (Human-approved 2026-10-30)
+- **Human acceptance / commit authority:** 2026-10-30: Human command `approve và authorize task-019` approves TASK-019 under Plan v1-approved-r28 and authorizes scoped commit preparation/execution in separate Backend and Frontend commits. Exact wording preserved; no claim that Human personally executed manual QA. Acceptance evidence remains one full FE run (207 pass / 1 fail / 3 skips) followed by green targeted 17/17, not a fresh all-green full run. No push, merge, deploy, original database writes, new feature or next task is authorized.
+- **Current r28 evidence:** 2026-10-30: Codex completed the approved CR-029 correction under Plan v1-approved-r28. Focused BE service 59/59 and real PostgreSQL lifecycle/concurrency/rollback 8/8 passed. One full FE run: 207 passed, 1 helper failure, 3 serial skips (211 discovered); after correcting the token-bootstrap race, targeted follow-up 17/17 passed across both viewports, closing the failed/skipped cases. 211 unique cases have passing latest recorded outcomes across those two runs; this is incremental closure, NOT a single fresh 211/211 full run. Historical PNGs unchanged, scoped fixtures cleaned, no commit/push/merge/deploy. Status AWAITING_USER_QA; STOP.
+- **CR-029 approval/start history (not current gate):** 2026-10-30: Human explicitly APPROVE CR-029 and START TASK-019 CODEX. Plan v1-approved-r28 incorporates CR-029 definitive section IV (3 paths plus existing authorized CR-028 test). Codex replaces AGY for this TASK-019 continuation. Preserve prior scopes and uncommitted changes; no commit/push/merge/deploy, original equiflow writes or new schema changes. Execution IN_PROGRESS; finish at AWAITING_USER_QA.
+- **Pending Change:** NONE. CR-029 scoped corrections completed and TASK-019 Human-approved.
+- **Approved CR-028 extension:** Human command `aprrove CR-028` (2026-10-29; original spelling preserved) approves CR-028 including definitive planner supplement V. Plan v1-approved-r27 authorizes exactly 15 additional test/config paths in CR-028 section III, preserving prior CR-026/027 scope. Supplement V overrides conflicting proposal wording. Manifest executed and verified for FE tournaments (15/15 passed) and auth setup.
+- **Execution constraints:** Live PostgreSQL tournament lifecycle from OPEN registration through CLOSED draft/lock; scratch validation, repeat/concurrent lock and one-time financial credit; exact-ID cleanup including linked side effects and baseline preservation. Safe per-role auth reuse, actual throttler-window pacing, targeted checks then one final FE regression across both existing viewports. No assertion suppression or guard relaxation; product defects require a scoped CR.
+- **Resolved CR-029 blockers:** Concurrent result locking and obsolete supply-zone UUID fixtures were corrected under r28. Current outcome is AWAITING_USER_QA; historical failures and the final helper follow-up remain documented in the report.
+- **Execution Evidence:** `reports/TASK-019.md`.
 - **Objective:** Produce current, reproducible evidence for the approved plan without adding features.
 - **Dependencies:** TASK-010, TASK-014, TASK-015, TASK-016, TASK-017, TASK-018.
-- **Source changes:** none; any defect opens CR or a scoped fix task.
+- **Approved CR-027 extension:** one FE path `tests/e2e/simulator-real-stack.spec.ts` for dynamic future date in Asia/Bangkok, matching selectors and safe cleanup; no weakening DATE_IN_PAST checks or test suppression. Exact destructive RFID reconciliation permitted only in equiflow_task019_migrations_build and equiflow_task019_migrations_verify, not populated/original DBs. Max nine repair paths total. Harness must pass unit tests without PostgreSQL, require both explicit URLs and never fall back to default credentials.
+- **Original migration/date scope (retained):** approved CR-026 exception plus CR-027 above: maximum eight Backend paths enumerated in CHANGES.md CR-026 implementation contract (baseline artifact, initial/optional reconciliation migration, migration lock, verification harness/tests, runbook, package.json). Preserve the three original migrations. No application/domain feature changes. Other defects require a CR/scoped fix. Provisioning and verification only on named disposable DBs; original DB writes/deletion need separate authorization.
+- **Additional approved source/test scope:** CR-028 exact manifest and CR-029 definitive section IV supplement the migration/date scope above; CR-029 explicitly permits the scoped tournament service application fix. No unrelated application feature or schema changes.
 - **Automated:** BE typecheck/lint/unit/e2e; FE typecheck/lint/full Playwright against real Backend/PostgreSQL; SIM typecheck/isolated unit tests/build plus real integration; static/build checks reject runtime imports or switches for mock data; 1 Hz benchmark.
 - **Manual QA:** on one real-stack start: five-actor role matrix; horse/stall; trial normal/abort; incident/Vet/lock; supply delivery; tournament close/cancel/history; notification reminder; start/stop scripts; restart and verify persisted data; stop Backend/DB and verify visible failures without mock fallback.
 - **Acceptance:** all gates pass at recorded revisions; browser Network proves Web/SIM requests reach the real Backend; DB before/after and restart evidence proves persistence; no runtime mock switch/import/fallback; no skipped/deleted tests or suppression; report lists tests not run and residual risk; status becomes `AWAITING_USER_QA`, never auto-DONE.

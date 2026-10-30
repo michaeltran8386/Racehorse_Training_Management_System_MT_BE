@@ -1,27 +1,92 @@
+# Current handoff — TASK-019 DONE / IDLE / v1-approved-r28
+
+2026-10-30: Human command `approve và authorize task-019` approves TASK-019 under Plan v1-approved-r28 and authorizes scoped commit preparation/execution in separate Backend and Frontend commits. Exact wording preserved; no claim that Human personally executed manual QA. Acceptance evidence remains one full FE run (207 pass / 1 fail / 3 skips) followed by green targeted 17/17, not a fresh all-green full run. No push, merge, deploy, original database writes, new feature or next task is authorized.
+
+## Current gate
+
+- active_task: NONE
+- active_task_status: IDLE
+- next_task: NONE
+- pending_change: NONE
+- last_approved_task: TASK-019
+- All 20 planned tasks are DONE.
+- Commit: authorized only for manifest below, not executed.
+- Deployment: NOT_AUTHORIZED; production target/config smoke verification remains separate.
+
+## Authorized commit manifest
+
+Create two separate commits, one per repository. Review exact staged paths and diff; do not use git add . or git add -A. Existing technical results remain unchanged. If unexpected files appear, leave them unstaged and report. Do not change application behavior, rerun broad test suites, push, merge, rebase, pull, deploy or mutate original equiflow. Report commit hashes, subjects, manifests and Git status of all three repositories, then STOP. Codex does not execute a commit merely by recording this handoff.
+
+### Backend — 22 paths
+
+- `package.json`
+- `prisma/baselines/pre-simulator.prisma`
+- `prisma/baselines/README.md`
+- `prisma/migrations/20261020000000_initial_baseline/migration.sql`
+- `prisma/migrations/20261030000000_reconcile_acceptance_schema/migration.sql`
+- `prisma/migrations/migration_lock.toml`
+- `scripts/verify-migration-chain.cjs`
+- `scripts/verify-migration-chain.spec.cjs`
+- `src/tournaments/tournaments.service.ts`
+- `src/tournaments/tournaments.service.spec.ts`
+- `test/medical.e2e-spec.ts`
+- `test/tournament-lifecycle.e2e-spec.ts`
+- `docs/ai-workflow/README.md`
+- `docs/ai-workflow/STATE.md`
+- `docs/ai-workflow/PLAN.md`
+- `docs/ai-workflow/TASKS.md`
+- `docs/ai-workflow/HANDOFF.md`
+- `docs/ai-workflow/DECISIONS.md`
+- `docs/ai-workflow/CHANGES.md`
+- `docs/ai-workflow/APPROVALS.md`
+- `docs/ai-workflow/PROGRESS.md`
+- `docs/ai-workflow/reports/TASK-019.md`
+
+### Frontend — 15 paths
+
+- `playwright.config.ts`
+- `tests/e2e/helpers/auth-setup.ts`
+- `tests/e2e/audit.spec.ts`
+- `tests/e2e/auth.spec.ts`
+- `tests/e2e/dashboards.spec.ts`
+- `tests/e2e/flow1-catalogs.spec.ts`
+- `tests/e2e/horses.spec.ts`
+- `tests/e2e/i18n.spec.ts`
+- `tests/e2e/medical.spec.ts`
+- `tests/e2e/modal-viewport.spec.ts`
+- `tests/e2e/notifications.spec.ts`
+- `tests/e2e/rbac-matrix.spec.ts`
+- `tests/e2e/simulator-real-stack.spec.ts`
+- `tests/e2e/tournaments.spec.ts`
+- `tests/e2e/training.spec.ts`
+
+### Exclusions
+
+No Simulator commit for unrelated local files. Preserve unstaged/untracked NOW1.txt, NOW2.txt, music/, public/audio/theme-main.wav. Exclude .env, credentials/auth states, DB data, dist, cache, test-results, playwright-report, screenshots/traces and historical evidence PNGs. Root STATE mirror and local launchers are not Backend/Frontend Git deliverables. Do not modify/delete excluded files.
+
+The following earlier handoff is historical; current gate above takes precedence.
+
 # Current Handoff
 
-## TASK-018 Human QA correction — exact stock display (2026-10-29)
+## Current TASK-019 Gate — BLOCKED (Plan v1-approved-r27 pending CR-029)
 
-Human requested "check và thực hiện điều chỉnh" for Simulator stock accuracy. Planner review found the Backend context exposes real Decimal(12,2) stock quantities, but SupplyPanel applies Math.ceil(item.quantity), then CountUp applies Math.round, so fractional stock is displayed incorrectly. Its pending delivery predicate matches supply alone without zoneId. These are corrective defects inside existing TASK-018/CR-024 paths, not approval of the task or a new feature scope.
+TASK-019 is strictly BLOCKED under Plan v1-approved-r27. Targeted verification under CR-028 identified:
+1. **Backend Application Defect (`tournaments.service.ts`):** Race condition during concurrent result locking allows multiple requests to pass the status check and double-credit owner invoices.
+2. **Frontend Test Defect (`simulator-real-stack.spec.ts`):** Hardcoded obsolete zone UUIDs in TASK-018 trigger foreign key violations (`StockBalance_zoneId_fkey`) against `equiflow_task019_migrations_verify`.
 
-AGY correction requirements for the same TASK-018:
-- Render authoritative quantity with up to two fractional digits, preserving exact final value (e.g. 25.25 must not become 26); remove integer rounding from visible quantity and meter aria-valuenow. Animation must settle on the exact persisted value. Use a consistent readable unit; never manufacture capacity. Keep unconfigured capacity explicit but secondary to the actual stock amount.
-- Delivery indication must match BOTH zoneId and supplyId; one delivery must not mark the same supply in another zone as delivering.
-- Refresh the authoritative inventory while the warehouse panel is open, with a bounded interval (2s is sufficient), and on focus/reconnect/completion; clean up timers, prevent overlapping/stale responses from overwriting newer snapshots, and show errors visibly without mock fallback. A Web inventory adjustment must become visible without manually reloading Simulator. Do not introduce automatic simulated stock consumption.
-- Verify fractional stock (25.25 and 0.50), zero stock, same supply in two zones, Web adjustment visible in Simulator, completed delivery and reload persistence using real API/PostgreSQL browser QA. Restore exact QA baseline fields and delete only correlated test rows.
-- Reuse the authorized 21-path scope (SupplyPanel, App, inventory tests and existing real-stack E2E as needed); no new assets, icons, dependencies or files. Icon artwork is a separate requested topic and is not part of this numeric correction.
-- Update TASK-018 report with actual verification, return to AWAITING_USER_QA and STOP. No commit/push/merge, migration/reset, approval or TASK-019 authority is granted by this note. Preserve all concurrent user audio/UI changes.
+CR-029 has been formally proposed in `CHANGES.md` with an exact 2-file manifest. Execution is STOPPED awaiting ChatGPT Planner review and Human approval.
 
 ## Gate state
 
-- **Plan:** v1-approved-r24 — CR-024 and CR-025 approved 2026-10-29.
-- **Last completed task:** TASK-018 — DONE and human-approved on 2026-10-29 (`APPROVE TASK-018`).
-- **Active task:** NONE.
-- **Active task status:** IDLE.
-- **Next eligible task:** TASK-019 (TODO; unauthorized).
-- **Pending design change:** NONE.
-- **Operational blocker:** NONE.
-- **Do now:** Await explicit human instruction (commit authorization or separate `START TASK-019`). TASK-019 remains unauthorized. Do not commit, push, merge, or execute TASK-019 pre-work.
+- **Plan:** v1-approved-r27.
+- **Last completed task:** TASK-018 — DONE.
+- **Active task:** TASK-019.
+- **Active task status:** BLOCKED.
+- **Next eligible task:** TASK-019 (blocked on CR-029 approval).
+- **Pending design change:** CR-029.
+- **Approval blocker:** CR-029 proposed in `CHANGES.md`.
+- **Do now:** STOP and await ChatGPT Planner incorporation and explicit Human approval (`APPROVE CR-029` -> fresh `START TASK-019`). Do not self-approve, modify out-of-scope files, commit, push, merge, or deploy.
+- **Evidence:** `reports/TASK-019.md` records comprehensive test results, commands, exit codes, and blocker details.
 
 ## TASK-017 boundary
 
@@ -170,4 +235,4 @@ AGY correction requirements for the same TASK-018:
 - Retain the verified R-1/R-2/R-3/R-4 protections.
 - CR-007 expands the exact scope to six files by adding FE `src/features/racing/components/RecordResultsModal.tsx`. In that modal, retain the single transactional `recordRaceResults(tournament.id, resultsPayload, lock)` call; remove the subsequent `lockRaceResults` call and its unused import. Do not change the Backend API contract.
 
-Plan v1-approved-r24 is approved and incorporated. TASK-001 through TASK-018 and TASK-020 are DONE and human-approved. Next task is TASK-019; TASK-019 remains unauthorized.
+Current plan/gate: v1-approved-r28; TASK-019 AWAITING_USER_QA. Earlier task instructions retained in this historical section do not grant execution authority.

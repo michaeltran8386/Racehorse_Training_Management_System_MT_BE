@@ -1,11 +1,11 @@
 # Delivery Progress
 
-**Plan:** v1-approved-r24
+**Plan:** v1-approved-r28
 **Plan approval:** APPROVED — explicit `APPROVE PLAN v1` recorded 2026-10-24  
-**Active task:** NONE
-**Next eligible task:** TASK-019 (TODO — not authorized)
+**Active task:** NONE (IDLE)
+**Next eligible task:** NONE; approved plan complete
 **Planned first task:** TASK-001  
-**Last updated:** 2026-10-29 (Asia/Bangkok)
+**Last updated:** 2026-10-30 (Asia/Bangkok)
 
 This file reports progress only. It never authorizes implementation; `STATE.md`, recorded approval and a direct current-session `START TASK-XXX` command are all required.
 
@@ -13,11 +13,11 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 
 | State | Count |
 | --- | ---: |
-| TODO | 1 |
+| TODO | 0 |
 | BLOCKED | 0 |
 | IN_PROGRESS | 0 |
 | AWAITING_USER_QA | 0 |
-| DONE | 19 |
+| DONE | 20 |
 
 ## Task status
 
@@ -42,10 +42,16 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 | TASK-016 | DONE | Approved 2026-10-28; report in reports/TASK-016.md |
 | TASK-017 | DONE | Approved 2026-10-29; report in reports/TASK-017.md |
 | TASK-018 | DONE | Approved 2026-10-29; report in reports/TASK-018.md |
-| TASK-019 | TODO — not authorized | TASK-010, TASK-014–018, TASK-020 |
+| TASK-019 | DONE | Human-approved 2026-10-30; separate scoped commits authorized, not executed |
 
 ## Recent decisions
 
+- 2026-10-30: Human command `approve và authorize task-019` approves TASK-019 under Plan v1-approved-r28 and authorizes scoped commit preparation/execution in separate Backend and Frontend commits. Exact wording preserved; no claim that Human personally executed manual QA. Acceptance evidence remains one full FE run (207 pass / 1 fail / 3 skips) followed by green targeted 17/17, not a fresh all-green full run. No push, merge, deploy, original database writes, new feature or next task is authorized.
+
+- 2026-10-30: Codex completed the approved CR-029 correction under Plan v1-approved-r28. Focused BE service 59/59 and real PostgreSQL lifecycle/concurrency/rollback 8/8 passed. One full FE run: 207 passed, 1 helper failure, 3 serial skips (211 discovered); after correcting the token-bootstrap race, targeted follow-up 17/17 passed across both viewports, closing the failed/skipped cases. 211 unique cases have passing latest recorded outcomes across those two runs; this is incremental closure, NOT a single fresh 211/211 full run. Historical PNGs unchanged, scoped fixtures cleaned, no commit/push/merge/deploy. Status AWAITING_USER_QA; STOP.
+
+- 2026-10-30: TASK-019 execution of CR-028 15-file manifest complete. Target verification 5/5 BE passed and consolidated full FE regression 179/179 passed (0 failed, 0 skipped). Reports and manual QA runbook recorded in reports/TASK-019.md. Status set to AWAITING_USER_QA; stopped awaiting human approval.
+- 2026-10-29: `START TASK-019` issued by human under Plan v1-approved-r27 (approved CR-028 with supplement V). Authorized 15-file manifest (1 BE real-stack tournament lifecycle E2E + 14 FE auth setup/config and spec modernizations). Target database: equiflow_task019_migrations_verify. Status IN_PROGRESS.
 - 2026-10-29: `APPROVE TASK-018` received in current session. TASK-018 is marked DONE under Plan v1-approved-r24 (incorporating approved CR-024 and CR-025, 39 paths total). Execution state is IDLE; next_task is TASK-019 (unauthorized). Stopped; no commit, push, merge, or TASK-019 execution without explicit separate human authorization.
 - 2026-10-29: TASK-018 completed combined supply replenishment & audio integration verification under Plan v1-approved-r24 (CR-024 + CR-025, 39 paths). All quality gates passed (Backend 50/50, Simulator 179/179, Simulator production build, Frontend build, Playwright E2E on desktop-1280 (50.6s) and desktop-1440 (51.2s), git diff --check 0 errors). Status set to AWAITING_USER_QA. Execution stopped; no commit/push or TASK-019 authority.
 - 2026-10-29: APPROVE CR-025 incorporates existing sound into r24/TASK-018, 39 paths. Execution IDLE; fresh START TASK-018 required for combined verification. Earlier QA status entries are historical; TASK-019 unauthorized.
@@ -76,4 +82,4 @@ This file reports progress only. It never authorizes implementation; `STATE.md`,
 - TASK-001 baseline is BE `86d9bf0` and FE `4a73709`; canonical Simulator is clean.
 - Current repository statuses before CR-013 documentation edits: Backend is ahead of origin/main by 11 commits (HEAD `dac87eb`); Frontend is ahead of origin/main by 9 commits (HEAD `844e50d`); canonical Simulator branch `refactor/remove-rfid-standardize-microchip` is ahead of its upstream by 1 commit (HEAD `3f52a7a`). All three were clean; only canonical CR-013 documentation is now modified in Backend. Push remains separately gated.
 
-TASK-001 evidence is recorded in `reports/TASK-001.md`. TASK-002 through TASK-017 and TASK-020 are DONE with their canonical reports. TASK-014 root scripts are accepted as local-only and are intentionally not Git-deliverable. TASK-018 is BLOCKED pending ChatGPT review and human approval of CR-024. Next task is TASK-018; TASK-019 remains unauthorized.
+All 20 tasks are DONE. Execution IDLE, next_task NONE. TASK-019 scoped separate BE/FE commits authorized; no push/merge/deploy authority. TASK-014 launcher scripts remain local-only.
