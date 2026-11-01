@@ -1,0 +1,29 @@
+# Caddy tự xin và gia hạn chứng chỉ HTTPS (Let's Encrypt) cho các tên miền dưới đây.
+{
+	email {$ACME_EMAIL}
+}
+
+tmec.site, www.tmec.site {
+	@www host www.tmec.site
+	redir @www https://tmec.site{uri} permanent
+
+	encode zstd gzip
+
+	# API và WebSocket (Simulator) đi thẳng tới NestJS; còn lại là web React + landing.
+	handle /api/* {
+		reverse_proxy backend:3000
+	}
+	handle /socket.io/* {
+		reverse_proxy backend:3000
+	}
+	handle {
+		reverse_proxy frontend:80
+	}
+}
+
+sim.tmec.site {
+	encode zstd gzip
+	root * /srv/sim
+	try_files {path} /index.html
+	file_server
+}
