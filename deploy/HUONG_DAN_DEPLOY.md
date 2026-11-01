@@ -1,4 +1,6 @@
-# Hướng dẫn deploy TMEC lên tmec.site
+# Hướng dẫn deploy TMEC lên tmec.site (phương án VPS)
+
+> Phương án đang khuyên dùng là bản miễn phí, không cần quản trị server: [HUONG_DAN_DEPLOY_MIEN_PHI.md](HUONG_DAN_DEPLOY_MIEN_PHI.md) (Vercel + Render + Supabase). File này dành cho khi bạn muốn tự quản một VPS luôn bật, ví dụ Oracle Cloud Always Free.
 
 Làm lần lượt từ Bước 0 đến Bước 9. Mỗi bước có mục **Kiểm tra** ở cuối: chỉ sang bước sau khi kiểm tra đạt.
 
