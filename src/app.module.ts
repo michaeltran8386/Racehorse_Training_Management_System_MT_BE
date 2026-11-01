@@ -30,6 +30,7 @@ import { DailyTasksModule } from './daily-tasks/daily-tasks.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { SimulatorModule } from './simulator/simulator.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { SimulatorModule } from './simulator/simulator.module';
     IncidentsModule,
     InventoryModule,
     SimulatorModule,
+    AiModule,
   ],
   controllers: [],
   providers: [

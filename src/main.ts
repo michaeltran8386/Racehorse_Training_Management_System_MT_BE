@@ -4,6 +4,12 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { NextFunction, Request, Response } from 'express';
+import {
+  GOOGLE_ACCESS_COOKIE,
+  GOOGLE_REFRESH_COOKIE,
+  readSessionCookie,
+} from './auth/google-session';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -18,19 +24,47 @@ async function bootstrap() {
   // Security Middleware
   app.use(helmet());
 
-  // CORS Configuration
-  app.enableCors({
-    origin: [
-      frontendUrl,
+  const isProduction = process.env.NODE_ENV === 'production';
+  const corsOrigins = [frontendUrl, simulatorUrl];
+  if (!isProduction) {
+    corsOrigins.push(
       'http://localhost:5173',
       'http://127.0.0.1:5173',
-      simulatorUrl,
       'http://localhost:5175',
       'http://127.0.0.1:5175',
-    ],
+    );
+  }
+
+  // CORS Configuration
+  app.enableCors({
+    origin: corsOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  });
+
+  const cookieOrigins = new Set([frontendUrl]);
+  if (!isProduction) {
+    cookieOrigins.add('http://localhost:5173');
+    cookieOrigins.add('http://127.0.0.1:5173');
+  }
+  const googlePath = `/${apiPrefix.replace(/^\/+|\/+$/g, '')}/auth/google`.toLowerCase();
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    const path = req.path.toLowerCase();
+    const googleEndpoint = path === googlePath || path.startsWith(`${googlePath}/`);
+    const hasGoogleCookie =
+      !!readSessionCookie(req, GOOGLE_ACCESS_COOKIE) ||
+      !!readSessionCookie(req, GOOGLE_REFRESH_COOKIE);
+    const untrustedOrigin = !!req.headers.origin && !cookieOrigins.has(req.headers.origin);
+    if (
+      (unsafe && (googleEndpoint || hasGoogleCookie) && !req.headers.origin) ||
+      ((googleEndpoint || hasGoogleCookie) && untrustedOrigin)
+    ) {
+      res.status(403).json({ success: false, code: 'FORBIDDEN', message: 'Origin not allowed' });
+      return;
+    }
+    next();
   });
 
   // Global Prefix
@@ -50,9 +84,9 @@ async function bootstrap() {
 
   // Swagger OpenAPI Documentation
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('EquiFlow - Racehorse Training & Stable Management API')
+    .setTitle('TMEC - Racehorse Training & Stable Management API')
     .setDescription(
-      'RESTful API Contract for EquiFlow Racehorse Management System supporting 5 roles: Club Manager, Head Trainer, Veterinarian, Groom, and Horse Owner.',
+      'RESTful API Contract for TMEC Racehorse Management System supporting 5 roles: Club Manager, Head Trainer, Veterinarian, Groom, and Horse Owner.',
     )
     .setVersion('1.0.0')
     .addBearerAuth(
@@ -80,7 +114,7 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document, {
-    customSiteTitle: 'EquiFlow API Documentation',
+    customSiteTitle: 'TMEC API Documentation',
     swaggerOptions: {
       persistAuthorization: true,
     },
@@ -88,7 +122,7 @@ async function bootstrap() {
 
   await app.listen(port);
   logger.log(`=======================================================`);
-  logger.log(` EquiFlow Backend is running on: http://localhost:${port}`);
+  logger.log(` TMEC Backend is running on: http://localhost:${port}`);
   logger.log(` API Endpoints: http://localhost:${port}/${apiPrefix.replace(/^\//, '')}`);
   logger.log(` Swagger OpenAPI Documentation: http://localhost:${port}/api/docs`);
   logger.log(

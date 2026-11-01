@@ -303,6 +303,7 @@ model User {
   invoicesBilled        FinancialInvoice[]      @relation("OwnerInvoices")
   auditLogs             AuditLog[]              @relation("UserAuditLogs")
   refreshTokens         RefreshToken[]
+  googleIdentity        GoogleIdentity?
   permissionRequests    PermissionRequest[]
   notifications         Notification[]
   shiftRosters          ShiftRoster[]           @relation("GroomShiftRosters")
@@ -321,6 +322,12 @@ model User {
   @@index([email])
   @@index([role])
   @@index([status])
+}
+
+model GoogleIdentity {
+  subject String @id
+  userId  String @unique
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // Mã OTP 6 số gửi qua email. Mỗi (email, mục đích) chỉ có 1 mã còn hiệu lực; chỉ lưu bản băm SHA-256.

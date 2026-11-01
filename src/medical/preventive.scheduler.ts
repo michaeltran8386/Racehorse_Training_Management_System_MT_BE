@@ -55,7 +55,7 @@ export class PreventiveScheduler {
             message: `${s.horse.name}: ${task} ${overdue ? 'was due' : 'is due'} on ${due}.`,
             params: { horse: s.horse.name, task, date: due },
             link: '/vaccine',
-            senderName: 'EquiFlow',
+            senderName: 'TMEC',
             // Quá hạn nhắc thêm 1 lần riêng, sau đó không nhắc lại cho tới khi có hạn mới.
             dedupeKey: `${overdue ? 'PREVENTIVE_OVERDUE' : 'PREVENTIVE_DUE'}:${s.id}:${due}`,
           },

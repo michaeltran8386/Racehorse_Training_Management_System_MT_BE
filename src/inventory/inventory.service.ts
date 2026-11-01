@@ -811,7 +811,11 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   /**
    * TASK F4-07-BE: Tạo phiếu đề xuất bổ sung vật tư (RestockRequest)
    */
-  async createRestockRequest(dto: CreateRestockRequestDto, currentUser: CurrentUserPayload) {
+  async createRestockRequest(
+    dto: CreateRestockRequestDto,
+    currentUser: CurrentUserPayload,
+    direct = false,
+  ) {
     if (!dto.requestedQuantity || Number(dto.requestedQuantity) <= 0) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -860,7 +864,15 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         requestedQuantity: new Prisma.Decimal(dto.requestedQuantity),
         urgencyReason: dto.urgencyReason,
         requestedById: currentUser.userId,
-        status: RestockStatus.PENDING,
+        // CM nhập kho trực tiếp không cần tự duyệt phiếu của mình: APPROVED ngay, chỉ còn bước Xác nhận nhận hàng
+        status: direct ? RestockStatus.APPROVED : RestockStatus.PENDING,
+        ...(direct
+          ? {
+              approvedQuantity: new Prisma.Decimal(dto.requestedQuantity),
+              reviewedById: currentUser.userId,
+              reviewedAt: now,
+            }
+          : {}),
       },
       include: {
         zone: { select: { id: true, code: true, name: true } },
@@ -868,6 +880,17 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         requestedBy: { select: { id: true, fullName: true, role: true } },
       },
     });
+
+    if (direct) {
+      await this.auditService.record(
+        { id: currentUser.userId, name: currentUser.fullName },
+        'RESTOCK_DIRECT_CREATED',
+        `Tạo bởi Quản lý CLB ${currentUser.fullName}, tự động áp dụng trạng thái Đã duyệt. Phiếu ${requestNumber}: ${dto.requestedQuantity} ${supply.unit} ${supply.name} cho ${zone.name}.`,
+        created.id,
+        { entityName: 'RestockRequest', newValues: { status: RestockStatus.APPROVED } },
+      );
+      return { ...created, requestedQuantity: Number(created.requestedQuantity) };
+    }
 
     // Thông báo cho Club Manager
     await this.notificationsService.notifyRoles(

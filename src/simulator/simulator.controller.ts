@@ -22,6 +22,22 @@ export class SimulatorController {
     return this.simulatorService.getHorsesForSimulator();
   }
 
+  @Get('stalls')
+  @Public()
+  @ApiOperation({ summary: 'Sơ đồ khu/ô chuồng thật (chỉ đọc) cho thiết bị mô phỏng' })
+  getSimulatorStalls() {
+    return this.simulatorService.getStallMapForSimulator();
+  }
+
+  @Get('staff')
+  @Public()
+  @ApiOperation({
+    summary: 'Nhân sự đang làm việc (tên, vai trò, ca hôm nay, ngựa phụ trách) cho mô phỏng',
+  })
+  getSimulatorStaff() {
+    return this.simulatorService.getStaffForSimulator();
+  }
+
   @Post('workouts/:workoutId/start')
   @Roles(UserRole.HEAD_TRAINER)
   @ApiOperation({ summary: 'Cấp phiên mô phỏng cho một buổi tập hợp lệ' })

@@ -9,6 +9,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { requireJwtSecret } from './jwt-secret';
+import { GoogleIdentityService } from './google-identity.service';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { requireJwtSecret } from './jwt-secret';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, OtpService, JwtStrategy, JwtAuthGuard],
+  providers: [AuthService, OtpService, JwtStrategy, JwtAuthGuard, GoogleIdentityService],
   exports: [AuthService, OtpService, JwtAuthGuard, PassportModule, JwtModule],
 })
 export class AuthModule {}

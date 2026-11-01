@@ -280,6 +280,96 @@ export class SimulatorService {
     }));
   }
 
+  /** Sơ đồ chuồng thật cho Simulator (chỉ đọc): khu đang dùng + ô + ngựa/groom đang ở. */
+  async getStallMapForSimulator() {
+    const zones = await this.prisma.stallZone.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        description: true,
+        rows: true,
+        cols: true,
+        sortOrder: true,
+        stalls: {
+          orderBy: { code: 'asc' },
+          select: {
+            id: true,
+            code: true,
+            row: true,
+            col: true,
+            status: true,
+            notes: true,
+            allocations: {
+              where: { isActive: true },
+              take: 1,
+              select: {
+                horse: { select: { id: true, name: true } },
+                assignedGroom: { select: { fullName: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    return zones.map(({ stalls, ...zone }) => ({
+      ...zone,
+      stalls: stalls.map(({ allocations, ...st }) => ({
+        ...st,
+        zoneCode: zone.code,
+        horseId: allocations[0]?.horse.id ?? null,
+        horseName: allocations[0]?.horse.name ?? null,
+        assignedGroomName: allocations[0]?.assignedGroom?.fullName ?? null,
+      })),
+    }));
+  }
+
+  /**
+   * Nhân sự đang làm việc cho Simulator (chỉ đọc). Endpoint công khai nên chỉ trả tên + vai trò,
+   * ca trực hôm nay và ngựa phụ trách; không trả email, số điện thoại, trạng thái tài khoản.
+   */
+  async getStaffForSimulator() {
+    // Ngày hôm nay theo giờ câu lạc bộ (UTC+7); ShiftRoster.date là cột @db.Date.
+    const clubToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    const users = await this.prisma.user.findMany({
+      where: {
+        status: 'ACTIVE',
+        role: { in: ['CLUB_MANAGER', 'HEAD_TRAINER', 'VETERINARIAN', 'GROOM'] },
+      },
+      orderBy: [{ role: 'asc' }, { fullName: 'asc' }],
+      select: {
+        id: true,
+        fullName: true,
+        role: true,
+        stallAllocations: {
+          where: { isActive: true },
+          select: { horse: { select: { id: true, name: true } } },
+        },
+        shiftRosters: {
+          where: { date: new Date(`${clubToday}T00:00:00.000Z`) },
+          orderBy: { shift: { sortOrder: 'asc' } },
+          select: {
+            shift: { select: { name: true, startTime: true, endTime: true } },
+            zone: { select: { code: true, name: true } },
+          },
+        },
+      },
+    });
+    return users.map(({ stallAllocations, shiftRosters, ...u }) => ({
+      ...u,
+      horses: stallAllocations.map((a) => a.horse),
+      shiftsToday: shiftRosters.map((r) => ({
+        name: r.shift.name,
+        startTime: r.shift.startTime,
+        endTime: r.shift.endTime,
+        zoneCode: r.zone.code,
+        zoneName: r.zone.name,
+      })),
+    }));
+  }
+
   private maskMicrochip(chip?: string | null): string {
     if (!chip) return '';
     if (chip.length <= 4) return '****';

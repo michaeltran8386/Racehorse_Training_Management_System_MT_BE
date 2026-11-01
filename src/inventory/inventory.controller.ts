@@ -72,11 +72,24 @@ export class InventoryController {
    * SC-4.07 / DL-4.07: Tạo phiếu đề xuất bổ sung vật tư
    */
   @Post('requests')
+  @Roles(UserRole.GROOM, UserRole.VETERINARIAN)
   async createRestockRequest(
     @Body() dto: CreateRestockRequestDto,
     @CurrentUser() currentUser: CurrentUserPayload,
   ) {
     return this.inventoryService.createRestockRequest(dto, currentUser);
+  }
+
+  /**
+   * Quản lý CLB nhập bổ sung kho trực tiếp: phiếu tự động ở trạng thái APPROVED, chỉ còn bước Xác nhận nhận hàng.
+   */
+  @Post('requests/direct')
+  @Roles(UserRole.CLUB_MANAGER)
+  async createDirectRestock(
+    @Body() dto: CreateRestockRequestDto,
+    @CurrentUser() currentUser: CurrentUserPayload,
+  ) {
+    return this.inventoryService.createRestockRequest(dto, currentUser, true);
   }
 
   /**
