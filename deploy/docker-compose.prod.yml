@@ -1,0 +1,61 @@
+# TMEC production stack cho tmec.site — xem deploy/HUONG_DAN_DEPLOY.md.
+# Thư mục trên VPS:  /opt/tmec/be (repo BE, chứa file này)
+#                    /opt/tmec/fe (repo FE)
+#                    /opt/tmec/sim-dist (bản build Simulator, tải lên bằng scp)
+name: tmec
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tmec
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Chua dat POSTGRES_PASSWORD trong deploy/.env}
+      POSTGRES_DB: tmec
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tmec -d tmec"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Không mở cổng 5432 ra Internet; chỉ backend trong mạng nội bộ Docker truy cập được.
+
+  backend:
+    build: ..
+    restart: unless-stopped
+    env_file: ./backend.env
+    environment:
+      DATABASE_URL: postgresql://tmec:${POSTGRES_PASSWORD}@postgres:5432/tmec
+      DIRECT_URL: postgresql://tmec:${POSTGRES_PASSWORD}@postgres:5432/tmec
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../../fe
+      args:
+        VITE_API_URL: /api
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?Chua dat ACME_EMAIL trong deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../sim-dist:/srv/sim:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

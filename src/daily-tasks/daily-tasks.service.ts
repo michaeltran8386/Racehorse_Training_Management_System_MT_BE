@@ -5,13 +5,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DailyTaskType, Role } from '@prisma/client';
+import { DailyTaskType, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CompleteDailyTaskDto, QueryDailyTasksDto } from './dto/daily-task.dto';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { InventoryService } from '../inventory/inventory.service';
+import { planDailyTasks, ScheduleHorse } from './daily-schedule';
 
 const UNDO_WINDOW_MS = 15 * 60 * 1000; // 15 phút (900.000 ms)
 
@@ -82,200 +83,102 @@ export class DailyTasksService {
       },
     });
 
-    // Lấy bảng phân ca ngày hôm nay để gán Groom phụ trách theo khu
+    // Bảng phân ca trong ngày: mỗi việc giao cho Groom trực ca chứa giờ đó, việc của một Groom xếp nối tiếp (không trùng giờ)
     const shiftRosters = await this.prisma.shiftRoster.findMany({
       where: { date: dayDate },
       include: { shift: true },
     });
 
-    let totalGenerated = 0;
-
-    for (const horse of horses) {
-      const allocation = horse.stallAllocations[0];
-      const stall = allocation?.stall;
-      const zoneId = stall?.zoneId || undefined;
-      const stallId = stall?.id || undefined;
-
-      // Tìm Groom phụ trách khu chuồng hôm nay từ ShiftRoster hoặc phân bổ mặc định
-      const matchedRoster = shiftRosters.find((r) => r.zoneId === zoneId);
-      const assignedGroomUserId =
-        matchedRoster?.groomUserId || allocation?.assignedGroomUserId || undefined;
-
+    const lockNotesByHorse = new Map<string, string | undefined>();
+    const planByHorse = new Map<string, string | undefined>();
+    const scheduleHorses: ScheduleHorse[] = horses.map((horse) => {
+      const stall = horse.stallAllocations[0]?.stall;
       const activeLock = horse.medicalLocks[0];
       const isLocked = Boolean(horse.isMedicalLocked || activeLock?.isLocked);
-      const lockNotes = activeLock
-        ? `Khóa y tế: ${activeLock.lockReason}. Chú ý điều trị phục hồi.`
-        : horse.isMedicalLocked
-          ? 'Ngựa đang được giám sát y tế đặc biệt.'
-          : undefined;
+      lockNotesByHorse.set(
+        horse.id,
+        activeLock
+          ? `Khóa y tế: ${activeLock.lockReason}. Chú ý điều trị phục hồi.`
+          : horse.isMedicalLocked
+            ? 'Ngựa đang được giám sát y tế đặc biệt.'
+            : undefined,
+      );
+      planByHorse.set(horse.id, horse.nutritionPlans[0]?.id);
+      return {
+        id: horse.id,
+        zoneId: stall?.zoneId || undefined,
+        stallId: stall?.id || undefined,
+        stallCode: stall?.code,
+        allocationGroomId: horse.stallAllocations[0]?.assignedGroomUserId || undefined,
+        isLocked,
+        mealsJson: horse.nutritionPlans[0]?.mealsJson,
+      };
+    });
+    const planned = planDailyTasks(
+      scheduleHorses,
+      shiftRosters.map((r) => ({
+        zoneId: r.zoneId,
+        groomUserId: r.groomUserId,
+        shiftId: r.shiftId,
+        startTime: r.shift.startTime,
+        endTime: r.shift.endTime,
+        isOvernight: r.shift.isOvernight,
+      })),
+    );
+    const lockedHorses = new Set(scheduleHorses.filter((h) => h.isLocked).map((h) => h.id));
 
-      const activePlan = horse.nutritionPlans[0];
-      const mealsJson = activePlan?.mealsJson as any[] | null;
+    let totalGenerated = 0;
 
-      // Danh sách task cần đảm bảo có trong ngày
-      const tasksToEnsure: Array<{
-        taskType: DailyTaskType;
-        title: string;
-        description: string;
-        mealType: string | null;
-        scheduledTime: string;
-        itemsSnapshotJson?: any;
-      }> = [];
-
-      // 1. Task Vệ sinh chuồng trại sáng
-      tasksToEnsure.push({
-        taskType: DailyTaskType.CLEANING,
-        title: 'Vệ sinh ô chuồng & dọn phân buổi sáng',
-        description:
-          'Dọn sạch phân, thay rơm lót chuồng mới, khử trùng đáy chuồng và kiểm tra máng nước tự động.',
-        mealType: null,
-        scheduledTime: '07:00',
+    // Upsert từng task để bảo đảm Idempotent (nhận diện theo ngựa + loại + tiêu đề, vì giờ có thể dời khi đàn thay đổi)
+    for (const t of planned) {
+      const existing = await this.prisma.dailyCareTask.findFirst({
+        where: { date: dayDate, horseId: t.horseId, taskType: t.taskType, title: t.title },
       });
+      const isLocked = lockedHorses.has(t.horseId);
+      const lockNotes = lockNotesByHorse.get(t.horseId);
 
-      // 2. Task Cho ăn (FEEDING) theo các bữa
-      if (mealsJson && Array.isArray(mealsJson) && mealsJson.length > 0) {
-        for (const m of mealsJson) {
-          const mType = m.mealType || 'MORNING';
-          const time =
-            m.time || (mType === 'MORNING' ? '06:00' : mType === 'NOON' ? '11:30' : '17:00');
-          const itemsDesc = (m.items || [])
-            .map((it: any) => `${it.supplyName || it.supplyCode}: ${it.amount}${it.unit}`)
-            .join(' + ');
-
-          tasksToEnsure.push({
-            taskType: DailyTaskType.FEEDING,
-            title: `Cho ăn bữa ${mType === 'MORNING' ? 'Sáng' : mType === 'NOON' ? 'Trưa' : 'Tối'} (${m.items?.length || 0} món)`,
-            description: itemsDesc
-              ? `Thực đơn đã duyệt: ${itemsDesc}`
-              : 'Cho ăn theo khẩu phần chuẩn.',
-            mealType: mType,
-            scheduledTime: time,
-            itemsSnapshotJson: m.items || [],
-          });
-        }
-      } else {
-        // Fallback khẩu phần tiêu chuẩn nếu chưa lập khẩu phần chi tiết
-        tasksToEnsure.push(
-          {
-            taskType: DailyTaskType.FEEDING,
-            title: 'Cho ăn bữa Sáng: Cỏ khô Timothy + Cám yến mạch',
-            description: '3.0kg cỏ khô Timothy + 1.0kg cám yến mạch + nước sạch.',
-            mealType: 'MORNING',
-            scheduledTime: '06:00',
+      if (!existing) {
+        const taskCode = `TSK-${dateStr.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        await this.prisma.dailyCareTask.create({
+          data: {
+            taskCode,
+            date: dayDate,
+            horseId: t.horseId,
+            stallZoneId: t.zoneId,
+            stallId: t.stallId,
+            taskType: t.taskType,
+            title: t.title,
+            description: t.description,
+            mealType: t.mealType,
+            scheduledTime: t.scheduledTime,
+            shiftId: t.shiftId,
+            nutritionPlanId: planByHorse.get(t.horseId),
+            isMedicalLocked: isLocked,
+            medicalLockNotes: lockNotes,
+            itemsSnapshotJson: (t.itemsSnapshotJson as any) || null,
+            assignedGroomUserId: t.assignedGroomUserId,
           },
-          {
-            taskType: DailyTaskType.FEEDING,
-            title: 'Cho ăn bữa Trưa: Cỏ khô & Điện giải',
-            description: '2.0kg cỏ khô + bổ sung nước hòa tan chất điện giải.',
-            mealType: 'NOON',
-            scheduledTime: '11:30',
-          },
-          {
-            taskType: DailyTaskType.FEEDING,
-            title: 'Cho ăn bữa Tối: Cỏ khô + Thức ăn hạt bổ sung',
-            description: '3.5kg cỏ khô + 1.2kg ngũ cốc hỗn hợp.',
-            mealType: 'EVENING',
-            scheduledTime: '17:00',
-          },
-        );
-      }
-
-      // 3. Quy tắc y tế khi ngựa có Medical Lock (TASK F4-04-BE)
-      if (isLocked) {
-        // Tự động hủy bài tập nặng / tắm mạnh, thay bằng ngâm chân nước đá phục hồi
-        tasksToEnsure.push(
-          {
-            taskType: DailyTaskType.ICE_BOOT_REST,
-            title: 'Ngâm chân nước đá phục hồi buổi sáng',
-            description:
-              'Ngựa có Khóa Huấn Luyện Y Tế. Thực hiện ngâm chân nước đá 20 phút cho chân đau/khớp viêm, sau đó để ngựa nghỉ ngơi tại ô.',
-            mealType: null,
-            scheduledTime: '09:30',
-          },
-          {
-            taskType: DailyTaskType.ICE_BOOT_REST,
-            title: 'Chườm lạnh & Theo dõi vết thương buổi chiều',
-            description:
-              'Kiểm tra lại khớp/vết thương, chườm lạnh 15 phút. Tuyệt đối không dắt chạy nhanh hay để ngựa vận động mạnh.',
-            mealType: null,
-            scheduledTime: '15:30',
-          },
-        );
-      } else {
-        // Ngựa khỏe mạnh bình thường: Tắm rửa và Dắt đi dạo nhẹ
-        tasksToEnsure.push(
-          {
-            taskType: DailyTaskType.GROOMING,
-            title: 'Tắm rửa, chải lông móng & kiểm tra thể trạng',
-            description:
-              'Tắm mát, chải mượt bờm lông, cạo sạch sỏi bùn trong lòng móng và lau khô chân ngựa.',
-            mealType: null,
-            scheduledTime: '14:00',
-          },
-          {
-            taskType: DailyTaskType.WALKING,
-            title: 'Dắt đi dạo nhẹ nhàng & thả lỏng cơ bắp',
-            description: 'Dắt ngựa đi bộ thả lỏng 25 phút trong sân bóng mát.',
-            mealType: null,
-            scheduledTime: '16:30',
-          },
-        );
-      }
-
-      // Upsert từng task để bảo đảm Idempotent
-      for (const t of tasksToEnsure) {
-        const uniqueKey = {
-          date: dayDate,
-          horseId: horse.id,
-          taskType: t.taskType,
-          mealType: t.mealType,
-          scheduledTime: t.scheduledTime,
-        };
-
-        const existing = await this.prisma.dailyCareTask.findFirst({
-          where: uniqueKey,
         });
-
-        if (!existing) {
-          const taskCode = `TSK-${dateStr.replace(/-/g, '')}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-          await this.prisma.dailyCareTask.create({
-            data: {
-              taskCode,
-              date: dayDate,
-              horseId: horse.id,
-              stallZoneId: zoneId,
-              stallId,
-              taskType: t.taskType,
-              title: t.title,
-              description: t.description,
-              mealType: t.mealType,
-              scheduledTime: t.scheduledTime,
-              nutritionPlanId: activePlan?.id,
-              isMedicalLocked: isLocked,
-              medicalLockNotes: lockNotes,
-              itemsSnapshotJson: t.itemsSnapshotJson || null,
-              assignedGroomUserId,
-            },
-          });
-          totalGenerated++;
-        } else if (
-          !existing.isCompleted &&
-          (existing.stallZoneId !== zoneId ||
-            existing.stallId !== stallId ||
-            (assignedGroomUserId && existing.assignedGroomUserId !== assignedGroomUserId))
-        ) {
-          await this.prisma.dailyCareTask.update({
-            where: { id: existing.id },
-            data: {
-              stallZoneId: zoneId,
-              stallId,
-              assignedGroomUserId: assignedGroomUserId || existing.assignedGroomUserId,
-              isMedicalLocked: isLocked,
-              medicalLockNotes: lockNotes,
-            },
-          });
-        }
+        totalGenerated++;
+      } else if (
+        !existing.isCompleted &&
+        (existing.stallZoneId !== t.zoneId ||
+          existing.stallId !== t.stallId ||
+          existing.scheduledTime !== t.scheduledTime ||
+          (t.assignedGroomUserId && existing.assignedGroomUserId !== t.assignedGroomUserId))
+      ) {
+        await this.prisma.dailyCareTask.update({
+          where: { id: existing.id },
+          data: {
+            stallZoneId: t.zoneId,
+            stallId: t.stallId,
+            scheduledTime: t.scheduledTime,
+            shiftId: t.shiftId ?? existing.shiftId,
+            assignedGroomUserId: t.assignedGroomUserId || existing.assignedGroomUserId,
+            isMedicalLocked: isLocked,
+            medicalLockNotes: lockNotes,
+          },
+        });
       }
     }
 
@@ -427,6 +330,15 @@ export class DailyTasksService {
           assignedGroom: {
             select: { id: true, fullName: true },
           },
+          shift: {
+            select: {
+              id: true,
+              name: true,
+              startTime: true,
+              endTime: true,
+              sortOrder: true,
+            },
+          },
         },
         orderBy: [{ scheduledTime: 'asc' }, { taskType: 'asc' }],
       }),
@@ -475,22 +387,34 @@ export class DailyTasksService {
     const now = new Date();
     const undoUntil = new Date(now.getTime() + UNDO_WINDOW_MS);
 
-    const updated = await this.prisma.dailyCareTask.update({
-      where: { id },
-      data: {
-        isCompleted: true,
-        completedAt: now,
-        completedById: currentUser.userId,
-        undoUntil,
-        description: dto.notes
-          ? `${task.description || ''}\n[Ghi chú Groom: ${dto.notes}]`
-          : task.description,
-      },
-      include: {
-        horse: true,
-        completedBy: { select: { id: true, fullName: true } },
-      },
-    });
+    // Chỉ request đổi được isCompleted false -> true mới trừ kho (RULE-CONC-01): hai lần bấm đồng thời không trừ đôi.
+    const updated = await this.prisma.dailyCareTask
+      .update({
+        where: { id, isCompleted: false },
+        data: {
+          isCompleted: true,
+          completedAt: now,
+          completedById: currentUser.userId,
+          undoUntil,
+          description: dto.notes
+            ? `${task.description || ''}\n[Ghi chú Groom: ${dto.notes}]`
+            : task.description,
+        },
+        include: {
+          horse: true,
+          completedBy: { select: { id: true, fullName: true } },
+        },
+      })
+      .catch((err: unknown) => {
+        if (lostRace(err)) return null;
+        throw err;
+      });
+    if (!updated) {
+      return this.prisma.dailyCareTask.findUniqueOrThrow({
+        where: { id },
+        include: { horse: true },
+      });
+    }
 
     await this.auditService.record(
       { id: currentUser.userId, name: currentUser.fullName } as any,
@@ -555,18 +479,30 @@ export class DailyTasksService {
       );
     }
 
-    const updated = await this.prisma.dailyCareTask.update({
-      where: { id },
-      data: {
-        isCompleted: false,
-        completedAt: null,
-        completedById: null,
-        undoUntil: null,
-      },
-      include: {
-        horse: true,
-      },
-    });
+    // Tương tự: hai lần hoàn tác đồng thời chỉ hoàn kho một lần.
+    const updated = await this.prisma.dailyCareTask
+      .update({
+        where: { id, isCompleted: true },
+        data: {
+          isCompleted: false,
+          completedAt: null,
+          completedById: null,
+          undoUntil: null,
+        },
+        include: {
+          horse: true,
+        },
+      })
+      .catch((err: unknown) => {
+        if (lostRace(err)) return null;
+        throw err;
+      });
+    if (!updated) {
+      return this.prisma.dailyCareTask.findUniqueOrThrow({
+        where: { id },
+        include: { horse: true },
+      });
+    }
 
     await this.auditService.record(
       { id: currentUser.userId, name: currentUser.fullName } as any,
@@ -594,3 +530,7 @@ export class DailyTasksService {
     return updated;
   }
 }
+
+/** Prisma P2025: update có điều kiện không khớp dòng nào (request khác đã đổi trạng thái trước). */
+const lostRace = (err: unknown) =>
+  err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025';

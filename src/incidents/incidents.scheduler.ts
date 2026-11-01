@@ -83,7 +83,7 @@ export class IncidentsScheduler {
               elapsedHours: threeHourRound * 3,
             },
             link: '/incidents',
-            senderName: 'EquiFlow',
+            senderName: 'TMEC',
             dedupeKey: dedupeBase,
           },
         );

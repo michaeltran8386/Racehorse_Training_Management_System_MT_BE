@@ -22,7 +22,6 @@ import {
   InvoiceStatus,
   SupplyCategory,
   SupplyUnit,
-  DailyTaskType,
   IncidentStatus,
   RestockStatus,
   NutritionPlanStatus,
@@ -30,6 +29,7 @@ import {
   InsightStatus,
 } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { planDailyTasks, toMinutes } from '../src/daily-tasks/daily-schedule';
 
 const prisma = new PrismaClient();
 
@@ -121,6 +121,39 @@ async function main() {
       status: UserStatus.ACTIVE,
     },
   });
+
+  // Groom bổ sung để mỗi khu/ca có một người phụ trách riêng (roster không trùng giờ)
+  const extraGroomDefs = [
+    {
+      email: 'groom3@gmail.com',
+      fullName: 'Ngô Thị Lan (Groom Ca Chiều)',
+      phoneNumber: '+84901234574',
+    },
+    {
+      email: 'groom4@gmail.com',
+      fullName: 'Đinh Văn Hải (Groom Ca Chiều)',
+      phoneNumber: '+84901234575',
+    },
+    {
+      email: 'groom5@gmail.com',
+      fullName: 'Lý Văn Đức (Groom Ca Đêm)',
+      phoneNumber: '+84901234576',
+    },
+  ];
+  const [groom3, groom4, groom5] = await Promise.all(
+    extraGroomDefs.map((g) =>
+      prisma.user.upsert({
+        where: { email: g.email },
+        update: { fullName: g.fullName },
+        create: {
+          ...g,
+          passwordHash: defaultPassword,
+          role: Role.GROOM,
+          status: UserStatus.ACTIVE,
+        },
+      }),
+    ),
+  );
 
   const owner1 = await prisma.user.upsert({
     where: { email: 'owner@gmail.com' },
@@ -534,6 +567,75 @@ async function main() {
       stallCode: 'STALL-B03',
       groomId: groom2.id,
     },
+    // Ngựa bổ sung để bảng danh sách có đủ dữ liệu phân trang (10 dòng/trang)
+    ...[
+      [
+        'Ngọc Kỳ Lân',
+        'Thoroughbred',
+        '2020-03-18',
+        'Mare',
+        'Chestnut',
+        HorseStatus.ACTIVE,
+        'STALL-A05',
+      ],
+      ['Thanh Vân', 'Arabian', '2021-06-02', 'Filly', 'Grey', HorseStatus.IN_TRAINING, 'STALL-A06'],
+      [
+        'Lam Phong',
+        'Thoroughbred',
+        '2019-09-27',
+        'Gelding',
+        'Bay',
+        HorseStatus.ACTIVE,
+        'STALL-A07',
+      ],
+      [
+        'Tuyết Sơn',
+        'Warmblood',
+        '2020-12-11',
+        'Stallion',
+        'Grey',
+        HorseStatus.IN_TRAINING,
+        'STALL-A08',
+      ],
+      ['Kim Ô', 'Quarter Horse', '2021-02-08', 'Colt', 'Palomino', HorseStatus.ACTIVE, 'STALL-B04'],
+      [
+        'Hồng Ngọc',
+        'Arabian Cross',
+        '2020-07-21',
+        'Mare',
+        'Chestnut',
+        HorseStatus.IN_TRAINING,
+        'STALL-B05',
+      ],
+      ['Mặc Vũ', 'Thoroughbred', '2019-11-30', 'Gelding', 'Black', HorseStatus.ACTIVE, 'STALL-B06'],
+      [
+        'Thiên Lý',
+        'Standardbred',
+        '2021-04-04',
+        'Filly',
+        'Bay Dark',
+        HorseStatus.ACTIVE,
+        'STALL-B07',
+      ],
+      ['Bão Táp', 'Thoroughbred', '2020-05-16', 'Colt', 'Roan', HorseStatus.RESTING, 'STALL-C02'],
+      ['Bình Minh', 'Appaloosa', '2021-08-25', 'Mare', 'Bay', HorseStatus.ACTIVE, 'STALL-C03'],
+    ].map(([name, breed, dob, gender, color, status, stallCode], i) => {
+      const n = 10 + i;
+      return {
+        horseCode: `HR-0000${n}`,
+        name: name as string,
+        microchip: `98514100234${String(n).padStart(4, '0')}`,
+        breed: breed as string,
+        dob: new Date(dob as string),
+        gender: gender as string,
+        color: color as string,
+        status: status as HorseStatus,
+        isMedicalLocked: false,
+        ownerId: i % 2 === 0 ? owner1.id : owner2.id,
+        stallCode: stallCode as string,
+        groomId: (stallCode as string).startsWith('STALL-A') ? groom1.id : groom2.id,
+      };
+    }),
   ];
 
   const createdHorses: Record<string, any> = {};
@@ -602,7 +704,7 @@ async function main() {
       }
     }
   }
-  console.log(`[3/12] Seeded 9 Horses covering 100% of HorseStatus values with memorable names`);
+  console.log(`[3/12] Seeded 19 Horses covering 100% of HorseStatus values with memorable names`);
 
   // ----------------------------------------------------------------
   // 6. Medical Locks (Active Locks và Released Lock lịch sử)
@@ -635,7 +737,6 @@ async function main() {
       isLocked: true,
     },
   });
-
 
   // Released Lock: Bạch Long Mã (Lịch sử đã mở khóa)
   await prisma.medicalLock.upsert({
@@ -870,14 +971,27 @@ async function main() {
       horseWeightSnapshot: 495.0,
       hayFeedKg: 8.5,
       grainFeedKg: 4.0,
-      specialInstructions: 'Bổ sung điện giải sau bài tập chạy nước rút và vitamin E chống oxy hóa.',
+      specialInstructions:
+        'Bổ sung điện giải sau bài tập chạy nước rút và vitamin E chống oxy hóa.',
       createdById: trainer.id,
       approvedById: vet.id,
       approvedAt: new Date(Date.now() - 15 * 86400000),
       mealsJson: [
-        { time: '06:00', type: 'Sáng', hayKg: 3.0, grainKg: 1.5, notes: 'Cỏ khô Timothy + Cám yến mạch' },
+        {
+          time: '06:00',
+          type: 'Sáng',
+          hayKg: 3.0,
+          grainKg: 1.5,
+          notes: 'Cỏ khô Timothy + Cám yến mạch',
+        },
         { time: '12:00', type: 'Trưa', hayKg: 2.5, grainKg: 1.0, notes: 'Cỏ khô Alfalfa' },
-        { time: '17:30', type: 'Chiều', hayKg: 3.0, grainKg: 1.5, notes: 'Hạt dinh dưỡng + Bột điện giải' },
+        {
+          time: '17:30',
+          type: 'Chiều',
+          hayKg: 3.0,
+          grainKg: 1.5,
+          notes: 'Hạt dinh dưỡng + Bột điện giải',
+        },
       ],
     },
   });
@@ -900,7 +1014,13 @@ async function main() {
       createdById: trainer.id,
       mealsJson: [
         { time: '06:30', type: 'Sáng', hayKg: 3.5, grainKg: 0.5, notes: 'Cỏ khô đồng cỏ tự nhiên' },
-        { time: '17:00', type: 'Chiều', hayKg: 4.0, grainKg: 1.0, notes: 'Bổ sung khoáng phục hồi khớp' },
+        {
+          time: '17:00',
+          type: 'Chiều',
+          hayKg: 4.0,
+          grainKg: 1.0,
+          notes: 'Bổ sung khoáng phục hồi khớp',
+        },
       ],
     },
   });
@@ -934,7 +1054,8 @@ async function main() {
       dailyFeedWeightKg: 14.0,
       targetWeightRatioPct: 2.9,
       horseWeightSnapshot: 490.0,
-      rejectionReason: 'Hàm lượng tinh bột quá cao, có nguy cơ gây viêm móng (Laminitis). Cần giảm cám hạt.',
+      rejectionReason:
+        'Hàm lượng tinh bột quá cao, có nguy cơ gây viêm móng (Laminitis). Cần giảm cám hạt.',
       vetNotes: 'Đề nghị điều chỉnh lại lượng cám hạt xuống dưới 4kg/ngày.',
       createdById: trainer.id,
       approvedById: vet.id,
@@ -1389,7 +1510,9 @@ async function main() {
       notes: 'Đã quá hạn khám nha khoa định kỳ, cần lên lịch mài răng sau khi hồi phục gân.',
     },
   });
-  console.log(`[7/12] Seeded Preventive Care across all 4 Types and 3 Statuses (PENDING, COMPLETED, OVERDUE)`);
+  console.log(
+    `[7/12] Seeded Preventive Care across all 4 Types and 3 Statuses (PENDING, COMPLETED, OVERDUE)`,
+  );
 
   // ----------------------------------------------------------------
   // 12. Báo Cáo Sự Cố Chuồng Trại (Incident Reports: REPORTED, UNDER_REVIEW, RESOLVED, DISMISSED)
@@ -1444,7 +1567,8 @@ async function main() {
       severity: SeverityLevel.MILD,
       status: IncidentStatus.RESOLVED,
       symptomsJson: ['vật cản nguy hiểm'],
-      description: 'Phát hiện mảnh đinh rỉ rơi ở lối đi chuồng B, có thể gây nguy cơ đâm thủng móng.',
+      description:
+        'Phát hiện mảnh đinh rỉ rơi ở lối đi chuồng B, có thể gây nguy cơ đâm thủng móng.',
       vetNotes: 'Đã dọn dẹp sạch sẽ toàn bộ lối đi bằng xe hút nam châm từ tính.',
     },
   });
@@ -2068,158 +2192,195 @@ async function main() {
   });
 
   // ----------------------------------------------------------------
-  // 17. Daily Care Tasks (Covering DailyTaskType: FEEDING, CLEANING, GROOMING, ICE_BOOT_REST, WALKING)
+  // 17. Tồn kho theo khu (StockBalance) — có vài mặt hàng dưới ngưỡng để hiện cảnh báo
   // ----------------------------------------------------------------
-  const todayDate = new Date();
-  todayDate.setHours(0, 0, 0, 0);
+  const stockPlan: Record<string, Record<string, [number, number, number]>> = {
+    // [số lượng, ngưỡng tối thiểu, sức chứa]
+    'ZONE-A': {
+      'SUP-HAY-TIMOTHY': [420, 150, 800],
+      'SUP-HAY-ALFALFA': [180, 80, 400],
+      'SUP-GRAIN-OATS': [260, 100, 500],
+      'SUP-DISINFECT-SPRAY': [9, 4, 20],
+      'SUP-VITA-MULTI': [6, 20, 120],
+    },
+    'ZONE-B': {
+      'SUP-HAY-TIMOTHY': [350, 150, 800],
+      'SUP-HAY-ALFALFA': [140, 80, 400],
+      'SUP-GRAIN-OATS': [190, 100, 500],
+      'SUP-DISINFECT-SPRAY': [2, 4, 20],
+      'SUP-VITA-MULTI': [64, 20, 120],
+    },
+    'ZONE-C': {
+      'SUP-HAY-TIMOTHY': [120, 60, 300],
+      'SUP-HAY-ALFALFA': [30, 60, 200],
+      'SUP-GRAIN-OATS': [80, 40, 200],
+      'SUP-DISINFECT-SPRAY': [12, 6, 30],
+      'SUP-VITA-MULTI': [40, 10, 80],
+    },
+  };
+  for (const [zoneCode, items] of Object.entries(stockPlan)) {
+    for (const [supplyCode, [quantity, minThreshold, capacity]] of Object.entries(items)) {
+      const values = {
+        quantity,
+        minThreshold,
+        capacity,
+        lastInventoryDate: new Date(now.getTime() - 2 * 86400000),
+        lastAdjustedById: manager.id,
+      };
+      const key = { zoneId: zoneIds[zoneCode], supplyId: createdSupplies[supplyCode].id };
+      await prisma.stockBalance.upsert({
+        where: { zoneId_supplyId: key },
+        update: values,
+        create: { ...values, ...key },
+      });
+    }
+  }
 
-  const stallA1 = await prisma.stall.findUnique({ where: { code: 'STALL-A01' } });
-  const stallA2 = await prisma.stall.findUnique({ where: { code: 'STALL-A02' } });
+  // ----------------------------------------------------------------
+  // 18. Bảng phân ca Groom 7 ngày (-3 → +3): mỗi Groom tối đa 1 ca/ngày, không trùng giờ
+  // ----------------------------------------------------------------
+  const rosterPlan: Array<[string, string, string]> = [
+    // [ca, khu, groom]
+    ['SHIFT_MORNING', 'ZONE-A', groom1.id],
+    ['SHIFT_MORNING', 'ZONE-B', groom2.id],
+    ['SHIFT_MORNING', 'ZONE-C', groom2.id],
+    ['SHIFT_AFTERNOON', 'ZONE-A', groom3.id],
+    ['SHIFT_AFTERNOON', 'ZONE-B', groom4.id],
+    ['SHIFT_AFTERNOON', 'ZONE-C', groom4.id],
+    ['SHIFT_NIGHT', 'ZONE-A', groom5.id],
+    ['SHIFT_NIGHT', 'ZONE-B', groom5.id],
+    ['SHIFT_NIGHT', 'ZONE-C', groom5.id],
+  ];
+  const dayAt = (offset: number) => new Date(`${clubDay(offset)}T00:00:00.000Z`);
+  for (let d = -3; d <= 3; d++) {
+    for (const [shiftCode, zoneCode, groomUserId] of rosterPlan) {
+      const key = {
+        date: dayAt(d),
+        shiftId: shiftIds[shiftCode],
+        zoneId: zoneIds[zoneCode],
+        groomUserId,
+      };
+      await prisma.shiftRoster.upsert({
+        where: { date_shiftId_zoneId_groomUserId: key },
+        update: {},
+        create: { ...key, createdById: manager.id },
+      });
+    }
+  }
 
-  await prisma.dailyCareTask.upsert({
-    where: {
-      date_horseId_taskType_mealType_scheduledTime: {
-        date: todayDate,
-        horseId: horse1.id,
-        taskType: DailyTaskType.FEEDING,
-        mealType: 'MORNING',
-        scheduledTime: '06:00',
+  // ----------------------------------------------------------------
+  // 19. Công việc chăm sóc hôm qua + hôm nay — cùng bộ lập lịch với DailyTasksService
+  // ----------------------------------------------------------------
+  const clubNow = new Date(now.getTime() + 7 * 3600000);
+  const nowMinutes = clubNow.getUTCHours() * 60 + clubNow.getUTCMinutes();
+  for (const d of [-1, 0]) {
+    const date = dayAt(d);
+    const liveHorses = await prisma.horse.findMany({
+      where: { deletedAt: null },
+      include: {
+        stallAllocations: { where: { isActive: true }, include: { stall: true }, take: 1 },
+        medicalLocks: { where: { isLocked: true }, take: 1 },
+        nutritionPlans: {
+          where: { status: NutritionPlanStatus.APPROVED },
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+        },
       },
-    },
-    update: {},
-    create: {
-      taskCode: 'TASK-20261030-001',
-      date: todayDate,
-      horseId: horse1.id,
-      stallZoneId: zoneAId,
-      stallId: stallA1?.id,
-      taskType: DailyTaskType.FEEDING,
-      title: 'Cho ăn sáng: Cỏ khô Timothy + Cám yến mạch',
-      mealType: 'MORNING',
-      scheduledTime: '06:00',
-      isCompleted: true,
-      completedAt: new Date(),
-      completedById: groom1.id,
-      assignedGroomUserId: groom1.id,
-    },
-  });
+    });
+    const dayRosters = await prisma.shiftRoster.findMany({
+      where: { date },
+      include: { shift: true },
+    });
+    const isLocked = (h: (typeof liveHorses)[number]) =>
+      Boolean(h.isMedicalLocked || h.medicalLocks[0]);
+    const planned = planDailyTasks(
+      liveHorses.map((h) => ({
+        id: h.id,
+        zoneId: h.stallAllocations[0]?.stall.zoneId ?? undefined,
+        stallId: h.stallAllocations[0]?.stall.id,
+        stallCode: h.stallAllocations[0]?.stall.code,
+        allocationGroomId: h.stallAllocations[0]?.assignedGroomUserId ?? undefined,
+        isLocked: isLocked(h),
+        mealsJson: h.nutritionPlans[0]?.mealsJson,
+      })),
+      dayRosters.map((r) => ({
+        zoneId: r.zoneId,
+        groomUserId: r.groomUserId,
+        shiftId: r.shiftId,
+        startTime: r.shift.startTime,
+        endTime: r.shift.endTime,
+        isOvernight: r.shift.isOvernight,
+      })),
+    );
+    const lockedIds = new Set(liveHorses.filter(isLocked).map((h) => h.id));
+    for (const [i, t] of planned.entries()) {
+      const exists = await prisma.dailyCareTask.findFirst({
+        where: { date, horseId: t.horseId, taskType: t.taskType, title: t.title },
+      });
+      if (exists) continue;
+      // Hôm qua: xong hết. Hôm nay: xong các việc đã qua giờ.
+      const done = d < 0 || toMinutes(t.scheduledTime) + 15 <= nowMinutes;
+      await prisma.dailyCareTask.create({
+        data: {
+          taskCode: `TSK-${clubDay(d).replace(/-/g, '')}-${String(i + 1).padStart(3, '0')}`,
+          date,
+          horseId: t.horseId,
+          stallZoneId: t.zoneId,
+          stallId: t.stallId,
+          taskType: t.taskType,
+          title: t.title,
+          description: t.description,
+          mealType: t.mealType,
+          scheduledTime: t.scheduledTime,
+          shiftId: t.shiftId,
+          isMedicalLocked: lockedIds.has(t.horseId),
+          medicalLockNotes: lockedIds.has(t.horseId)
+            ? 'Thực hiện theo phác đồ điều trị của BS thú y.'
+            : null,
+          assignedGroomUserId: t.assignedGroomUserId,
+          isCompleted: done,
+          completedAt: done ? new Date(`${clubDay(d)}T${t.scheduledTime}:00+07:00`) : null,
+          completedById: done ? t.assignedGroomUserId : null,
+        },
+      });
+    }
+  }
 
-  await prisma.dailyCareTask.upsert({
-    where: {
-      date_horseId_taskType_mealType_scheduledTime: {
-        date: todayDate,
-        horseId: horse1.id,
-        taskType: DailyTaskType.CLEANING,
-        mealType: 'MORNING',
-        scheduledTime: '07:30',
-      },
-    },
-    update: {},
-    create: {
-      taskCode: 'TASK-20261030-002',
-      date: todayDate,
-      horseId: horse1.id,
-      stallZoneId: zoneAId,
-      stallId: stallA1?.id,
-      taskType: DailyTaskType.CLEANING,
-      title: 'Dọn vệ sinh chuồng A01 & thay đệm lót rơm mới',
-      mealType: 'MORNING',
-      scheduledTime: '07:30',
-      isCompleted: true,
-      completedAt: new Date(),
-      completedById: groom1.id,
-      assignedGroomUserId: groom1.id,
-    },
-  });
-
-  await prisma.dailyCareTask.upsert({
-    where: {
-      date_horseId_taskType_mealType_scheduledTime: {
-        date: todayDate,
-        horseId: horse2.id,
-        taskType: DailyTaskType.ICE_BOOT_REST,
-        mealType: 'NOON',
-        scheduledTime: '11:00',
-      },
-    },
-    update: {},
-    create: {
-      taskCode: 'TASK-20261030-003',
-      date: todayDate,
-      horseId: horse2.id,
-      stallZoneId: zoneAId,
-      stallId: stallA2?.id,
-      taskType: DailyTaskType.ICE_BOOT_REST,
-      title: 'Chườm đá lạnh phục hồi gân chân (Hydrotherapy Ice Boot)',
-      mealType: 'NOON',
-      scheduledTime: '11:00',
-      isCompleted: true,
-      completedAt: new Date(),
-      completedById: groom1.id,
-      assignedGroomUserId: groom1.id,
-      isMedicalLocked: true,
-      medicalLockNotes: 'Thực hiện theo chỉ định phác đồ điều trị của BS. Trí',
-    },
-  });
-
-  await prisma.dailyCareTask.upsert({
-    where: {
-      date_horseId_taskType_mealType_scheduledTime: {
-        date: todayDate,
-        horseId: horse1.id,
-        taskType: DailyTaskType.GROOMING,
-        mealType: 'AFTERNOON',
-        scheduledTime: '15:30',
-      },
-    },
-    update: {},
-    create: {
-      taskCode: 'TASK-20261030-004',
-      date: todayDate,
-      horseId: horse1.id,
-      stallZoneId: zoneAId,
-      stallId: stallA1?.id,
-      taskType: DailyTaskType.GROOMING,
-      title: 'Chải lông và massage cơ bắp chiều',
-      mealType: 'AFTERNOON',
-      scheduledTime: '15:30',
-      isCompleted: false,
-      assignedGroomUserId: groom1.id,
-    },
-  });
-
-  await prisma.dailyCareTask.upsert({
-    where: {
-      date_horseId_taskType_mealType_scheduledTime: {
-        date: todayDate,
-        horseId: horse2.id,
-        taskType: DailyTaskType.WALKING,
-        mealType: 'AFTERNOON',
-        scheduledTime: '16:30',
-      },
-    },
-    update: {},
-    create: {
-      taskCode: 'TASK-20261030-005',
-      date: todayDate,
-      horseId: horse2.id,
-      stallZoneId: zoneAId,
-      stallId: stallA2?.id,
-      taskType: DailyTaskType.WALKING,
-      title: 'Dắt đi dạo nhẹ nhàng 15 phút quanh sân chuồng',
-      mealType: 'AFTERNOON',
-      scheduledTime: '16:30',
-      isCompleted: false,
-      assignedGroomUserId: groom1.id,
-    },
-  });
+  // Nhật ký quan sát ca sáng 7 ngày gần nhất (hiện ở hồ sơ sức khỏe từng ngựa)
+  const observationNotes = [
+    'Ăn hết khẩu phần, phân bình thường, nhiệt độ 37.8°C.',
+    'Hơi lười uống nước buổi sáng, đã theo dõi thêm.',
+    'Lông bóng, chân sạch, không sưng nóng.',
+    'Móng trước trái hơi mòn, đề xuất kiểm tra móng định kỳ.',
+  ];
+  const zoneAGroomHorses = ['HR-000001', 'HR-000003', 'HR-000004'];
+  const loggedHorses = [...zoneAGroomHorses, 'HR-000005', 'HR-000008', 'HR-000009'];
+  for (let d = 1; d <= 7; d++) {
+    for (const [i, code] of loggedHorses.entries()) {
+      const values = {
+        horseId: createdHorses[code].id,
+        groomUserId: zoneAGroomHorses.includes(code) ? groom1.id : groom2.id,
+        shiftDate: new Date(`${clubDay(-d)}T08:00:00+07:00`),
+        feedCompleted: true,
+        cleaningCompleted: true,
+        groomingCompleted: d % 3 !== 0,
+        iceBootCompleted: false,
+        healthObservations: observationNotes[(i + d) % observationNotes.length],
+      };
+      await prisma.dailyGroomingLog.upsert({
+        where: { id: `glog-${code}-${d}` },
+        update: values,
+        create: { id: `glog-${code}-${d}`, ...values },
+      });
+    }
+  }
 
   console.log(
-    `[11/12] Seeded Supplies, Restock Requests (5 statuses) & Daily Care Tasks (completed + pending)`,
+    `[11/12] Seeded Supplies, Restock Requests (5 statuses), Stock Balances, Groom Rosters & Daily Care Tasks`,
   );
 
   // ----------------------------------------------------------------
-  // 18. Thông Báo & Nhật Ký Hệ Thống (Notifications & Audit Logs)
+  // 20. Thông Báo & Nhật Ký Hệ Thống (Notifications & Audit Logs)
   // ----------------------------------------------------------------
   await prisma.notification.deleteMany({
     where: { userId: { in: [manager.id, trainer.id, vet.id, groom1.id, owner1.id] } },
@@ -2250,7 +2411,8 @@ async function main() {
         type: 'TRAINING_LOCK_PLACED',
         category: NotificationCategory.LOCK,
         title: 'Lệnh Khóa Y Tế đang có hiệu lực',
-        message: 'Xích Thố (HR-000002) đang trong thời gian nghỉ dưỡng điều trị viêm gân chi trước.',
+        message:
+          'Xích Thố (HR-000002) đang trong thời gian nghỉ dưỡng điều trị viêm gân chi trước.',
         senderName: vet.fullName,
         readAt: null,
       },
@@ -2275,6 +2437,11 @@ async function main() {
     ],
   });
 
+  // Xóa bản ghi mẫu cũ trước khi tạo lại để seed chạy nhiều lần không nhân đôi
+  await prisma.auditLog.deleteMany({
+    where: { entityId: { in: [pendingUser.id, 'LOCK-HR-000002-001', `w1-${horse1.id}`] } },
+  });
+
   await prisma.auditLog.createMany({
     data: [
       {
@@ -2282,7 +2449,11 @@ async function main() {
         action: 'USER_REGISTER',
         entityName: 'User',
         entityId: pendingUser.id,
-        newValuesJson: JSON.stringify({ email: pendingUser.email, role: pendingUser.role, status: 'PENDING_APPROVAL' }),
+        newValuesJson: JSON.stringify({
+          email: pendingUser.email,
+          role: pendingUser.role,
+          status: 'PENDING_APPROVAL',
+        }),
       },
       {
         userId: vet.id,

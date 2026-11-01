@@ -7,6 +7,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { apiError } from '../../common/exceptions/api-error';
 import { permissionsOf } from '../../users/public-user';
 import { requireJwtSecret } from '../jwt-secret';
+import { GOOGLE_ACCESS_COOKIE, readSessionCookie } from '../google-session';
 
 export interface JwtPayload {
   sub: string;
@@ -26,7 +27,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     const jwtSecret = requireJwtSecret(configService);
 
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        (request) => readSessionCookie(request, GOOGLE_ACCESS_COOKIE),
+      ]),
       ignoreExpiration: false,
       secretOrKey: jwtSecret,
     });

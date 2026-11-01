@@ -29,6 +29,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ROLE_LABEL } from '../users/permissions';
 import { toPublicUser } from '../users/public-user';
 import { OTP_TTL, OtpService, otpTimes, sha256 } from './otp.service';
+import { GoogleIdentityService } from './google-identity.service';
 
 const LOGIN_MAX_FAILS = 5;
 const LOGIN_LOCK = 15 * 60 * 1000;
@@ -68,6 +69,7 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly counter: CounterService,
     private readonly notifications: NotificationsService,
+    private readonly googleIdentity: GoogleIdentityService,
   ) {}
 
   /**
@@ -332,6 +334,86 @@ export class AuthService {
     return { ...tokens, user: this.toProfile(updated) };
   }
 
+  async loginWithGoogle(
+    credential: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<AuthResponseDto> {
+    const identity = await this.googleIdentity.verify(credential);
+    if (!EMAIL_RE.test(identity.email)) {
+      throw apiError(
+        HttpStatus.UNAUTHORIZED,
+        'GOOGLE_LOGIN_FAILED',
+        'Google sign-in could not be completed',
+      );
+    }
+    const user = await this.prisma.user.findUnique({ where: { email: identity.email } });
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw apiError(
+        HttpStatus.UNAUTHORIZED,
+        'GOOGLE_LOGIN_FAILED',
+        'Google sign-in could not be completed',
+      );
+    }
+    let linked: { subject: string };
+    try {
+      linked = await this.prisma.googleIdentity.upsert({
+        where: { userId: user.id },
+        create: { userId: user.id, subject: identity.sub },
+        update: {},
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw apiError(
+          HttpStatus.UNAUTHORIZED,
+          'GOOGLE_LOGIN_FAILED',
+          'Google sign-in could not be completed',
+        );
+      }
+      throw error;
+    }
+    if (linked.subject !== identity.sub) {
+      throw apiError(
+        HttpStatus.UNAUTHORIZED,
+        'GOOGLE_LOGIN_FAILED',
+        'Google sign-in could not be completed',
+      );
+    }
+    await this.prisma.user.updateMany({
+      where: { id: user.id, status: UserStatus.ACTIVE },
+      data: { lastActive: new Date() },
+    });
+    const updated = await this.prisma.user.findUnique({ where: { id: user.id } });
+    if (!updated || updated.status !== UserStatus.ACTIVE) {
+      throw apiError(
+        HttpStatus.UNAUTHORIZED,
+        'GOOGLE_LOGIN_FAILED',
+        'Google sign-in could not be completed',
+      );
+    }
+    const tokens = await this.issueTokens(updated);
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: updated.id,
+          action: 'AUTH_LOGIN',
+          entityName: 'User',
+          entityId: updated.id,
+          newValuesJson: JSON.stringify({
+            role: updated.role,
+            email: updated.email,
+            method: 'google',
+          }),
+          ipAddress: ipAddress || null,
+          userAgent: userAgent || null,
+        },
+      });
+    } catch (auditError) {
+      this.logger.warn(`Failed to create audit log for Google login: ${auditError}`);
+    }
+    return { ...tokens, user: this.toProfile(updated) };
+  }
+
   /**
    * Refreshes JWT tokens with strict token rotation and revocation
    */
@@ -373,10 +455,13 @@ export class AuthService {
     }
 
     // Xoay vòng: thu hồi token hiện tại và đánh dấu "đã đổi sang token mới".
-    await this.prisma.refreshToken.update({
-      where: { id: storedToken.id },
+    const rotated = await this.prisma.refreshToken.updateMany({
+      where: { id: storedToken.id, revoked: false, expiresAt: { gt: new Date() } },
       data: { revoked: true, rotatedAt: new Date() },
     });
+    if (rotated.count !== 1) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
 
     // Giữ nguyên hạn dài của token "Remember me" khi xoay vòng.
     const newExpiresAt = new Date(

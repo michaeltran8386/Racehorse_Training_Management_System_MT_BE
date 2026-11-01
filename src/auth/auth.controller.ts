@@ -5,12 +5,13 @@ import {
   Body,
   Query,
   Req,
+  Res,
   HttpCode,
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto, LogoutDto } from './dto/refresh-token.dto';
@@ -30,6 +31,14 @@ import {
 } from './dto/account-flow.dto';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuthThrottlerGuard } from '../common/guards/auth-throttler.guard';
+import { GoogleLoginDto } from './dto/google-login.dto';
+import {
+  clearGoogleSession,
+  GOOGLE_REFRESH_COOKIE,
+  readSessionCookie,
+  setGoogleSession,
+} from './google-session';
+import { apiError } from '../common/exceptions/api-error';
 
 @ApiTags('Authentication')
 @UseGuards(AuthThrottlerGuard)
@@ -129,6 +138,52 @@ export class AuthController {
     const ipAddress = req.ip || (req.headers['x-forwarded-for'] as string);
     const userAgent = req.headers['user-agent'];
     return this.authService.login(loginDto, ipAddress, userAgent);
+  }
+
+  @Post('google')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async googleLogin(
+    @Body() dto: GoogleLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.loginWithGoogle(
+      dto.credential,
+      req.ip,
+      req.headers['user-agent'],
+    );
+    setGoogleSession(res, result);
+    return { user: result.user };
+  }
+
+  @Post('google/refresh')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async googleRefresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const refreshToken = readSessionCookie(req, GOOGLE_REFRESH_COOKIE);
+    if (!refreshToken)
+      throw apiError(HttpStatus.UNAUTHORIZED, 'UNAUTHENTICATED', 'Session expired');
+    const tokens = await this.authService.refreshToken({ refreshToken });
+    setGoogleSession(res, tokens);
+    return { success: true };
+  }
+
+  @Post('google/logout')
+  @Public()
+  @SkipThrottle()
+  @HttpCode(HttpStatus.OK)
+  async googleLogout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const refreshToken = readSessionCookie(req, GOOGLE_REFRESH_COOKIE);
+    try {
+      return await this.authService.logout(
+        refreshToken ?? undefined,
+        req.ip,
+        req.headers['user-agent'],
+      );
+    } finally {
+      clearGoogleSession(res);
+    }
   }
 
   @Post('refresh')

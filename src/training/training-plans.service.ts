@@ -176,11 +176,17 @@ export class TrainingPlansService {
     this.assertPlanDates(startDate, endDate);
     const phases = this.checkedPhases(dto.phases, startDate, endDate);
 
-    const seq = await this.counter.next('training_plan');
+    // Seed ghi sẵn mã GA-xxxxxx mà không tăng bộ đếm: bỏ qua mã đã có để không vỡ @unique (HTTP 500).
+    let planCode: string;
+    do {
+      planCode = `GA-${String(await this.counter.next('training_plan')).padStart(6, '0')}`;
+    } while (
+      await this.prisma.trainingPlan.findUnique({ where: { planCode }, select: { id: true } })
+    );
     // Không tự đổi trạng thái ngựa ở đây: chỉ khi Kích hoạt và HT chọn (DL-2.02).
     const plan = await this.prisma.trainingPlan.create({
       data: {
-        planCode: `GA-${String(seq).padStart(6, '0')}`,
+        planCode,
         horseId: dto.horseId,
         trainerUserId: user.userId,
         phaseName: dto.phaseName.trim(),
