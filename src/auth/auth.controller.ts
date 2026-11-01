@@ -157,6 +157,13 @@ export class AuthController {
     return { user: result.user };
   }
 
+  @Post('google/register')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  googleRegister(@Body() dto: GoogleLoginDto) {
+    return this.authService.registerWithGoogle(dto.credential);
+  }
+
   @Post('google/refresh')
   @Public()
   @HttpCode(HttpStatus.OK)

@@ -616,6 +616,72 @@ export class AuthService {
       'EMAIL_VERIFIED',
       `Request ${user.requestCode} sent for approval`,
     );
+    return this.sendForApproval(user);
+  }
+
+  /**
+   * Đăng ký Horse Owner bằng Google: Google đã xác minh email nên bỏ bước OTP,
+   * yêu cầu đi thẳng tới Club Manager duyệt (PENDING_APPROVAL), giống sau verifyEmail.
+   * Tài khoản không có mật khẩu (passwordHash = "") nên chỉ đăng nhập được bằng Google.
+   */
+  async registerWithGoogle(credential: string) {
+    const identity = await this.googleIdentity.verify(credential);
+    const email = identity.email;
+    if (!EMAIL_RE.test(email)) {
+      throw apiError(HttpStatus.BAD_REQUEST, 'VALIDATION', 'Invalid input');
+    }
+    const googleName = str(identity.name ?? '');
+    const fullName = googleName && !fullNameError(googleName) ? googleName : 'Google User';
+
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    const canReapply =
+      existing?.status === UserStatus.PENDING_EMAIL || existing?.status === UserStatus.REJECTED;
+    if (existing && !canReapply) {
+      throw apiError(HttpStatus.CONFLICT, 'EMAIL_TAKEN', 'Email taken');
+    }
+
+    // Lấy mã trước transaction: newRequestCode dùng kết nối riêng (pool có thể chỉ 1 kết nối).
+    const requestCode =
+      existing && existing.status !== UserStatus.REJECTED && existing.requestCode
+        ? existing.requestCode
+        : await this.newRequestCode();
+    const data = {
+      fullName,
+      passwordHash: '',
+      status: UserStatus.PENDING_APPROVAL,
+      statusReason: null,
+      requestedAt: new Date(),
+      requestCode,
+    };
+    const user = await this.prisma
+      .$transaction(async (tx) => {
+        const saved = existing
+          ? await tx.user.update({ where: { id: existing.id }, data })
+          : await tx.user.create({ data: { ...data, email, role: Role.HORSE_OWNER } });
+        // Một tài khoản Google chỉ gắn với một user: trùng subject => P2002.
+        await tx.googleIdentity.upsert({
+          where: { userId: saved.id },
+          create: { userId: saved.id, subject: identity.sub },
+          update: { subject: identity.sub },
+        });
+        return saved;
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          throw apiError(HttpStatus.CONFLICT, 'EMAIL_TAKEN', 'Email taken');
+        }
+        throw error;
+      });
+
+    await this.audit.record(
+      { id: user.id, name: user.fullName },
+      'REGISTER',
+      `Google sign-up request ${user.requestCode} sent for approval`,
+    );
+    return this.sendForApproval(user);
+  }
+
+  private async sendForApproval(user: User) {
     await this.notifications.notifyRoles([Role.CLUB_MANAGER], {
       type: 'ACCOUNT_SIGNUP_REQUEST',
       category: 'ACCOUNT',

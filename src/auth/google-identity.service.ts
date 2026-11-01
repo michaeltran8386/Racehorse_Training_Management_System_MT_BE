@@ -8,6 +8,7 @@ interface GoogleClaims {
   sub: string;
   email: string;
   email_verified: boolean;
+  name?: string;
 }
 
 interface GoogleKey {
@@ -80,7 +81,12 @@ export class GoogleIdentityService {
       ) {
         throw new Error('Invalid identity claims');
       }
-      return { sub: claims.sub, email: claims.email.toLowerCase(), email_verified: true };
+      return {
+        sub: claims.sub,
+        email: claims.email.toLowerCase(),
+        email_verified: true,
+        name: typeof claims.name === 'string' ? claims.name : undefined,
+      };
     } catch (error) {
       if (error instanceof HttpException && error.getStatus() >= 500) throw error;
       throw apiError(
