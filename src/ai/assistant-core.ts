@@ -61,6 +61,76 @@ export function routeTools(message: string): string[] {
   return (specific.length ? specific : tools).slice(0, 3);
 }
 
+// Câu hỏi gợi ý theo vai trò: dùng cho lời giới thiệu và khi chưa đủ dữ liệu để trả lời.
+const ROLE_EXAMPLES: Record<string, string[]> = {
+  CLUB_MANAGER: [
+    'Vật tư nào sắp hết?',
+    'Ca trực tuần này có ai trùng giờ không?',
+    'Có sự cố nào chưa xử lý?',
+  ],
+  HEAD_TRAINER: [
+    'Lịch tập 7 ngày tới thế nào?',
+    'Ngựa nào đang bị khóa y tế?',
+    'Có sự cố nào chưa xử lý?',
+  ],
+  VETERINARIAN: [
+    'Tình hình sức khỏe đàn ngựa?',
+    'Ngựa nào đang bị khóa y tế?',
+    'Lịch định kỳ nào quá hạn?',
+  ],
+  GROOM: ['Ca trực của tôi tuần này?', 'Lịch tập hôm nay?', 'Vật tư nào sắp hết?'],
+  HORSE_OWNER: [
+    'Ngựa của tôi đang thế nào?',
+    'Chi phí nuôi ngựa của tôi?',
+    'Lịch tập của ngựa tôi tuần này?',
+  ],
+};
+
+export function examplesFor(role: string): string[] {
+  return (
+    ROLE_EXAMPLES[role] ?? ['Ngựa nào đang bị khóa y tế?', 'Hướng dẫn dùng màn hình Chuồng trại']
+  );
+}
+
+const quoted = (list: string[]) => list.map((q) => `"${q}"`).join(', ');
+
+/**
+ * Câu xã giao (chào, "bạn là ai", cảm ơn, "bạn làm được gì"): trả lời tự nhiên, không cần tra dữ liệu.
+ * Chỉ khớp tin nhắn ngắn để không nuốt câu hỏi nghiệp vụ dài có chữ "chào"/"cảm ơn".
+ */
+export function smallTalk(message: string, role: string, fullName: string): string | null {
+  const n = normalize(message)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!n || n.split(' ').length > 8) return null;
+  // "Lê Văn Bình (Groom Chăm Sóc)" -> "Bình": bỏ phần chức danh trong ngoặc, gọi bằng tên.
+  const name =
+    fullName
+      .replace(/\(.*?\)/g, '')
+      .trim()
+      .split(/\s+/)
+      .at(-1) || 'bạn';
+  const examples = quoted(examplesFor(role));
+  if (/\b(ban|may|em|tro ly) (la ai|ten (la )?gi|la gi)\b|\bwho are you\b|\bgioi thieu\b/.test(n)) {
+    return `Mình là Trợ lý TMEC, giúp ${name} tra cứu nhanh dữ liệu câu lạc bộ trong phạm vi quyền của bạn: ngựa, lịch tập, ca trực, vật tư, sức khỏe, chi phí, và cách dùng từng màn hình. Mình chỉ đọc và gợi ý, không tự sửa dữ liệu. Bạn thử hỏi: ${examples}.`;
+  }
+  if (
+    /\b(lam|giup) (duoc )?(gi|nhung gi)\b|\bco the (lam|giup) gi\b|\bwhat can you do\b|^(help|giup (toi|minh|em))$/.test(
+      n,
+    )
+  ) {
+    return `Mình trả lời được các câu về dữ liệu bạn được xem và cách dùng TMEC. Ví dụ: ${examples}.`;
+  }
+  if (/\b(cam on|thank|thanks)\b/.test(n)) {
+    return `Không có gì đâu ${name}! Cần gì cứ hỏi mình nhé.`;
+  }
+  if (/^(xin )?chao( ban| tro ly| em)?$|^(hi|hello|hey|alo)( ban)?$/.test(n)) {
+    return `Chào ${name}! Mình là Trợ lý TMEC. Hôm nay bạn cần xem gì? Ví dụ: ${examples}.`;
+  }
+  return null;
+}
+
 /** Đường dẫn màn hình (/abc/xyz) nhắc trong tài liệu -> nút hành động; route có ":id" bị bỏ. */
 export function extractRoutes(content: string): string[] {
   const found = content.match(/(?<![\w/])\/[a-z][a-z0-9\-/:]*/g) ?? [];

@@ -293,17 +293,7 @@ export class AuthService {
     await this.clearFailedAttempts(normalizedEmail, ipAddress);
 
     // Lifecycle status checks
-    const block = BLOCKED[user.status];
-    if (block) {
-      throw apiError(block[0], block[1], 'Account cannot sign in', {
-        fullName: user.fullName,
-        roleLabel: ROLE_LABEL[user.role],
-        lockedAt: user.lockedAt?.toISOString() ?? null,
-        requestedAt: user.requestedAt?.toISOString() ?? null,
-        requestCode: user.requestCode ?? null, // PENDING_APPROVAL: mã để nhắc Club Manager
-        reason: user.statusReason ?? null, // lý do khóa / từ chối / vô hiệu hóa
-      });
-    }
+    this.assertNotBlocked(user);
     if (user.status !== UserStatus.ACTIVE) {
       throw new ForbiddenException('Account is not active.');
     }
@@ -334,21 +324,46 @@ export class AuthService {
     return { ...tokens, user: this.toProfile(updated) };
   }
 
+  /** Trạng thái chặn đăng nhập => lỗi kèm thông tin để FE hiện đúng hướng dẫn. */
+  private assertNotBlocked(user: User): void {
+    const block = BLOCKED[user.status];
+    if (!block) return;
+    throw apiError(block[0], block[1], 'Account cannot sign in', {
+      fullName: user.fullName,
+      roleLabel: ROLE_LABEL[user.role],
+      lockedAt: user.lockedAt?.toISOString() ?? null,
+      requestedAt: user.requestedAt?.toISOString() ?? null,
+      requestCode: user.requestCode ?? null, // PENDING_APPROVAL: mã để nhắc Club Manager
+      reason: user.statusReason ?? null, // lý do khóa / từ chối / vô hiệu hóa
+    });
+  }
+
   async loginWithGoogle(
     credential: string,
     ipAddress?: string,
     userAgent?: string,
   ): Promise<AuthResponseDto> {
     const identity = await this.googleIdentity.verify(credential);
+    // Token Google đã chứng minh người gọi sở hữu email này, nên báo rõ lý do không lộ thông tin cho người lạ.
     if (!EMAIL_RE.test(identity.email)) {
       throw apiError(
-        HttpStatus.UNAUTHORIZED,
-        'GOOGLE_LOGIN_FAILED',
-        'Google sign-in could not be completed',
+        HttpStatus.FORBIDDEN,
+        'GOOGLE_EMAIL_NOT_ALLOWED',
+        'Only @gmail.com Google accounts can sign in',
+        { email: identity.email },
       );
     }
     const user = await this.prisma.user.findUnique({ where: { email: identity.email } });
-    if (!user || user.status !== UserStatus.ACTIVE) {
+    if (!user) {
+      throw apiError(
+        HttpStatus.NOT_FOUND,
+        'GOOGLE_ACCOUNT_NOT_FOUND',
+        'No account uses this Google email',
+        { email: identity.email },
+      );
+    }
+    this.assertNotBlocked(user);
+    if (user.status !== UserStatus.ACTIVE) {
       throw apiError(
         HttpStatus.UNAUTHORIZED,
         'GOOGLE_LOGIN_FAILED',
@@ -365,18 +380,18 @@ export class AuthService {
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw apiError(
-          HttpStatus.UNAUTHORIZED,
-          'GOOGLE_LOGIN_FAILED',
-          'Google sign-in could not be completed',
+          HttpStatus.CONFLICT,
+          'GOOGLE_ACCOUNT_MISMATCH',
+          'This Google account is already linked to another user',
         );
       }
       throw error;
     }
     if (linked.subject !== identity.sub) {
       throw apiError(
-        HttpStatus.UNAUTHORIZED,
-        'GOOGLE_LOGIN_FAILED',
-        'Google sign-in could not be completed',
+        HttpStatus.CONFLICT,
+        'GOOGLE_ACCOUNT_MISMATCH',
+        'This user is linked to a different Google account',
       );
     }
     await this.prisma.user.updateMany({
@@ -628,7 +643,12 @@ export class AuthService {
     const identity = await this.googleIdentity.verify(credential);
     const email = identity.email;
     if (!EMAIL_RE.test(email)) {
-      throw apiError(HttpStatus.BAD_REQUEST, 'VALIDATION', 'Invalid input');
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'GOOGLE_EMAIL_NOT_ALLOWED',
+        'Only @gmail.com Google accounts can sign up',
+        { email },
+      );
     }
     const googleName = str(identity.name ?? '');
     const fullName = googleName && !fullNameError(googleName) ? googleName : 'Google User';

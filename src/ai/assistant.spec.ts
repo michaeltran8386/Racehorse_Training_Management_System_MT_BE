@@ -4,6 +4,7 @@ import {
   numbersGrounded,
   routeIntents,
   routeTools,
+  smallTalk,
   TtlCache,
   validateModelAnswer,
 } from './assistant-core';
@@ -18,6 +19,19 @@ describe('AI assistant core', () => {
     '## Lịch chăm sóc',
     'Lịch tiêm phòng định kỳ theo từng loại vắc-xin.',
   ].join('\n');
+
+  it('answers small talk naturally but leaves business questions to the tools', () => {
+    expect(smallTalk('Bạn là ai?', 'GROOM', 'Lê Văn Bình')).toContain('Trợ lý TMEC');
+    expect(smallTalk('xin chào', 'HORSE_OWNER', 'Minh')).toMatch(/^Chào Minh!/);
+    expect(smallTalk('cảm ơn nhé', 'GROOM', 'Lê Văn Bình (Groom Chăm Sóc)')).toBe(
+      'Không có gì đâu Bình! Cần gì cứ hỏi mình nhé.',
+    );
+    expect(smallTalk('bạn làm được gì?', 'CLUB_MANAGER', 'An')).toContain('Vật tư nào sắp hết?');
+    expect(smallTalk('Ngựa nào đang bị khóa y tế?', 'GROOM', 'Bình')).toBeNull();
+    expect(
+      smallTalk('chào bạn, cho mình hỏi lịch tập của ngựa Thunder tuần này ra sao', 'GROOM', 'B'),
+    ).toBeNull();
+  });
 
   it('chunks by heading and keeps heading path + rule ids', () => {
     const units = chunkMarkdown('Flow3_YTe', doc);
