@@ -38,7 +38,10 @@ describe('planDailyTasks', () => {
 
   it('never gives one groom two tasks at the same minute', () => {
     const seen = new Set<string>();
-    for (const t of tasks) {
+    // Việc ở khu không có ai trực (khu B buổi chiều) chưa giao cho Groom nào – không tính là trùng giờ của một Groom.
+    const assigned = tasks.filter((t) => t.assignedGroomUserId);
+    expect(assigned.length).toBeGreaterThan(0);
+    for (const t of assigned) {
       const key = `${t.assignedGroomUserId}|${t.scheduledTime}`;
       expect(seen.has(key)).toBe(false);
       seen.add(key);
