@@ -34,6 +34,7 @@ describe('Medical services', () => {
     medicalRecord: {
       create: jest.fn(),
       findMany: jest.fn(),
+      findFirst: jest.fn(),
       findUnique: jest.fn(),
       count: jest.fn(),
       update: jest.fn(),
@@ -230,6 +231,119 @@ describe('Medical services', () => {
       expect(result.id).toBe('rec-1');
       expect(mockAuditService.record).toHaveBeenCalled();
     });
+
+    it('stores the proposed horse status on a draft so finalize can apply it later', async () => {
+      mockPrismaService.horse.findUnique.mockResolvedValue({ id: 'horse-1', name: 'Thunder' });
+      mockPrismaService.medicalRecord.findFirst.mockResolvedValue(null);
+      mockPrismaService.medicalRecord.create.mockResolvedValue({ id: 'rec-1' });
+
+      await records.createMedicalRecord(mockVetUser, {
+        horseId: 'horse-1',
+        examinationType: 'Khám bệnh',
+        reason: 'Khập khiễng chân trước',
+        recommendedHorseStatus: 'UNDER_OBSERVATION',
+        isDraft: true,
+      });
+
+      const data = mockPrismaService.medicalRecord.create.mock.calls[0][0].data;
+      expect(data.status).toBe('DRAFT');
+      expect(data.recommendedHorseStatus).toBe('UNDER_OBSERVATION');
+      expect(mockPrismaService.horse.update).not.toHaveBeenCalled();
+    });
+
+    it('numbers records from the highest number of the month, not the total row count', async () => {
+      mockPrismaService.horse.findUnique.mockResolvedValue({ id: 'horse-1', name: 'Thunder' });
+      const now = new Date();
+      const prefix = `BA-${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}-`;
+      mockPrismaService.medicalRecord.findFirst.mockResolvedValue({ recordNumber: `${prefix}005` });
+      mockPrismaService.medicalRecord.create.mockResolvedValue({ id: 'rec-6' });
+
+      await records.createMedicalRecord(mockVetUser, {
+        horseId: 'horse-1',
+        examinationType: 'Khám bệnh',
+        reason: 'Khám định kỳ',
+        isDraft: true,
+      });
+
+      const data = mockPrismaService.medicalRecord.create.mock.calls[0][0].data;
+      expect(data.recordNumber).toBe(`${prefix}006`);
+    });
+  });
+
+  describe('updateMedicalRecord', () => {
+    it('rejects editing a record that is no longer a draft', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({ id: 'rec-1', status: 'OPEN' });
+
+      const error = await records
+        .updateMedicalRecord('rec-1', mockVetUser, { symptoms: 'Sốt cao' })
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'RECORD_NOT_DRAFT' }));
+      expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
+    });
+
+    it('saves vitals, severity and proposed status of a draft', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-1',
+        status: 'DRAFT',
+      });
+      mockPrismaService.medicalRecord.update.mockResolvedValue({ id: 'rec-1' });
+
+      await records.updateMedicalRecord('rec-1', mockVetUser, {
+        severity: 'SEVERE' as any,
+        recommendedHorseStatus: 'INJURED',
+        vitals: { temperature: 39.5, clinicalExamination: 'Sưng khớp gối trái' } as any,
+      });
+
+      const data = mockPrismaService.medicalRecord.update.mock.calls[0][0].data;
+      expect(data).toEqual(
+        expect.objectContaining({
+          severity: 'SEVERE',
+          recommendedHorseStatus: 'INJURED',
+          temperature: 39.5,
+          clinicalExamination: 'Sưng khớp gối trái',
+        }),
+      );
+    });
+  });
+
+  describe('finalizeMedicalRecord', () => {
+    const draft = {
+      id: 'rec-1',
+      recordNumber: 'BA-2611-001',
+      status: 'DRAFT',
+      horseId: 'horse-1',
+      recommendedHorseStatus: 'UNDER_OBSERVATION',
+      horse: { id: 'horse-1', name: 'Thunder', status: 'ACTIVE' },
+    };
+
+    it('applies the proposed status saved on the draft', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue(draft);
+      mockPrismaService.medicalRecord.update.mockResolvedValue({ ...draft, status: 'OPEN' });
+
+      await records.finalizeMedicalRecord('rec-1', mockVetUser, { applyProposedStatus: true });
+
+      expect(mockPrismaService.horse.update).toHaveBeenCalledWith({
+        where: { id: 'horse-1' },
+        data: { status: 'UNDER_OBSERVATION' },
+      });
+    });
+
+    it('keeps the record as a draft when the Training Lock cannot be placed', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue(draft);
+      jest
+        .spyOn(locks, 'createMedicalLock')
+        .mockRejectedValue(new Error('This horse already has an active Training Lock.'));
+
+      const error = await records
+        .finalizeMedicalRecord('rec-1', mockVetUser, { proposeMedicalLock: true })
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({ code: 'FINALIZE_LOCK_FAILED' }),
+      );
+      expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('getMedicalRecordDetail', () => {
@@ -263,6 +377,7 @@ describe('Medical services', () => {
     it('should close medical record with conclusion', async () => {
       const mockRecord = {
         id: 'rec-1',
+        status: 'OPEN',
         treatmentProtocol: 'Phác đồ ban đầu',
       };
       mockPrismaService.medicalRecord.findUnique.mockResolvedValue(mockRecord);
@@ -277,6 +392,20 @@ describe('Medical services', () => {
 
       expect(result.treatmentProtocol).toContain('Đã phục hồi hoàn toàn');
       expect(mockAuditService.record).toHaveBeenCalled();
+    });
+
+    it('rejects concluding a draft that was never finalized', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-1',
+        status: 'DRAFT',
+      });
+
+      const error = await records
+        .closeMedicalRecord('rec-1', mockVetUser, { conclusion: 'Đã phục hồi hoàn toàn' })
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'RECORD_NOT_OPEN' }));
+      expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
     });
   });
 
@@ -606,6 +735,24 @@ describe('Medical services', () => {
   });
 
   describe('2D Injury Model & Recovery Progress', () => {
+    it('does not let the edit form skip recovery stages (ACUTE → HEALED)', async () => {
+      mockPrismaService.injuryLog.findUnique.mockResolvedValue({
+        id: 'inj-1',
+        horseId: 'horse-1',
+        stage: 'ACUTE',
+        status: 'ACTIVE',
+      });
+
+      const error = await injuries
+        .updateInjury('inj-1', mockVetUser, { stage: 'HEALED' } as any)
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({ code: 'INVALID_STAGE_TRANSITION' }),
+      );
+      expect(mockPrismaService.injuryLog.update).not.toHaveBeenCalled();
+    });
+
     it('should create 2D injury point with initial recovery history', async () => {
       mockPrismaService.horse.findUnique.mockResolvedValue({
         id: 'horse-1',

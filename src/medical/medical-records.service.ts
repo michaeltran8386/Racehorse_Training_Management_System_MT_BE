@@ -29,6 +29,27 @@ export class MedicalRecordsService {
     private readonly locks: MedicalLocksService,
   ) {}
 
+  /** Trạng thái đề xuất hợp lệ của ngựa; giá trị lạ hoặc rỗng → null. */
+  private toHorseStatus(value?: string | null): HorseStatus | null {
+    return value && Object.values(HorseStatus).includes(value as HorseStatus)
+      ? (value as HorseStatus)
+      : null;
+  }
+
+  /** Mã BA-YYMM-NNN: số thứ tự đếm lại mỗi tháng, lấy số lớn nhất hiện có + 1 (không trùng sau khi xóa nháp). */
+  private async nextRecordNumber(now: Date): Promise<string> {
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `BA-${yy}${mm}-`;
+    const last = await this.prisma.medicalRecord.findFirst({
+      where: { recordNumber: { startsWith: prefix } },
+      orderBy: { recordNumber: 'desc' },
+      select: { recordNumber: true },
+    });
+    const lastSeq = last?.recordNumber ? parseInt(last.recordNumber.slice(prefix.length), 10) : 0;
+    return `${prefix}${String((Number.isNaN(lastSeq) ? 0 : lastSeq) + 1).padStart(3, '0')}`;
+  }
+
   async createMedicalRecord(actor: CurrentUserPayload, dto: CreateMedicalRecordDto) {
     this.access.assertVet(actor, 'create medical records');
 
@@ -69,14 +90,8 @@ export class MedicalRecordsService {
     }
 
     const isDraft = dto.isDraft ?? false;
-
-    // Generate recordNumber BA-YYMM-NNN
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(-2);
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const count = await this.prisma.medicalRecord.count();
-    const seq = String(count + 1).padStart(3, '0');
-    const recordNumber = `BA-${yy}${mm}-${seq}`;
+    const recommendedHorseStatus = this.toHorseStatus(dto.recommendedHorseStatus);
+    const recordNumber = await this.nextRecordNumber(new Date());
 
     // Build labTests JSON
     let labTestsStr: string | null = null;
@@ -93,6 +108,8 @@ export class MedicalRecordsService {
         examinationType: dto.examinationType || 'Routine Clinical',
         discoverySource: dto.discoverySource || null,
         severity: dto.severity || SeverityLevel.MODERATE,
+        recommendedHorseStatus,
+        examinationReason: dto.reason || null,
         temperature: dto.vitals?.temperature ? Number(dto.vitals.temperature) : null,
         restingHeartRate: dto.vitals?.restingHeartRate ? Number(dto.vitals.restingHeartRate) : null,
         respiratoryRate: dto.vitals?.respiratoryRate ? Number(dto.vitals.respiratoryRate) : null,
@@ -111,20 +128,17 @@ export class MedicalRecordsService {
       },
     });
 
-    if (!isDraft && dto.recommendedHorseStatus) {
-      const validStatus = Object.values(HorseStatus).includes(
-        dto.recommendedHorseStatus as HorseStatus,
-      );
-      if (validStatus && horse.status !== dto.recommendedHorseStatus) {
+    if (!isDraft && recommendedHorseStatus) {
+      if (horse.status !== recommendedHorseStatus) {
         await this.prisma.horse.update({
           where: { id: dto.horseId },
-          data: { status: dto.recommendedHorseStatus as HorseStatus },
+          data: { status: recommendedHorseStatus },
         });
 
         await this.audit.record(
           { id: actor.userId, name: actor.fullName },
           'HORSE_STATUS_CHANGED',
-          `Changed status of horse ${horse.name} from ${horse.status} to ${dto.recommendedHorseStatus}. Reason: Đề xuất từ bệnh án #${recordNumber}`,
+          `Changed status of horse ${horse.name} from ${horse.status} to ${recommendedHorseStatus}. Reason: Đề xuất từ bệnh án #${recordNumber}`,
           horse.id,
         );
       }
@@ -209,6 +223,9 @@ export class MedicalRecordsService {
     const mappedRecords = records.map((record) => {
       const horseName = record.horse?.name ?? null;
       const horseCode = (record.horse as any)?.horseCode ?? null;
+      // FE đọc `diagnosis` / `vetName` (giống health-overview); giữ cả tên cột gốc.
+      const diagnosis = record.clinicalDiagnosis;
+      const vetName = record.veterinarian?.fullName ?? null;
       if (currentUser.role === Role.HORSE_OWNER) {
         return {
           id: record.id,
@@ -219,6 +236,8 @@ export class MedicalRecordsService {
           examinationDate: record.examinationDate,
           symptoms: record.symptoms,
           clinicalDiagnosis: record.clinicalDiagnosis,
+          diagnosis,
+          vetName,
           requiresFollowUp: record.requiresFollowUp,
           followUpDate: record.followUpDate,
           createdAt: record.createdAt,
@@ -228,6 +247,8 @@ export class MedicalRecordsService {
         ...record,
         horseName,
         horseCode,
+        diagnosis,
+        vetName,
       };
     });
 
@@ -342,6 +363,7 @@ export class MedicalRecordsService {
         examinationType: record.examinationType || 'Routine Clinical',
         symptoms: record.symptoms,
         clinicalDiagnosis: record.clinicalDiagnosis,
+        diagnosis: record.clinicalDiagnosis,
         requiresFollowUp: record.requiresFollowUp,
         followUpDate: record.followUpDate,
         conclusion: record.conclusion || undefined,
@@ -360,10 +382,13 @@ export class MedicalRecordsService {
       recordNumber: record.recordNumber || record.id,
       horseName: record.horse?.name,
       vetName: record.veterinarian?.fullName,
+      diagnosis: record.clinicalDiagnosis,
+      examinationReason: record.examinationReason ?? undefined,
       status: record.status,
       examinationType: record.examinationType || 'Routine Clinical',
       discoverySource: record.discoverySource || 'VET Self-Discovered',
       severity: record.severity || 'MODERATE',
+      proposedStatus: record.recommendedHorseStatus ?? undefined,
       conclusion: record.conclusion || undefined,
       treatmentResult: record.treatmentResult || undefined,
       vitals,
@@ -408,12 +433,40 @@ export class MedicalRecordsService {
     if (!record) {
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
     }
+    // Chỉ bản nháp được sửa (FE chỉ hiện nút Sửa với nháp); bệnh án chính thức đổi qua phác đồ / đơn thuốc / tái khám.
+    if (record.status !== 'DRAFT') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'RECORD_NOT_DRAFT',
+        'Only a draft medical record can be edited.',
+      );
+    }
 
     const dataToUpdate: any = {};
     if (dto.symptoms !== undefined) dataToUpdate.symptoms = dto.symptoms;
     if (dto.diagnosis !== undefined) dataToUpdate.clinicalDiagnosis = dto.diagnosis;
-    if (dto.vitals?.clinicalExamination !== undefined) {
-      dataToUpdate.treatmentProtocol = dto.vitals.clinicalExamination;
+    if (dto.reason !== undefined) {
+      dataToUpdate.examinationReason = dto.reason;
+      dataToUpdate.treatmentProtocol = dto.reason;
+    }
+    if (dto.examinationType !== undefined) dataToUpdate.examinationType = dto.examinationType;
+    if (dto.discoverySource !== undefined) dataToUpdate.discoverySource = dto.discoverySource;
+    if (dto.severity !== undefined) dataToUpdate.severity = dto.severity;
+    if (dto.recommendedHorseStatus !== undefined) {
+      dataToUpdate.recommendedHorseStatus = this.toHorseStatus(dto.recommendedHorseStatus);
+    }
+    if (dto.vitals) {
+      const v = dto.vitals;
+      if (v.temperature !== undefined) dataToUpdate.temperature = Number(v.temperature);
+      if (v.restingHeartRate !== undefined)
+        dataToUpdate.restingHeartRate = Number(v.restingHeartRate);
+      if (v.respiratoryRate !== undefined) dataToUpdate.respiratoryRate = Number(v.respiratoryRate);
+      if (v.weightKg !== undefined) dataToUpdate.weightKg = Number(v.weightKg);
+      if (v.clinicalExamination !== undefined)
+        dataToUpdate.clinicalExamination = v.clinicalExamination;
+    }
+    if (dto.labTests !== undefined) {
+      dataToUpdate.labTests = dto.labTests.length > 0 ? JSON.stringify(dto.labTests) : null;
     }
     if (dto.examinationDate) {
       dataToUpdate.examinationDate = new Date(dto.examinationDate);
@@ -496,46 +549,26 @@ export class MedicalRecordsService {
       );
     }
 
-    const recAny = record as any;
-
-    // 1. Chốt bệnh án: chuyển sang OPEN
-    const updated = await this.prisma.medicalRecord.update({
-      where: { id: recordId },
-      data: { status: 'OPEN' },
-    });
-
-    // 2. Nếu FE yêu cầu áp dụng trạng thái đề xuất lên ngựa
-    if (dto.applyProposedStatus && recAny.recommendedHorseStatus) {
-      const targetStatus = recAny.recommendedHorseStatus as any;
-      if (record.horse?.status !== targetStatus) {
-        if (record.horse?.status === HorseStatus.RETIRED) {
-          throw apiError(
-            HttpStatus.BAD_REQUEST,
-            'HORSE_RETIRED',
-            'The horse is no longer managed by the club; its status cannot change.',
-          );
-        }
-        await this.prisma.horse.update({
-          where: { id: record.horseId },
-          data: { status: targetStatus },
-        });
-
-        await this.audit.record(
-          { id: actor.userId, name: actor.fullName },
-          'HORSE_STATUS_CHANGED',
-          `Changed status of horse ${record.horse?.name} from ${record.horse?.status} to ${targetStatus}. Reason: Áp dụng đề xuất khi chốt bệnh án #${record.recordNumber || record.id}`,
-          record.horseId,
-        );
-      }
+    const targetStatus = record.recommendedHorseStatus;
+    const applyStatus =
+      !!dto.applyProposedStatus && !!targetStatus && record.horse?.status !== targetStatus;
+    if (applyStatus && record.horse?.status === HorseStatus.RETIRED) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'HORSE_RETIRED',
+        'The horse is no longer managed by the club; its status cannot change.',
+      );
     }
 
-    // 3. Nếu FE yêu cầu tạo Medical Lock kèm theo
+    // 1. Đặt Khóa huấn luyện (nếu có) TRƯỚC khi chốt: khóa lỗi thì bệnh án vẫn là nháp.
     if (dto.proposeMedicalLock) {
       try {
         await this.locks.createMedicalLock(actor, {
           horseId: record.horseId,
-          appliedMedicalStatus: (recAny.recommendedHorseStatus as string) || 'INJURED',
+          medicalRecordId: record.id,
+          appliedMedicalStatus: targetStatus || HorseStatus.INJURED,
           lockReason: dto.lockReason || `Khóa do chốt bệnh án #${record.recordNumber || record.id}`,
+          unlockConditions: dto.lockUnlockConditions,
           expectedRestDays: dto.lockExpectedRestDays || 7,
         } as any);
       } catch (err: any) {
@@ -545,6 +578,27 @@ export class MedicalRecordsService {
           `The record was not made official: the Training Lock could not be placed (${err?.message || 'unknown error'}).`,
         );
       }
+    }
+
+    // 2. Chốt bệnh án: chuyển sang OPEN
+    const updated = await this.prisma.medicalRecord.update({
+      where: { id: recordId },
+      data: { status: 'OPEN' },
+    });
+
+    // 3. Áp dụng trạng thái đề xuất lên ngựa (khóa ở bước 1 đã đặt trạng thái này rồi thì bỏ qua)
+    if (applyStatus && !dto.proposeMedicalLock && targetStatus) {
+      await this.prisma.horse.update({
+        where: { id: record.horseId },
+        data: { status: targetStatus },
+      });
+
+      await this.audit.record(
+        { id: actor.userId, name: actor.fullName },
+        'HORSE_STATUS_CHANGED',
+        `Changed status of horse ${record.horse?.name} from ${record.horse?.status} to ${targetStatus}. Reason: Áp dụng đề xuất khi chốt bệnh án #${record.recordNumber || record.id}`,
+        record.horseId,
+      );
     }
 
     await this.audit.record(
@@ -571,6 +625,14 @@ export class MedicalRecordsService {
         HttpStatus.BAD_REQUEST,
         'RECORD_ALREADY_CLOSED',
         'This medical record is already closed.',
+      );
+    }
+    // Nháp phải chốt (OPEN) trước rồi mới kết thúc điều trị.
+    if (record.status === 'DRAFT') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'RECORD_NOT_OPEN',
+        'Finalize the draft before concluding treatment.',
       );
     }
 

@@ -10,6 +10,26 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MedicalAccessService } from './medical-access.service';
 
+const STAGE_ORDER: Record<string, number> = {
+  ACUTE: 0,
+  SUBACUTE: 1,
+  RECOVERING: 2,
+  HEALED: 3,
+};
+
+/** Hồi phục đi tuần tự ACUTE → SUBACUTE → RECOVERING → HEALED, không nhảy cóc (dùng chung cho Sửa và Cập nhật hồi phục). */
+function assertNoStageSkip(current: string | null | undefined, next: string): void {
+  const currentLevel = STAGE_ORDER[current ?? 'ACUTE'] ?? 0;
+  const nextLevel = STAGE_ORDER[next];
+  if (nextLevel !== undefined && nextLevel > currentLevel + 1) {
+    throw apiError(
+      HttpStatus.BAD_REQUEST,
+      'INVALID_STAGE_TRANSITION',
+      `Recovery cannot skip stages (${current} → ${next}).`,
+    );
+  }
+}
+
 /** P2-03: điểm chấn thương trên mô hình 2D và tiến trình hồi phục (FR-3.08, FR-3.09). */
 @Injectable()
 export class InjuriesService {
@@ -266,6 +286,7 @@ export class InjuriesService {
     if (dto.injuryType) dataToUpdate.injuryType = dto.injuryType;
     if (dto.severity) dataToUpdate.severity = dto.severity;
     if (dto.stage) {
+      assertNoStageSkip(injury.stage, dto.stage);
       dataToUpdate.stage = dto.stage;
       if (dto.stage === 'HEALED') {
         dataToUpdate.status = InjuryStatus.RESOLVED;
@@ -427,25 +448,7 @@ export class InjuriesService {
         }
       }
 
-      const STAGE_ORDER: Record<string, number> = {
-        ACUTE: 0,
-        SUBACUTE: 1,
-        RECOVERING: 2,
-        HEALED: 3,
-      };
-
-      const currentStageLevel = STAGE_ORDER[injury.stage ?? 'ACUTE'] ?? 0;
-      const newStageLevel = STAGE_ORDER[dto.stage];
-
-      if (newStageLevel !== undefined) {
-        if (newStageLevel > currentStageLevel + 1) {
-          throw apiError(
-            HttpStatus.BAD_REQUEST,
-            'INVALID_STAGE_TRANSITION',
-            `Recovery cannot skip stages (${injury.stage} → ${dto.stage}).`,
-          );
-        }
-      }
+      assertNoStageSkip(injury.stage, dto.stage);
 
       const newEntry = {
         id: `hist-${Date.now()}`,

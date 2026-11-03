@@ -133,16 +133,28 @@ describe('Authentication & Session Flow (e2e)', () => {
           }
           return Promise.resolve(null);
         }),
+      // Khớp điều kiện mà service dùng: theo id (xoay vòng có điều kiện), tokenHash hoặc userId (thu hồi mọi phiên).
       updateMany: jest
         .fn()
-        .mockImplementation(({ where, data }: { where: { tokenHash: string }; data: any }) => {
-          const found = storedRefreshTokens[where.tokenHash];
-          if (found) {
-            Object.assign(found, data);
-            return Promise.resolve({ count: 1 });
-          }
-          return Promise.resolve({ count: 0 });
-        }),
+        .mockImplementation(
+          ({
+            where,
+            data,
+          }: {
+            where: { id?: string; tokenHash?: string; userId?: string; revoked?: boolean };
+            data: any;
+          }) => {
+            const matches = Object.values(storedRefreshTokens).filter(
+              (t) =>
+                (where.id === undefined || t.id === where.id) &&
+                (where.tokenHash === undefined || t.tokenHash === where.tokenHash) &&
+                (where.userId === undefined || t.userId === where.userId) &&
+                (where.revoked === undefined || t.revoked === where.revoked),
+            );
+            matches.forEach((t) => Object.assign(t, data));
+            return Promise.resolve({ count: matches.length });
+          },
+        ),
     },
     auditLog: {
       create: jest.fn().mockResolvedValue({ id: 'audit-log-1' }),

@@ -665,6 +665,10 @@ model MedicalRecord {
   discoverySource     String?
   // Mức độ nghiêm trọng của bệnh
   severity            SeverityLevel?      @default(MODERATE)
+  // Trạng thái đề xuất cho ngựa, lưu từ lúc tạo nháp để áp dụng khi chốt bệnh án
+  recommendedHorseStatus HorseStatus?
+  // Lý do khám do bác sĩ nhập (trước đây chỉ trộn vào treatmentProtocol nên không đọc lại được)
+  examinationReason   String?
   // Chỉ số sinh tồn (Vitals) khi thăm khám
   temperature         Float?
   restingHeartRate    Int?

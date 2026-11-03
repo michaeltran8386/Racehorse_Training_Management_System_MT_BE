@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { OtpService } from './otp.service';
 import { AuditService } from '../audit/audit.service';
 import { CounterService } from '../audit/counter.service';
+import { GoogleIdentityService } from './google-identity.service';
 import { notificationsMock } from '../notifications/notifications.testing';
 
 describe('AuthService', () => {
@@ -96,6 +97,7 @@ describe('AuthService', () => {
         { provide: OtpService, useValue: mockOtpService },
         { provide: AuditService, useValue: mockAuditService },
         { provide: CounterService, useValue: mockCounterService },
+        { provide: GoogleIdentityService, useValue: { verify: jest.fn() } },
         notificationsMock(),
       ],
     }).compile();
@@ -214,10 +216,7 @@ describe('AuthService', () => {
 
     it('should successfully rotate tokens', async () => {
       mockPrismaService.refreshToken.findUnique.mockResolvedValue(validStoredToken);
-      mockPrismaService.refreshToken.update.mockResolvedValue({
-        ...validStoredToken,
-        revoked: true,
-      });
+      mockPrismaService.refreshToken.updateMany.mockResolvedValue({ count: 1 });
       mockPrismaService.refreshToken.create.mockResolvedValue({ id: 'new-token-1' });
 
       const result = await service.refreshToken({ refreshToken: 'raw-refresh-token' });
@@ -225,9 +224,10 @@ describe('AuthService', () => {
       expect(result.accessToken).toBe('mock-access-token-jwt');
       expect(result.refreshToken).toBeDefined();
       expect(result.expiresIn).toBe(900);
-      expect(mockPrismaService.refreshToken.update).toHaveBeenCalledWith(
+      // Xoay vòng có điều kiện (chưa thu hồi, chưa hết hạn) để 2 request cùng lúc không cùng đổi được token.
+      expect(mockPrismaService.refreshToken.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'token-uuid-1' },
+          where: expect.objectContaining({ id: 'token-uuid-1', revoked: false }),
           data: { revoked: true, rotatedAt: expect.any(Date) },
         }),
       );
