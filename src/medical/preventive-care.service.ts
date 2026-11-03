@@ -570,7 +570,9 @@ export class PreventiveCareService {
               performedByMode: dto.performedByMode || 'SELF',
               performedByName,
               notes: dto.notes || null,
-              status: PreventiveStatus.COMPLETED,
+              // Lần vừa làm đã nằm trong historyLogs + lastCompletedDate; lịch giờ là KỲ SAU (dueDate mới)
+              // nên phải chờ làm (PENDING) – nếu để COMPLETED thì kỳ sau không bao giờ quá hạn / được nhắc.
+              status: PreventiveStatus.PENDING,
               historyLogs: history,
               typeCatalogId: schedule.typeCatalogId || catalog.id,
             },
@@ -590,7 +592,7 @@ export class PreventiveCareService {
               performedByMode: dto.performedByMode || 'SELF',
               performedByName,
               notes: dto.notes || null,
-              status: PreventiveStatus.COMPLETED,
+              status: PreventiveStatus.PENDING,
               historyLogs: history,
             },
           });

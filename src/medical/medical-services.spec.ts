@@ -939,6 +939,35 @@ describe('Medical services', () => {
       expect(mockPrismaService.preventiveSchedule.update).toHaveBeenCalled();
     });
 
+    it('keeps the schedule pending for the next cycle so it can become due and overdue again', async () => {
+      mockPrismaService.preventiveSchedule.findUnique.mockResolvedValue({
+        id: 'sched-1',
+        horseId: 'horse-1',
+        typeCatalogId: 'cat-1',
+        historyLogs: [],
+      });
+      mockPrismaService.preventiveTypeCatalog.findUnique.mockResolvedValue({
+        id: 'cat-1',
+        name: 'Tiêm cúm',
+        category: 'VACCINATION',
+        intervalDays: 180,
+      });
+      mockPrismaService.horse.findUnique.mockResolvedValue({ id: 'horse-1' });
+      const performed = new Date();
+
+      await preventive.recordPreventiveCare(mockVetUser, {
+        scheduleId: 'sched-1',
+        horseIds: ['horse-1'],
+        performedDate: performed.toISOString(),
+        productAdministered: 'Equine Influenza Vaccine',
+      } as any);
+
+      const data = mockPrismaService.preventiveSchedule.update.mock.calls[0][0].data;
+      expect(data.status).toBe('PENDING');
+      expect(data.lastCompletedDate).toEqual(performed);
+      expect(data.dueDate.getTime()).toBeGreaterThan(performed.getTime());
+    });
+
     it('should setup custom preventive schedule for a horse', async () => {
       mockPrismaService.horse.findUnique.mockResolvedValue({ id: 'horse-1', name: 'Thunder' });
       mockPrismaService.preventiveTypeCatalog.findUnique.mockResolvedValue({
