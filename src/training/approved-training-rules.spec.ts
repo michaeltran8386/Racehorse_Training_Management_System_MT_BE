@@ -12,7 +12,9 @@ const prismaWith = (tx: object) =>
 describe('approved training rules', () => {
   it('blocks completion while sessions still need results', async () => {
     const update = jest.fn();
-    const findMany = jest.fn().mockResolvedValue([{ scheduledDate: new Date('2026-11-03T04:00Z') }]);
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([{ scheduledDate: new Date('2026-11-03T04:00Z') }]);
     const service = new TrainingPlansService(
       prismaWith({
         $queryRaw: jest.fn(),

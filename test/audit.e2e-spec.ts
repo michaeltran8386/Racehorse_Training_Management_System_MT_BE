@@ -117,9 +117,11 @@ describe('P1-06 audit HTTP contract (mock database, real JWT/guards)', () => {
       .get('/api/audit-logs/export?action=PERMISSIONS_CHANGED')
       .auth(token(), { type: 'bearer' })
       .expect(200);
-    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { action: 'PERMISSIONS_CHANGED' },
-    }));
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { action: 'PERMISSIONS_CHANGED' },
+      }),
+    );
     expect(response.body.data.csv).toContain('"Audit Manager","PERMISSIONS_CHANGED"');
   });
   it('honors revocation for an already issued manager token', async () => {

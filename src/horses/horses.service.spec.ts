@@ -864,14 +864,16 @@ describe('HorsesService', () => {
           },
         ],
         injuryLogs: [],
-        incidents: [{
-          id: 'incident-1',
-          incidentNumber: 'INC-20260201-0001',
-          description: 'Simulator fracture',
-          severity: 'CRITICAL',
-          status: 'REPORTED',
-          createdAt: new Date('2026-02-01'),
-        }],
+        incidents: [
+          {
+            id: 'incident-1',
+            incidentNumber: 'INC-20260201-0001',
+            description: 'Simulator fracture',
+            severity: 'CRITICAL',
+            status: 'REPORTED',
+            createdAt: new Date('2026-02-01'),
+          },
+        ],
         medicalLocks: [
           {
             id: 'ml-1',
