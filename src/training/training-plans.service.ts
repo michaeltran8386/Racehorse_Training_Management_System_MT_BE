@@ -385,6 +385,33 @@ export class TrainingPlansService {
               'Nhận xét phải từ 10 đến 2000 ký tự.',
             );
           }
+          const unfinished = await tx.workoutSession.findMany({
+            where: {
+              trainingPlanId: id,
+              OR: [
+                { status: { notIn: [WorkoutStatus.COMPLETED, WorkoutStatus.CANCELLED] } },
+                { status: WorkoutStatus.COMPLETED, resultRecordedAt: null },
+              ],
+            },
+            select: { scheduledDate: true },
+            orderBy: { scheduledDate: 'asc' },
+          });
+          if (unfinished.length > 0) {
+            const formatter = new Intl.DateTimeFormat('vi-VN', {
+              dateStyle: 'short',
+              timeStyle: 'short',
+              timeZone: 'Asia/Ho_Chi_Minh',
+            });
+            const dates = unfinished
+              .slice(0, 5)
+              .map(({ scheduledDate }) => formatter.format(scheduledDate))
+              .join(', ');
+            throw apiError(
+              HttpStatus.CONFLICT,
+              'PLAN_WORKOUT_RESULTS_REQUIRED',
+              `Còn ${unfinished.length} buổi tập chưa ghi kết quả: ${dates}.`,
+            );
+          }
           data.completionSummary = dto.summary.trim();
         } else {
           if (!dto.reason) {

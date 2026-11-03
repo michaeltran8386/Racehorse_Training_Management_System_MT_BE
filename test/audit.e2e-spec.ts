@@ -104,6 +104,24 @@ describe('P1-06 audit HTTP contract (mock database, real JWT/guards)', () => {
       .auth(token(), { type: 'bearer' })
       .expect(200);
   });
+  it('applies the audit permission to CSV exports before reading rows', async () => {
+    user.role = Role.HORSE_OWNER;
+    await request(app.getHttpServer())
+      .get('/api/audit-logs/export')
+      .auth(token(), { type: 'bearer' })
+      .expect(403);
+    expect(prisma.auditLog.findMany).not.toHaveBeenCalled();
+  });
+  it('exports filtered entries to authorized managers', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/audit-logs/export?action=PERMISSIONS_CHANGED')
+      .auth(token(), { type: 'bearer' })
+      .expect(200);
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { action: 'PERMISSIONS_CHANGED' },
+    }));
+    expect(response.body.data.csv).toContain('"Audit Manager","PERMISSIONS_CHANGED"');
+  });
   it('honors revocation for an already issued manager token', async () => {
     const jwt = token();
     user.permissions = { viewAudit: false };

@@ -59,6 +59,32 @@ describe('AuditService query', () => {
     expect(await service.list({})).toEqual({ logs: [], total: 0, page: 1, pageSize: 20 });
   });
 
+  it('exports matching rows with a BOM and neutralizes spreadsheet formulas', async () => {
+    prisma.auditLog.findMany.mockResolvedValueOnce([
+      {
+        timestamp: new Date('2026-09-01T00:00:00Z'),
+        userId: 'manager',
+        user: { fullName: ' =SUM(1,2)' },
+        action: 'UPDATE_STALL',
+        entityName: 'Stall',
+        entityId: 's-1',
+        oldValuesJson: null,
+        newValuesJson: '{"detail":"Ô trống"}',
+      },
+    ]);
+    const result = await service.exportCsv({ action: 'UPDATE_STALL', page: 2, pageSize: 10 });
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { action: 'UPDATE_STALL' },
+      }),
+    );
+    expect(prisma.auditLog.findMany.mock.calls[0][0]).not.toHaveProperty('skip');
+    expect(result.csv).toBe(
+      '\uFEFFTimestamp,Actor,Action,Entity,Entity ID,Before,After\r\n' +
+        '"2026-09-01T00:00:00.000Z","\' =SUM(1,2)","UPDATE_STALL","Stall","s-1","","{""detail"":""Ô trống""}"',
+    );
+  });
+
   it('filters the current actor name and uses a consistent count snapshot', async () => {
     await service.list({ actor: 'manager' });
     expect(prisma.auditLog.findMany).toHaveBeenCalledWith(

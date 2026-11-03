@@ -36,6 +36,15 @@ export class MeService {
         field: 'fullName',
       });
     }
+    const phone = str(dto.phone);
+    if (phone && !/^0[35789]\d{8}$/.test(phone)) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION',
+        'Phone number must be a valid 10-digit Vietnamese mobile number.',
+        { field: 'phone' },
+      );
+    }
     if (fullName !== user.fullName) {
       await this.audit.record(
         { id: user.id, name: user.fullName },
@@ -45,7 +54,7 @@ export class MeService {
     }
     return this.prisma.user.update({
       where: { id: user.id },
-      data: { fullName, phoneNumber: str(dto.phone) || null },
+      data: { fullName, phoneNumber: phone || null },
     });
   }
 

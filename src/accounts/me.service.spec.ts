@@ -112,6 +112,19 @@ describe('MeService.changePassword', () => {
       expect(updated.fullName).toBe('New Trainer Name');
     });
 
+    it.each(['+84983989059', '0983 989 059', '0283989059', '983989059'])(
+      'rejects a phone outside the approved domestic format (%s)',
+      async (phone) => {
+        await expect(
+          service.updateProfile('user-1', { fullName: 'Trainer', phone }),
+        ).rejects.toMatchObject({
+          status: HttpStatus.BAD_REQUEST,
+          response: expect.objectContaining({ code: 'VALIDATION', data: { field: 'phone' } }),
+        });
+        expect(prisma.user.update).not.toHaveBeenCalled();
+      },
+    );
+
     it('should reject invalid full name with 400 VALIDATION', async () => {
       await expect(
         service.updateProfile('user-1', {

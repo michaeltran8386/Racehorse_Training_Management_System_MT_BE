@@ -25,7 +25,7 @@ export class UpdateAccountDto {
   @IsString()
   fullName: string;
 
-  @ApiPropertyOptional({ example: '0912 445 118' })
+  @ApiPropertyOptional({ example: '0912445118' })
   @IsOptional()
   @IsString()
   phone?: string;
@@ -49,7 +49,7 @@ export class UpdateProfileDto {
   @IsString()
   fullName: string;
 
-  @ApiPropertyOptional({ example: '0989 100 200' })
+  @ApiPropertyOptional({ example: '0989100200' })
   @IsOptional()
   @IsString()
   phone?: string;

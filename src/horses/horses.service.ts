@@ -212,7 +212,7 @@ export class HorsesService {
           dob,
           gender: dto.gender,
           color,
-          weightKg: dto.weightKg != null ? Number(dto.weightKg) : null,
+          weightKg: dto.weightKg,
           microchip,
           microchipRfid,
           status: HorseStatus.RESTING,

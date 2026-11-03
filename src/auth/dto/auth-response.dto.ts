@@ -11,7 +11,7 @@ export class UserProfileDto {
   @ApiProperty({ example: 'Michael Tran (Club Manager)' })
   fullName: string;
 
-  @ApiPropertyOptional({ example: '+84901234567' })
+  @ApiPropertyOptional({ example: '0901234567' })
   phoneNumber?: string | null;
 
   @ApiProperty({ enum: Role, example: Role.CLUB_MANAGER })

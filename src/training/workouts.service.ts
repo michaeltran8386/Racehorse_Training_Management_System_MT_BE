@@ -817,6 +817,21 @@ export class WorkoutsService {
       }
       await tx.$queryRaw`SELECT "id" FROM "Horse" WHERE "id" = ${existing.horseId} FOR UPDATE`;
 
+      const horse = await tx.horse.findUnique({
+        where: { id: existing.horseId },
+        select: {
+          isMedicalLocked: true,
+          medicalLocks: { where: { isLocked: true }, take: 1, select: { id: true } },
+        },
+      });
+      if (horse && (horse.isMedicalLocked || horse.medicalLocks.length > 0)) {
+        throw apiError(
+          HttpStatus.CONFLICT,
+          'MEDICAL_LOCK_ACTIVE',
+          'Ngựa đang bị khóa y tế nên chưa thể khôi phục buổi tập.',
+        );
+      }
+
       const workoutType = existing.workoutType ?? 'CANTER';
       const draft: WorkoutDraft = {
         scheduledDate: dto.scheduledDate ? new Date(dto.scheduledDate) : existing.scheduledDate,

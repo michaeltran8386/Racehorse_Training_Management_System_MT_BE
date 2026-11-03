@@ -78,13 +78,19 @@ export class HealthOverviewService {
       : null;
 
     const vitalsHistory = records
-      .filter((r) => r.temperature != null || r.restingHeartRate != null)
+      .filter(
+        (r) =>
+          r.temperature != null ||
+          r.restingHeartRate != null ||
+          r.respiratoryRate != null ||
+          r.weightKg != null,
+      )
       .map((r) => ({
         recordedAt: r.examinationDate.toISOString(),
-        temperature: r.temperature ?? 38.0,
-        restingHeartRate: r.restingHeartRate ?? 38,
-        respiratoryRate: r.respiratoryRate ?? 14,
-        weightKg: r.weightKg ?? 500,
+        temperature: r.temperature ?? undefined,
+        restingHeartRate: r.restingHeartRate ?? undefined,
+        respiratoryRate: r.respiratoryRate ?? undefined,
+        weightKg: r.weightKg ?? undefined,
         clinicalNotes: r.clinicalExamination || r.symptoms || '',
       }));
     const latestVitals = vitalsHistory[0] || null;

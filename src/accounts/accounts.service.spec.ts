@@ -237,7 +237,7 @@ describe('AccountsService', () => {
 
   it('records both sides of a profile edit using the transaction client', async () => {
     withTarget({ ...manager, id: 'nam', phoneNumber: null });
-    await service.update(actor, 'nam', { fullName: 'New name', phone: '123' });
+    await service.update(actor, 'nam', { fullName: 'New name', phone: '0983989059' });
     expect(mockAudit.record).toHaveBeenCalledWith(
       actor,
       'ACCOUNT_EDITED',
@@ -245,7 +245,7 @@ describe('AccountsService', () => {
       'nam',
       {
         oldValues: { fullName: manager.fullName, phoneNumber: null },
-        newValues: { fullName: 'New name', phoneNumber: '123' },
+        newValues: { fullName: 'New name', phoneNumber: '0983989059' },
       },
       mockPrisma,
     );
