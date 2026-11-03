@@ -50,6 +50,7 @@ export const WORKOUT_INCLUDE = {
       isMedicalLocked: true,
       status: true,
       ownerId: true,
+      medicalLocks: { where: { isLocked: true }, take: 1, select: { id: true } },
       // Ô chuồng đang ở: hiện trên "Lịch tập của tôi" của Groom (SC-2.08)
       stallAllocations: {
         where: { isActive: true },

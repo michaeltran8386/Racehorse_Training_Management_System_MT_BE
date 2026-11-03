@@ -20,6 +20,13 @@ export class AuditController {
     return this.auditService.list(query);
   }
 
+  @Get('audit-logs/export')
+  @RequirePermission('viewAudit')
+  @ApiOperation({ summary: 'Xuất nhật ký kiểm toán theo bộ lọc' })
+  exportCsv(@Query() query: ListAuditDto) {
+    return this.auditService.exportCsv(query);
+  }
+
   @Post('audit/forbidden')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Ghi lại lần bị chặn quyền (403) và trả mã tham chiếu' })

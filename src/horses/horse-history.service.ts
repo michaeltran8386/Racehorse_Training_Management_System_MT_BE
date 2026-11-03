@@ -8,6 +8,22 @@ import { HorsesService } from './horses.service';
 
 /** Thời gian (ms) cho phép bấm Hoàn tác sau khi xóa. FE hiện nút 10 giây; BE nới 60 giây cho mạng chậm. */
 
+// AuditService ghi newValuesJson dạng { actor, detail, values }; bản ghi cũ có thể để phẳng. Đọc được cả hai.
+function auditValues(json: string | null): Record<string, any> {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json);
+    return parsed &&
+      typeof parsed === 'object' &&
+      parsed.values &&
+      typeof parsed.values === 'object'
+      ? parsed.values
+      : (parsed ?? {});
+  } catch {
+    return {};
+  }
+}
+
 /** P1-13: lịch sử trạng thái, lịch sử ô chuồng, chủ sở hữu và dòng thời gian của ngựa (FR-1.17 → FR-1.19). */
 @Injectable()
 export class HorseHistoryService {
@@ -39,6 +55,18 @@ export class HorseHistoryService {
         },
         injuryLogs: {
           orderBy: { discoveryDate: 'desc' },
+        },
+        incidents: user.role !== UserRole.HORSE_OWNER && {
+          where: { sourceEventId: { not: null } },
+          select: {
+            id: true,
+            incidentNumber: true,
+            description: true,
+            severity: true,
+            status: true,
+            createdAt: true,
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         },
         medicalLocks: {
           include: {
@@ -107,12 +135,8 @@ export class HorseHistoryService {
     const statusHistory = auditLogs
       .filter((l) => l.action === 'HORSE_STATUS_CHANGED')
       .map((l) => {
-        let details: any = {};
-        try {
-          details = l.newValuesJson ? JSON.parse(l.newValuesJson) : {};
-        } catch {
-          details = {};
-        }
+        const details = auditValues(l.newValuesJson);
+        const before = auditValues(l.oldValuesJson);
         return {
           id: l.id,
           timestamp: l.timestamp,
@@ -121,7 +145,7 @@ export class HorseHistoryService {
           action: l.action,
           source: (details.source as string) || (l.user ? 'MANUAL' : 'SYSTEM'),
           notes: details.reason || null,
-          oldStatus: details.oldStatus || null,
+          oldStatus: details.oldStatus || before.oldStatus || null,
           newStatus: details.newStatus || null,
         };
       });
@@ -130,14 +154,8 @@ export class HorseHistoryService {
     const ownershipHistory = auditLogs
       .filter((l) => l.action === 'HORSE_OWNERSHIP_TRANSFERRED')
       .map((l) => {
-        let oldVal: any = {};
-        let newVal: any = {};
-        try {
-          oldVal = l.oldValuesJson ? JSON.parse(l.oldValuesJson) : {};
-          newVal = l.newValuesJson ? JSON.parse(l.newValuesJson) : {};
-        } catch {
-          // ignore
-        }
+        const oldVal = auditValues(l.oldValuesJson);
+        const newVal = auditValues(l.newValuesJson);
         return {
           id: l.id,
           timestamp: l.timestamp,
@@ -406,8 +424,10 @@ export class HorseHistoryService {
     // Sort timeline newest first
     timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
+    const { incidents = [], ...horseWithoutIncidents } = horse;
     return {
-      horse: this.horses.applyRolePolicy(horse, user),
+      horse: this.horses.applyRolePolicy(horseWithoutIncidents, user),
+      simulatorIncidents: incidents,
       statusHistory,
       ownershipHistory,
       stallHistory,

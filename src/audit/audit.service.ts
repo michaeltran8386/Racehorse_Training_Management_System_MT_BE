@@ -28,12 +28,12 @@ export class AuditService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  async list(query: ListAuditDto) {
-    const { page = 1, pageSize = 20, userId, actor, action, entityName, from, to } = query;
+  private filters(query: ListAuditDto): Prisma.AuditLogWhereInput {
+    const { userId, actor, action, entityName, from, to } = query;
     if (from && to && new Date(from) > new Date(to)) {
       throw apiError(HttpStatus.BAD_REQUEST, 'VALIDATION', 'From must not be later than to');
     }
-    const where: Prisma.AuditLogWhereInput = {
+    return {
       ...(userId && { userId }),
       ...(action && { action }),
       ...(entityName && { entityName }),
@@ -45,6 +45,11 @@ export class AuditService {
         },
       }),
     };
+  }
+
+  async list(query: ListAuditDto) {
+    const { page = 1, pageSize = 20 } = query;
+    const where = this.filters(query);
     const [logs, total] = await this.prisma.$transaction(
       [
         this.prisma.auditLog.findMany({
@@ -59,6 +64,48 @@ export class AuditService {
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
     return { logs, total, page, pageSize };
+  }
+
+  async exportCsv(query: ListAuditDto) {
+    // shortcut: bounded export; use a background export if users need larger date ranges.
+    const limit = 25_000;
+    const logs = await this.prisma.auditLog.findMany({
+      where: this.filters(query),
+      take: limit + 1,
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      select: {
+        timestamp: true,
+        userId: true,
+        action: true,
+        entityName: true,
+        entityId: true,
+        oldValuesJson: true,
+        newValuesJson: true,
+        user: { select: { fullName: true } },
+      },
+    });
+    if (logs.length > limit) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION',
+        'Narrow the filters to export up to 25,000 audit entries.',
+      );
+    }
+    const header = 'Timestamp,Actor,Action,Entity,Entity ID,Before,After';
+    const rows = logs.map((log) =>
+      [
+        log.timestamp.toISOString(),
+        log.user?.fullName ?? log.userId,
+        log.action,
+        log.entityName,
+        log.entityId,
+        log.oldValuesJson,
+        log.newValuesJson,
+      ]
+        .map(csvCell)
+        .join(','),
+    );
+    return { csv: '\uFEFF' + [header, ...rows].join('\r\n') };
   }
 
   /** Critical writes pass their transaction so an audit failure rolls back the business write. */
@@ -182,6 +229,12 @@ export class AuditService {
     );
     return { request: toPublicRequest(updated) };
   }
+}
+
+function csvCell(value: string | null) {
+  const text = value ?? '';
+  const safe = /^(?:\s*[=+\-@＝＋－＠]|[\t\r\n])/.test(text) ? "'" + text : text;
+  return '"' + safe.replace(/"/g, '""') + '"';
 }
 
 // FE đọc trường `account` (khớp PermissionRequest ở FE src/features/accounts/types.ts).

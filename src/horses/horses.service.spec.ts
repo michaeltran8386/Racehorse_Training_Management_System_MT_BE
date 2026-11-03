@@ -153,6 +153,7 @@ describe('HorsesService', () => {
           name: 'Thunderbolt',
           breed: 'Thoroughbred',
           dob: '2021-01-01',
+          weightKg: 490,
           gender: 'Colt',
           color: 'Bay',
           microchip: '123456789012345',
@@ -172,6 +173,7 @@ describe('HorsesService', () => {
             name: 'Old Horse',
             breed: 'Thoroughbred',
             dob: '2010-01-01',
+            weightKg: 490,
             gender: 'Stallion',
             color: 'Bay',
           },
@@ -189,6 +191,7 @@ describe('HorsesService', () => {
             name: 'Future Horse',
             breed: 'Thoroughbred',
             dob: '2099-01-01',
+            weightKg: 490,
             gender: 'Stallion',
             color: 'Bay',
           },
@@ -213,6 +216,7 @@ describe('HorsesService', () => {
           name: 'Auto Generated Codes',
           breed: 'Thoroughbred',
           dob: '2023-01-01',
+          weightKg: 490,
           gender: 'Stallion',
           color: 'Bay',
         },
@@ -237,6 +241,7 @@ describe('HorsesService', () => {
           name: 'Gió Bấc',
           breed: 'Thoroughbred',
           dob: '2021-01-01',
+          weightKg: 490,
           gender: 'Colt',
           color: 'Bay',
           microchip: '123456789012346',
@@ -270,6 +275,7 @@ describe('HorsesService', () => {
             name: 'Gió Bấc',
             breed: 'Thoroughbred',
             dob: '2021-01-01',
+            weightKg: 490,
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012346',
@@ -293,6 +299,7 @@ describe('HorsesService', () => {
             name: 'Thunderbolt',
             breed: 'Thoroughbred',
             dob: '2021-01-01',
+            weightKg: 490,
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012345',
@@ -316,6 +323,7 @@ describe('HorsesService', () => {
             name: 'New Horse',
             breed: 'Thoroughbred',
             dob: '2021-01-01',
+            weightKg: 490,
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012345',
@@ -856,6 +864,16 @@ describe('HorsesService', () => {
           },
         ],
         injuryLogs: [],
+        incidents: [
+          {
+            id: 'incident-1',
+            incidentNumber: 'INC-20260201-0001',
+            description: 'Simulator fracture',
+            severity: 'CRITICAL',
+            status: 'REPORTED',
+            createdAt: new Date('2026-02-01'),
+          },
+        ],
         medicalLocks: [
           {
             id: 'ml-1',
@@ -918,6 +936,8 @@ describe('HorsesService', () => {
       expect(result.statusHistory[1]).toMatchObject({ oldStatus: 'INJURED', newStatus: 'RESTING' });
       expect(result.stallHistory).toHaveLength(1);
       expect(result.medicalHistory.records).toHaveLength(1);
+      expect(result.simulatorIncidents).toEqual(mockHistoryHorse.incidents);
+      expect(result.horse).not.toHaveProperty('incidents');
       expect(result.trainingHistory).toHaveLength(1);
       const categories = new Set(result.timeline.map((t) => t.category));
       expect([...categories]).toEqual(
@@ -950,6 +970,10 @@ describe('HorsesService', () => {
       });
 
       const result = await history.getHistory('h-1', mockOwner);
+      expect(prisma.horse.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ include: expect.objectContaining({ incidents: false }) }),
+      );
+      expect(result.simulatorIncidents).toEqual([]);
       expect(result.timeline.some((t) => t.category === 'STALL')).toBe(false);
       expect(result.stallHistory).toEqual([]);
     });

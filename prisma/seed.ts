@@ -443,6 +443,7 @@ async function main() {
   const horsesData = [
     {
       horseCode: 'HR-000001',
+      weightKg: 495,
       name: 'Bạch Long Mã',
       microchip: '985141002341001',
       breed: 'Thoroughbred',
@@ -457,6 +458,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000002',
+      weightKg: 510,
       name: 'Xích Thố',
       microchip: '985141002342002',
       breed: 'Thoroughbred',
@@ -471,6 +473,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000003',
+      weightKg: 490,
       name: 'Hắc Báo',
       microchip: '985141002343003',
       breed: 'Arabian Cross',
@@ -485,6 +488,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000004',
+      weightKg: 480,
       name: 'Thần Phong',
       microchip: '985141002344004',
       breed: 'Thoroughbred',
@@ -499,6 +503,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000005',
+      weightKg: 502,
       name: 'Kim Quy',
       microchip: '985141002345005',
       breed: 'Quarter Horse',
@@ -513,6 +518,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000006',
+      weightKg: 475,
       name: 'Phi Long',
       microchip: '985141002346006',
       breed: 'Standardbred',
@@ -527,6 +533,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000007',
+      weightKg: 505,
       name: 'Chiến Mã Hoàng Gia',
       microchip: '985141002347007',
       breed: 'Thoroughbred',
@@ -541,6 +548,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000008',
+      weightKg: 492,
       name: 'Hỏa Phụng',
       microchip: '985141002348008',
       breed: 'Warmblood',
@@ -555,6 +563,7 @@ async function main() {
     },
     {
       horseCode: 'HR-000009',
+      weightKg: 485,
       name: 'Băng Thiên Mã',
       microchip: '985141002349009',
       breed: 'Thoroughbred',
@@ -577,8 +586,18 @@ async function main() {
         'Chestnut',
         HorseStatus.ACTIVE,
         'STALL-A05',
+        482,
       ],
-      ['Thanh Vân', 'Arabian', '2021-06-02', 'Filly', 'Grey', HorseStatus.IN_TRAINING, 'STALL-A06'],
+      [
+        'Thanh Vân',
+        'Arabian',
+        '2021-06-02',
+        'Filly',
+        'Grey',
+        HorseStatus.IN_TRAINING,
+        'STALL-A06',
+        498,
+      ],
       [
         'Lam Phong',
         'Thoroughbred',
@@ -587,6 +606,7 @@ async function main() {
         'Bay',
         HorseStatus.ACTIVE,
         'STALL-A07',
+        515,
       ],
       [
         'Tuyết Sơn',
@@ -596,8 +616,18 @@ async function main() {
         'Grey',
         HorseStatus.IN_TRAINING,
         'STALL-A08',
+        485,
       ],
-      ['Kim Ô', 'Quarter Horse', '2021-02-08', 'Colt', 'Palomino', HorseStatus.ACTIVE, 'STALL-B04'],
+      [
+        'Kim Ô',
+        'Quarter Horse',
+        '2021-02-08',
+        'Colt',
+        'Palomino',
+        HorseStatus.ACTIVE,
+        'STALL-B04',
+        472,
+      ],
       [
         'Hồng Ngọc',
         'Arabian Cross',
@@ -606,8 +636,18 @@ async function main() {
         'Chestnut',
         HorseStatus.IN_TRAINING,
         'STALL-B05',
+        506,
       ],
-      ['Mặc Vũ', 'Thoroughbred', '2019-11-30', 'Gelding', 'Black', HorseStatus.ACTIVE, 'STALL-B06'],
+      [
+        'Mặc Vũ',
+        'Thoroughbred',
+        '2019-11-30',
+        'Gelding',
+        'Black',
+        HorseStatus.ACTIVE,
+        'STALL-B06',
+        490,
+      ],
       [
         'Thiên Lý',
         'Standardbred',
@@ -616,13 +656,24 @@ async function main() {
         'Bay Dark',
         HorseStatus.ACTIVE,
         'STALL-B07',
+        502,
       ],
-      ['Bão Táp', 'Thoroughbred', '2020-05-16', 'Colt', 'Roan', HorseStatus.RESTING, 'STALL-C02'],
-      ['Bình Minh', 'Appaloosa', '2021-08-25', 'Mare', 'Bay', HorseStatus.ACTIVE, 'STALL-C03'],
-    ].map(([name, breed, dob, gender, color, status, stallCode], i) => {
+      [
+        'Bão Táp',
+        'Thoroughbred',
+        '2020-05-16',
+        'Colt',
+        'Roan',
+        HorseStatus.RESTING,
+        'STALL-C02',
+        478,
+      ],
+      ['Bình Minh', 'Appaloosa', '2021-08-25', 'Mare', 'Bay', HorseStatus.ACTIVE, 'STALL-C03', 488],
+    ].map(([name, breed, dob, gender, color, status, stallCode, weightKg], i) => {
       const n = 10 + i;
       return {
         horseCode: `HR-0000${n}`,
+        weightKg: weightKg as number,
         name: name as string,
         microchip: `98514100234${String(n).padStart(4, '0')}`,
         breed: breed as string,
@@ -666,6 +717,7 @@ async function main() {
         name: h.name,
         microchip: h.microchip,
         microchipRfid: h.microchip,
+        weightKg: h.weightKg,
         breed: h.breed,
         dob: h.dob,
         gender: h.gender,
@@ -680,6 +732,10 @@ async function main() {
             : null,
         deletedAt: h.status === HorseStatus.RETIRED ? new Date('2025-11-20') : null,
       },
+    });
+    await prisma.horse.updateMany({
+      where: { id: horse.id, weightKg: null },
+      data: { weightKg: h.weightKg },
     });
     createdHorses[h.horseCode] = horse;
 

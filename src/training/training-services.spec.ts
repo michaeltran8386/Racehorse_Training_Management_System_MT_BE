@@ -590,7 +590,7 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isMedicalLocked: true });
       expect(await codeOf(workouts.restoreWorkout('w-1', {}, trainer))).toBe('MEDICAL_LOCK_ACTIVE');
 
-      prisma.horse.findUnique.mockResolvedValue(healthyHorse);
+      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, medicalLocks: [] });
       const restored = await workouts.restoreWorkout('w-1', {}, trainer);
       expect(restored.status).toBe(WorkoutStatus.SCHEDULED);
     });

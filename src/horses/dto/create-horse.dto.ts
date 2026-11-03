@@ -73,11 +73,10 @@ export class CreateHorseDto {
   @IsString()
   avatarUrl?: string;
 
-  @ApiPropertyOptional({ description: 'Weight in kg (> 0)', example: 485.5 })
-  @IsOptional()
+  @ApiProperty({ description: 'Weight in kg (> 0)', example: 485.5 })
   @IsNumber({}, { message: 'Cân nặng phải là số.' })
   @Min(0.01, { message: 'Cân nặng phải lớn hơn 0 kg.' })
-  weightKg?: number;
+  weightKg: number;
 
   @ApiPropertyOptional({ description: 'Initial Stall ID' })
   @IsOptional()

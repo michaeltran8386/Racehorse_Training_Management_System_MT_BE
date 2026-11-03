@@ -143,6 +143,27 @@ describe('StallsService (SC-1.04, SC-1.07, DL-1.02, DL-1.03)', () => {
       await service.setStatus('s-1', { status: 'AVAILABLE' }, manager);
       expect(prisma.stall.update.mock.calls[0][0].data.status).toBe(StallStatus.OCCUPIED);
     });
+
+    it('reactivates a stall under maintenance and records the transition in its transaction', async () => {
+      prisma.stall.findUnique.mockResolvedValue({ ...freeStall, status: StallStatus.MAINTENANCE });
+      await expect(
+        service.setStatus('s-1', { status: 'AVAILABLE' }, manager),
+      ).resolves.toMatchObject({
+        status: StallStatus.AVAILABLE,
+      });
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.any(Object),
+        'UPDATE_STALL',
+        expect.any(String),
+        's-1',
+        expect.objectContaining({
+          oldValues: expect.objectContaining({ status: StallStatus.MAINTENANCE }),
+          newValues: expect.objectContaining({ status: StallStatus.AVAILABLE }),
+        }),
+        prisma,
+      );
+    });
   });
 
   describe('assign / transfer', () => {

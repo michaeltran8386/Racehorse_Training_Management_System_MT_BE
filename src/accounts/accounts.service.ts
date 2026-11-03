@@ -102,10 +102,15 @@ export class AccountsService {
         field: 'fullName',
       });
     }
-    if (phone.length > 30) {
-      throw apiError(HttpStatus.BAD_REQUEST, 'VALIDATION', 'Phone number is too long.', {
-        field: 'phone',
-      });
+    if (phone && !/^0[35789]\d{8}$/.test(phone)) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION',
+        'Phone number must be a valid 10-digit Vietnamese mobile number.',
+        {
+          field: 'phone',
+        },
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {

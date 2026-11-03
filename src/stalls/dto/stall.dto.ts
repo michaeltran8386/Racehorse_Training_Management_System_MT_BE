@@ -190,4 +190,12 @@ export class SetStallStatusDto {
   @ApiProperty({ enum: SETTABLE_STALL_STATUSES })
   @IsIn(SETTABLE_STALL_STATUSES, { message: 'Trạng thái ô không hợp lệ.' })
   status: SettableStallStatus;
+
+  /** Lý do bảo trì / ngừng dùng (BUG-MAN-09); lưu vào ghi chú ô. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự.' })
+  notes?: string;
 }

@@ -360,55 +360,61 @@ export class StallsService {
   }
 
   async update(id: string, dto: UpdateStallDto, user: CurrentUserPayload) {
-    const stall = await this.findStallOrThrow(id);
-    if (dto.code && dto.code !== stall.code) await this.assertStallCodeFree(dto.code);
-    const row = dto.row ?? stall.row;
-    const col = dto.col ?? stall.col;
-    if (stall.zoneRef && row != null && col != null && (row !== stall.row || col !== stall.col)) {
-      await this.assertPositionFree(stall.zoneRef, row, col, id);
-    }
-    const status = dto.status ? this.nextStatus(stall, dto.status) : undefined;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Stall" WHERE "id" = ${id} FOR UPDATE`;
+      const stall = await this.findStallOrThrow(id, tx);
+      if (dto.code && dto.code !== stall.code) await this.assertStallCodeFree(dto.code, tx);
+      const row = dto.row ?? stall.row;
+      const col = dto.col ?? stall.col;
+      if (stall.zoneRef && row != null && col != null && (row !== stall.row || col !== stall.col)) {
+        await this.assertPositionFree(stall.zoneRef, row, col, id, tx);
+      }
+      const status = dto.status ? this.nextStatus(stall, dto.status) : undefined;
 
-    const updated = await this.prisma.stall.update({
-      where: { id },
-      data: {
-        ...(dto.code && { code: dto.code }),
-        ...(dto.row !== undefined && { row: dto.row }),
-        ...(dto.col !== undefined && { col: dto.col }),
-        ...(status && { status }),
-        ...(dto.notes !== undefined && { notes: dto.notes || null }),
-      },
-      include: STALL_INCLUDE,
+      const updated = await tx.stall.update({
+        where: { id },
+        data: {
+          ...(dto.code && { code: dto.code }),
+          ...(dto.row !== undefined && { row: dto.row }),
+          ...(dto.col !== undefined && { col: dto.col }),
+          ...(status && { status }),
+          ...(dto.notes !== undefined && { notes: dto.notes || null }),
+        },
+        include: STALL_INCLUDE,
+      });
+      await this.auditService.record(
+        this.actor(user),
+        'UPDATE_STALL',
+        `Updated stall ${stall.code}`,
+        id,
+        {
+          entityName: 'Stall',
+          oldValues: {
+            code: stall.code,
+            row: stall.row,
+            col: stall.col,
+            status: stall.status,
+            notes: stall.notes,
+          },
+          newValues: {
+            code: updated.code,
+            row: updated.row,
+            col: updated.col,
+            status: updated.status,
+            notes: updated.notes,
+          },
+        },
+        tx,
+      );
+      return updated;
     });
-    await this.auditService.record(
-      this.actor(user),
-      'UPDATE_STALL',
-      `Updated stall ${stall.code}`,
-      id,
-      {
-        entityName: 'Stall',
-        oldValues: {
-          code: stall.code,
-          row: stall.row,
-          col: stall.col,
-          status: stall.status,
-          notes: stall.notes,
-        },
-        newValues: {
-          code: updated.code,
-          row: updated.row,
-          col: updated.col,
-          status: updated.status,
-          notes: updated.notes,
-        },
-      },
-    );
-    return updated;
   }
 
   /** BTN-1.35 Đổi trạng thái ô: Hoạt động / Bảo trì / Ngừng dùng. */
   async setStatus(id: string, dto: SetStallStatusDto, user: CurrentUserPayload) {
-    return this.update(id, { status: dto.status }, user);
+    // Mở lại ô mà không ghi chú thì xóa lý do bảo trì cũ; các trường hợp khác giữ ghi chú khi bỏ trống.
+    const notes = dto.notes || (dto.status === 'AVAILABLE' ? '' : undefined);
+    return this.update(id, { status: dto.status, ...(notes !== undefined && { notes }) }, user);
   }
 
   /** "Hoạt động" giữ OCCUPIED nếu ô đang có ngựa; ô có ngựa không được Bảo trì / Ngừng dùng. */
@@ -653,8 +659,8 @@ export class StallsService {
     return zone;
   }
 
-  private async findStallOrThrow(id: string) {
-    const stall = await this.prisma.stall.findUnique({ where: { id }, include: STALL_INCLUDE });
+  private async findStallOrThrow(id: string, tx: Tx) {
+    const stall = await tx.stall.findUnique({ where: { id }, include: STALL_INCLUDE });
     if (!stall) throw apiError(HttpStatus.NOT_FOUND, 'STALL_NOT_FOUND', 'Không tìm thấy ô chuồng.');
     return stall;
   }
@@ -674,8 +680,8 @@ export class StallsService {
     }
   }
 
-  private async assertStallCodeFree(code: string) {
-    if (await this.prisma.stall.findUnique({ where: { code } })) {
+  private async assertStallCodeFree(code: string, tx: Tx = this.prisma) {
+    if (await tx.stall.findUnique({ where: { code } })) {
       throw apiError(HttpStatus.CONFLICT, 'DUPLICATE_STALL_CODE', 'Mã ô đã tồn tại.');
     }
   }
@@ -685,6 +691,7 @@ export class StallsService {
     row: number,
     col: number,
     exceptId?: string,
+    tx: Tx = this.prisma,
   ) {
     if (row > zone.rows) {
       throw apiError(
@@ -706,7 +713,7 @@ export class StallsService {
         },
       );
     }
-    const other = await this.prisma.stall.findFirst({
+    const other = await tx.stall.findFirst({
       where: { zoneId: zone.id, row, col, ...(exceptId ? { id: { not: exceptId } } : {}) },
     });
     if (other) {
