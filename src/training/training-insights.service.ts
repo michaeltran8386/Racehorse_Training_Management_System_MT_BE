@@ -235,7 +235,9 @@ export class TrainingInsightsService {
               ),
             }
           : null,
-        progress: plan ? (progress.get(plan.id) ?? { completed: 0, due: 0 }) : null,
+        progress: plan
+          ? (progress.get(plan.id) ?? { completed: 0, total: 0, due: 0, overdue: 0 })
+          : null,
         latestScore: latest?.performanceScore ?? null,
         previousAvgScore: prev3.length
           ? Math.round((prev3.reduce((a, b) => a + b, 0) / prev3.length) * 10) / 10

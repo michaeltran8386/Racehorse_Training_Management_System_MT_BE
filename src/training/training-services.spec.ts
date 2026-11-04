@@ -737,6 +737,30 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       });
     });
 
+    it('calculates progressOf with total, completed, due, and overdue counts (Task T1: 4/10 = 40%)', async () => {
+      prisma.workoutSession.groupBy
+        .mockResolvedValueOnce([
+          { trainingPlanId: 'plan-1', status: WorkoutStatus.COMPLETED, _count: { _all: 4 } },
+          { trainingPlanId: 'plan-1', status: WorkoutStatus.SCHEDULED, _count: { _all: 6 } },
+        ])
+        .mockResolvedValueOnce([
+          { trainingPlanId: 'plan-1', status: WorkoutStatus.COMPLETED, _count: { _all: 4 } },
+          { trainingPlanId: 'plan-1', status: WorkoutStatus.SCHEDULED, _count: { _all: 2 } },
+        ]);
+
+      const progressMap = await common.progressOf(['plan-1']);
+      const planProgress = progressMap.get('plan-1');
+
+      expect(planProgress).toEqual({
+        total: 10,
+        completed: 4,
+        due: 6,
+        overdue: 2,
+      });
+      expect(planProgress!.completed / planProgress!.total).toBe(0.4);
+      expect(planProgress!.overdue).toBe(2);
+    });
+
     it('returns no fitness points (instead of made-up data) when nothing is completed', async () => {
       prisma.horse.findUnique.mockResolvedValue(healthyHorse);
       prisma.workoutSession.findMany.mockResolvedValue([]);

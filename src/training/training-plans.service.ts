@@ -81,7 +81,10 @@ export class TrainingPlansService {
     const progress = await this.common.progressOf(items.map((p) => p.id));
 
     return {
-      items: items.map((p) => ({ ...p, progress: progress.get(p.id) ?? { completed: 0, due: 0 } })),
+      items: items.map((p) => ({
+        ...p,
+        progress: progress.get(p.id) ?? { completed: 0, total: 0, due: 0, overdue: 0 },
+      })),
       total,
       page,
       pageSize,
@@ -125,7 +128,9 @@ export class TrainingPlansService {
     }
     const progress = (await this.common.progressOf([plan.id])).get(plan.id) ?? {
       completed: 0,
+      total: 0,
       due: 0,
+      overdue: 0,
     };
     return { ...plan, progress };
   }
