@@ -276,7 +276,7 @@ export class FinancialService {
           category: 'ACCOUNT',
           title: 'Sao kê chi phí & Tiền thưởng tháng mới',
           message: `Báo cáo tài chính kỳ ${existing.billingPeriod} cho ngựa ${existing.horse.name} đã được phát hành.`,
-          link: `/owner/financial-reports`,
+          link: `/owner/financial-reports?highlight=${encodeURIComponent(id)}`,
           params: { billingPeriod: existing.billingPeriod, horseName: existing.horse.name },
         },
         user.id,
@@ -316,6 +316,21 @@ export class FinancialService {
         HttpStatus.FORBIDDEN,
         'FORBIDDEN',
         'You can only pay for your own horse invoice',
+      );
+    }
+
+    if (existing.status !== InvoiceStatus.SENT && existing.status !== InvoiceStatus.OVERDUE) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_STATUS',
+        'Only sent or overdue invoices can be paid',
+      );
+    }
+    if (Number(existing.netAmount) <= 0) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_AMOUNT',
+        'Invoice has no positive balance to pay',
       );
     }
 
