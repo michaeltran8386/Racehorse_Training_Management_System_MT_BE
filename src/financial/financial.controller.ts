@@ -28,6 +28,7 @@ export class FinancialController {
   }
 
   @Get('owner-summary')
+  @Roles(UserRole.CLUB_MANAGER, UserRole.HORSE_OWNER)
   @ApiOperation({
     summary: 'Tổng hợp báo cáo tài chính & doanh thu giải đua cho Chủ ngựa (SC-5.06)',
   })
@@ -36,8 +37,7 @@ export class FinancialController {
     @Query('ownerId') queryOwnerId?: string,
   ) {
     // Nếu là Club Manager có thể xem của owner khác; HORSE_OWNER luôn xem của chính mình
-    const targetOwnerId =
-      user.role === UserRole.HORSE_OWNER || !queryOwnerId ? user.userId : queryOwnerId;
+    const targetOwnerId = user.role === UserRole.HORSE_OWNER ? user.userId : queryOwnerId;
     return this.financialService.getOwnerSummary(targetOwnerId);
   }
 

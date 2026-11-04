@@ -81,7 +81,7 @@ export class InventoryController {
   }
 
   /**
-   * Quản lý CLB nhập bổ sung kho trực tiếp: phiếu tự động ở trạng thái APPROVED, chỉ còn bước Xác nhận nhận hàng.
+   * Quản lý CLB nhập bổ sung kho trực tiếp: bắt đầu giao hàng và tự động nhập kho khi hoàn tất.
    */
   @Post('requests/direct')
   @Roles(UserRole.CLUB_MANAGER)

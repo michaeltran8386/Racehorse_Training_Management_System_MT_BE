@@ -52,6 +52,75 @@ describe('FinancialService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('payInvoice', () => {
+    const owner = { id: 'owner-1', name: 'Owner', role: 'HORSE_OWNER' };
+    const invoice = {
+      id: 'inv-pay',
+      ownerId: 'owner-1',
+      status: InvoiceStatus.SENT,
+      netAmount: 100,
+      boardingFee: 100,
+      medicalFee: 0,
+      trainingFee: 0,
+      prizeCredit: 0,
+      billingPeriod: '2026-11',
+      horse: { name: 'Horse' },
+    };
+
+    it.each([InvoiceStatus.SENT, InvoiceStatus.OVERDUE])(
+      'pays an owned %s invoice by bank transfer',
+      async (status) => {
+        prisma.financialInvoice.findUnique.mockResolvedValue({ ...invoice, status });
+        prisma.financialInvoice.update.mockResolvedValue({
+          ...invoice,
+          status: InvoiceStatus.PAID,
+        });
+        const paid = await service.payInvoice(
+          invoice.id,
+          { paymentMethod: 'BANK_TRANSFER' },
+          owner,
+        );
+        expect(paid.status).toBe(InvoiceStatus.PAID);
+        expect(audit.record).toHaveBeenCalledWith(
+          expect.anything(),
+          'INVOICE_PAID',
+          expect.any(String),
+          invoice.id,
+          expect.objectContaining({
+            newValues: { status: InvoiceStatus.PAID, paymentMethod: 'BANK_TRANSFER' },
+          }),
+        );
+      },
+    );
+
+    it('rejects paying another owner invoice', async () => {
+      prisma.financialInvoice.findUnique.mockResolvedValue({ ...invoice, ownerId: 'other-owner' });
+      await expect(service.payInvoice(invoice.id, {}, owner)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'FORBIDDEN' }),
+      });
+      expect(prisma.financialInvoice.update).not.toHaveBeenCalled();
+    });
+
+    it.each([InvoiceStatus.DRAFT, InvoiceStatus.PAID, InvoiceStatus.CANCELLED])(
+      'rejects %s invoices',
+      async (status) => {
+        prisma.financialInvoice.findUnique.mockResolvedValue({ ...invoice, status });
+        await expect(service.payInvoice(invoice.id, {}, owner)).rejects.toMatchObject({
+          response: expect.objectContaining({ code: 'INVALID_STATUS' }),
+        });
+        expect(prisma.financialInvoice.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([0, -100])('rejects non-positive balance %s', async (netAmount) => {
+      prisma.financialInvoice.findUnique.mockResolvedValue({ ...invoice, netAmount });
+      await expect(service.payInvoice(invoice.id, {}, owner)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'INVALID_AMOUNT' }),
+      });
+      expect(prisma.financialInvoice.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findAll', () => {
     it('should return paginated invoices for manager', async () => {
       prisma.financialInvoice.findMany.mockResolvedValue([
@@ -157,6 +226,26 @@ describe('FinancialService', () => {
   });
 
   describe('update & changeStatus', () => {
+    it('links an invoice notification to the highlighted statement', async () => {
+      prisma.financialInvoice.findUnique.mockResolvedValue({
+        id: 'inv-1',
+        ownerId: 'owner-1',
+        status: InvoiceStatus.DRAFT,
+        billingPeriod: '2026-11',
+        horse: { name: 'Thunder' },
+      });
+      prisma.financialInvoice.update.mockResolvedValue({ id: 'inv-1', status: InvoiceStatus.SENT });
+      await service.changeStatus('inv-1', InvoiceStatus.SENT, {
+        id: 'manager',
+        name: 'Manager',
+        role: 'CLUB_MANAGER',
+      });
+      expect(notifications.notifyUsers).toHaveBeenCalledWith(
+        ['owner-1'],
+        expect.objectContaining({ link: '/owner/financial-reports?highlight=inv-1' }),
+        'manager',
+      );
+    });
     it('should update invoice fields', async () => {
       prisma.financialInvoice.findUnique.mockResolvedValue({
         id: 'inv-1',

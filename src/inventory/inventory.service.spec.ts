@@ -90,7 +90,103 @@ describe('InventoryService', () => {
 
   afterEach(() => {
     service.onModuleDestroy();
+    jest.useRealTimers();
     delete process.env.JWT_SECRET;
+  });
+
+  describe('direct restock delivery', () => {
+    const manager = {
+      userId: 'mgr-1',
+      fullName: 'Manager',
+      email: 'manager@test.com',
+      role: UserRole.CLUB_MANAGER,
+    };
+    const dto = { zoneId: 'zone-1', supplyId: 'sup-1', requestedQuantity: 50 };
+
+    beforeEach(() => {
+      prisma.stallZone.findUnique.mockResolvedValue({ id: 'zone-1', name: 'Zone A' });
+      prisma.supplyCatalog.findUnique.mockResolvedValue({
+        id: 'sup-1',
+        code: 'OAT',
+        name: 'Oats',
+        category: 'FEED_GRAIN',
+        unit: 'KG',
+      });
+      prisma.restockRequest.count.mockResolvedValue(0);
+    });
+
+    it.each(['ACK', 'FALLBACK'] as const)(
+      'dispatches and adds stock once via %s',
+      async (source) => {
+        jest.useFakeTimers();
+        let request: any;
+        prisma.restockRequest.create.mockImplementation(async ({ data }: any) => {
+          request = {
+            ...data,
+            id: 'req-direct',
+            supply: { name: 'Oats', unit: 'KG' },
+            zone: { name: 'Zone A' },
+          };
+          return request;
+        });
+        prisma.restockRequest.findUnique.mockImplementation(async () => request);
+        prisma.restockRequest.updateMany.mockImplementation(async ({ data }: any) => {
+          Object.assign(request, data);
+          return { count: 1 };
+        });
+        prisma.stockBalance.upsert.mockResolvedValue({ quantity: new Prisma.Decimal(150) });
+
+        const created = await service.createRestockRequest(dto, manager, true);
+        expect(created.status).toBe(RestockStatus.DELIVERING);
+        expect(Number(created.approvedQuantity)).toBe(50);
+        expect(prisma.stockBalance.upsert).not.toHaveBeenCalled();
+        const payload = mockGateway.broadcastDeliveryStart.mock.calls[0][0];
+        expect(payload).toEqual(
+          expect.objectContaining({
+            requestId: 'req-direct',
+            zoneId: 'zone-1',
+            supplyId: 'sup-1',
+            supplyCode: 'OAT',
+            approvedQuantity: 50,
+            ackCapability: expect.any(String),
+          }),
+        );
+        expect(Date.parse(payload.animationEndsAt) - Date.parse(payload.dispatchedAt)).toBe(8000);
+        expect(Date.parse(payload.fallbackAt) - Date.parse(payload.dispatchedAt)).toBe(20000);
+        await jest.advanceTimersByTimeAsync(8000);
+        if (source === 'ACK') {
+          expect(await service.handleSimulatorAck('req-direct', payload.ackCapability)).toEqual(
+            expect.objectContaining({ success: true, completed: true }),
+          );
+        }
+        await jest.advanceTimersByTimeAsync(12000);
+        expect(request.status).toBe(RestockStatus.DELIVERED);
+        expect(prisma.stockBalance.upsert).toHaveBeenCalledTimes(1);
+        expect(
+          prisma.stockBalance.upsert.mock.calls[0][0].update.quantity.increment.toNumber(),
+        ).toBe(50);
+        expect(mockGateway.broadcastDeliveryCompleted).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestId: 'req-direct',
+            status: 'DELIVERED',
+            balance: 150,
+          }),
+        );
+        await service.completeDelivery('req-direct', 'FALLBACK');
+        expect(prisma.stockBalance.upsert).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('reserves capacity under the zone lock before dispatch', async () => {
+      prisma.stockBalance.findUnique.mockResolvedValue({ quantity: 50, capacity: 100 });
+      prisma.restockRequest.aggregate.mockResolvedValue({ _sum: { approvedQuantity: 25 } });
+      await expect(service.createRestockRequest(dto, manager, true)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'CAPACITY_EXCEEDED' }),
+      });
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+      expect(prisma.restockRequest.create).not.toHaveBeenCalled();
+      expect(mockGateway.broadcastDeliveryStart).not.toHaveBeenCalled();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -869,6 +965,10 @@ describe('InventoryService', () => {
         groomUser,
       );
       expect(created.requestNumber).toBe('REQ-2610-0001');
+      const proposalNotification = notifications.notifyRoles.mock.calls[0][1];
+      const targetLink = new URL(proposalNotification.link, 'https://tmec.site');
+      expect(targetLink.searchParams.get('highlight')).toBe(created.id);
+      expect(targetLink.searchParams.get('search')).toBe(proposalNotification.params.requestNumber);
 
       // 2. Manager reviews & approves
       prisma.restockRequest.findUnique.mockResolvedValue({

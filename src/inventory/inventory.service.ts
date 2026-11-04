@@ -350,7 +350,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         category: NotificationCategory.SYSTEM,
         title: 'Vật tư đã được giao thành công',
         message: `Vật tư ${request.supply.name} (${amountToAdd} ${request.supply.unit}) đã được giao đến ${request.zone.name} thành công (${source}).`,
-        link: '/supplies/requests',
+        link: `/supplies/requests?highlight=${encodeURIComponent(request.id)}&search=${encodeURIComponent(request.requestNumber || '')}`,
         senderName: request.reviewedBy?.fullName || 'Hệ thống',
         params: { requestNumber: request.requestNumber || '' },
       });
@@ -856,38 +856,90 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
     const mm = (now.getMonth() + 1).toString().padStart(2, '0');
     const requestNumber = `REQ-${yy}${mm}-${(count + 1).toString().padStart(4, '0')}`;
 
-    const created = await this.prisma.restockRequest.create({
-      data: {
-        requestNumber,
-        zoneId: dto.zoneId,
-        supplyId: dto.supplyId,
-        requestedQuantity: new Prisma.Decimal(dto.requestedQuantity),
-        urgencyReason: dto.urgencyReason,
-        requestedById: currentUser.userId,
-        // CM nhập kho trực tiếp không cần tự duyệt phiếu của mình: APPROVED ngay, chỉ còn bước Xác nhận nhận hàng
-        status: direct ? RestockStatus.APPROVED : RestockStatus.PENDING,
-        ...(direct
-          ? {
-              approvedQuantity: new Prisma.Decimal(dto.requestedQuantity),
-              reviewedById: currentUser.userId,
-              reviewedAt: now,
-            }
-          : {}),
-      },
-      include: {
-        zone: { select: { id: true, code: true, name: true } },
-        supply: { select: { id: true, code: true, name: true, category: true, unit: true } },
-        requestedBy: { select: { id: true, fullName: true, role: true } },
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      if (direct) {
+        await tx.$queryRaw`SELECT id FROM "StallZone" WHERE id = ${dto.zoneId} FOR UPDATE`;
+        const balance = await tx.stockBalance.findUnique({
+          where: { zoneId_supplyId: { zoneId: dto.zoneId, supplyId: dto.supplyId } },
+        });
+        const reservations = await tx.restockRequest.aggregate({
+          where: { zoneId: dto.zoneId, supplyId: dto.supplyId, status: RestockStatus.DELIVERING },
+          _sum: { approvedQuantity: true },
+        });
+        const capacity = Math.min(
+          MAX_ZONE_SUPPLY_CAPACITY,
+          Number(balance?.capacity ?? MAX_ZONE_SUPPLY_CAPACITY),
+        );
+        if (
+          Number(balance?.quantity ?? 0) +
+            Number(reservations._sum.approvedQuantity ?? 0) +
+            Number(dto.requestedQuantity) >
+          capacity
+        ) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'CAPACITY_EXCEEDED',
+            'Số lượng nhập kho cộng lượng đang giao vượt quá sức chứa của khu chuồng.',
+          );
+        }
+      }
+      return tx.restockRequest.create({
+        data: {
+          requestNumber,
+          zoneId: dto.zoneId,
+          supplyId: dto.supplyId,
+          requestedQuantity: new Prisma.Decimal(dto.requestedQuantity),
+          urgencyReason: dto.urgencyReason,
+          requestedById: currentUser.userId,
+          // CM nhập trực tiếp bắt đầu giao ngay, tồn kho chỉ tăng khi hoàn tất giao hàng.
+          status: direct ? RestockStatus.DELIVERING : RestockStatus.PENDING,
+          ...(direct
+            ? {
+                approvedQuantity: new Prisma.Decimal(dto.requestedQuantity),
+                reviewedById: currentUser.userId,
+                reviewedAt: now,
+              }
+            : {}),
+        },
+        include: {
+          zone: { select: { id: true, code: true, name: true } },
+          supply: { select: { id: true, code: true, name: true, category: true, unit: true } },
+          requestedBy: { select: { id: true, fullName: true, role: true } },
+        },
+      });
     });
 
     if (direct) {
+      const ackCapability = this.generateAckCapability(created.id, now);
+      const timer = setTimeout(() => {
+        this.completeDelivery(created.id, 'FALLBACK').catch((err) => {
+          this.logger.error(
+            `Watchdog fallback error for direct restock ${created.id}: ${err.message}`,
+          );
+        });
+      }, 20000);
+      this.deliveryTimers.set(created.id, timer);
+      this.gateway?.broadcastDeliveryStart({
+        requestId: created.id,
+        requestNumber: created.requestNumber || '',
+        zoneId: created.zoneId,
+        supplyId: created.supplyId,
+        supplyCode: supply.code,
+        supplyName: supply.name,
+        category: supply.category,
+        unit: supply.unit,
+        approvedQuantity: Number(created.requestedQuantity),
+        dispatchedAt: now.toISOString(),
+        animationEndsAt: new Date(now.getTime() + 8000).toISOString(),
+        fallbackAt: new Date(now.getTime() + 20000).toISOString(),
+        ackCapability,
+      });
       await this.auditService.record(
         { id: currentUser.userId, name: currentUser.fullName },
         'RESTOCK_DIRECT_CREATED',
-        `Tạo bởi Quản lý CLB ${currentUser.fullName}, tự động áp dụng trạng thái Đã duyệt. Phiếu ${requestNumber}: ${dto.requestedQuantity} ${supply.unit} ${supply.name} cho ${zone.name}.`,
+        `Tạo bởi Quản lý CLB ${currentUser.fullName}, tự động bắt đầu giao hàng. Phiếu ${requestNumber}: ${dto.requestedQuantity} ${supply.unit} ${supply.name} cho ${zone.name}.`,
         created.id,
-        { entityName: 'RestockRequest', newValues: { status: RestockStatus.APPROVED } },
+        { entityName: 'RestockRequest', newValues: { status: RestockStatus.DELIVERING } },
       );
       return { ...created, requestedQuantity: Number(created.requestedQuantity) };
     }
@@ -900,7 +952,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         category: NotificationCategory.SYSTEM,
         title: 'Phiếu đề xuất vật tư mới',
         message: `Nhân viên ${currentUser.fullName} đã đề xuất bổ sung ${dto.requestedQuantity} ${supply.unit} ${supply.name} cho ${zone.name}.`,
-        link: '/supplies/requests',
+        link: `/supplies/requests?highlight=${encodeURIComponent(created.id)}&search=${encodeURIComponent(requestNumber)}`,
         senderName: currentUser.fullName,
         params: { requestNumber, zoneName: zone.name, supplyName: supply.name },
         dedupeKey: `restock_${created.id}`,
@@ -1142,7 +1194,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
           message: isApproved
             ? `Quản lý đã duyệt bổ sung ${updated.approvedQuantity} ${request.supply.unit} ${request.supply.name}. Đơn hàng đang được vận chuyển đến ${request.zone.name}.`
             : `Đề xuất ${request.requestNumber} bị từ chối. Lý do: ${dto.rejectionReason || 'Không phù hợp'}`,
-          link: '/supplies/requests',
+          link: `/supplies/requests?highlight=${encodeURIComponent(request.id)}&search=${encodeURIComponent(request.requestNumber || '')}`,
           senderName: currentUser.fullName,
           params: { requestNumber: request.requestNumber || '' },
         },
