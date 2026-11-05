@@ -4,11 +4,12 @@ import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { FinancialController } from './financial.controller';
 import { FinancialService } from './financial.service';
+import { FinancialScheduler } from './financial.scheduler';
 
 @Module({
   imports: [PrismaModule, AuditModule, NotificationsModule],
   controllers: [FinancialController],
-  providers: [FinancialService],
+  providers: [FinancialService, FinancialScheduler],
   exports: [FinancialService],
 })
 export class FinancialModule {}

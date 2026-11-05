@@ -151,3 +151,33 @@ The source of truth for these types is `src/shared/types/auth.ts` (git tag `v0.1
 ## Audit log
 
 The mock writes an audit entry for: `REGISTER`, `EMAIL_VERIFIED`, `LOGIN`, `LOGIN_FAILED`, `LOGIN_LOCKED_OUT`, `LOGOUT`, `PASSWORD_RESET_REQUESTED`, `PASSWORD_RESET`, `PASSWORD_CHANGED`, `NAME_CHANGED`, `ACCOUNT_INVITED`, `INVITE_RESENT`, `INVITE_ACCEPTED`, `ACCOUNT_EDITED`, `ACCOUNT_DELETED`, `ACCOUNT_APPROVE`, `ACCOUNT_DECLINE`, `ACCOUNT_LOCK`, `ACCOUNT_UNLOCK`, `ACCOUNT_DEACTIVATE`, `ACCOUNT_REACTIVATE`, `PERMISSIONS_CHANGED`, `ACCESS_DENIED`, `PERMISSION_REQUESTED`, `PERMISSION_REQUEST_GRANTED`, `PERMISSION_REQUEST_DISMISSED`. The real backend should record the same events for the Audit Log screen (Priority 5).
+
+
+## Financial billing and actionable trainer overview (2026-11-05)
+
+### Financial invoices
+
+FinancialInvoice adds nullable boardingDays (integer), boardingMonthlyRate (number in API; Decimal in DB), and dueAt (ISO timestamp). Legacy invoices retain their existing amounts and null snapshots/deadlines. InvoiceStatus DRAFT is unchanged in storage; UI displays Not issued / Chưa phát hành.
+
+POST /invoices/generate-monthly accepts { billingPeriod: "YYYY-MM" } for a completed calendar month only. It creates one unissued invoice per horse/current owner/period with recorded occupancy; existing invoices of any status are preserved. Concurrent generation uses serializable transactions with bounded conflict retries. Monthly generation runs at 00:10 UTC+7 on day 1 for the previous month. Managers can use the same endpoint to recover a missed month; the scheduler does not backfill all historical periods.
+
+Boarding = round(6000000 × unique occupied club-calendar days / days in month), rounded once to VND. Arrival counts, departure does not, same-day stays count once, overlapping transfers do not duplicate days. New invoices snapshot the day count and monthly rate. POST /invoices calculates boarding server-side rather than trusting a client amount; PATCH cannot change the fee/period of calculated snapshots. Other fee rules are unchanged, including the existing 4000000 training default on monthly generation. Current ownership is used because there is no historical ownership ledger; managers must reconcile ownership transfers before issue.
+
+First issue DRAFT → SENT sets dueAt = now + 7 days; reissue preserves it. The same rule applies to direct creation/update into SENT. A minute sweep and report reads mark only SENT invoices with dueAt < now and netAmount > 0 as OVERDUE. No late penalty; payInvoice still accepts owned SENT/OVERDUE invoices. Existing PAID invoices cannot be edited/reopened. Old invoices without a deadline are not retroactively made overdue.
+
+GET /invoices/owner-summary adds outstandingDebt: the sum of positive netAmount for SENT + OVERDUE invoices. PAID, DRAFT, CANCELLED, and club payouts are excluded; owner isolation remains enforced by the controller.
+
+Errors: INVALID_BILLING_PERIOD, BILLING_PERIOD_NOT_CLOSED, INVALID_STAY_INTERVAL, BOARDING_FEE_READ_ONLY. Generate-monthly validates its DTO at the HTTP boundary.
+
+### GET /training/overview
+
+Existing kpis and rows are preserved. Two top-level objects are added, both null when absent:
+
+- nextWorkout: { id, planId, horseId, horseName, horseCode: string|null, workoutType: string|null, scheduledDate: ISO, intensity: string|null, surface: string|null, status }. Nearest SCHEDULED session strictly after now, under an ACTIVE plan for a managed horse. Ordered by scheduledDate ascending then id ascending; later days are included.
+- latestPlan: { id, planCode: string|null, name, horseId, horseName, status, startDate: ISO, endDate: ISO, currentPhaseName: string|null }. Most recently updated ACTIVE plan for a managed horse, stable id tie-break. Current phase is selected by inclusive UTC+7 calendar-date boundaries.
+
+Trainer UI links to /training/calendar and /training/plans/:id, with an empty-state link to /training/plans/new. No polling, visibilitychange listener, or seven-day schedule matrix is added.
+
+### Schema synchronization
+
+Có đổi schema: sau khi pull chạy `npx prisma generate` + `npx prisma db push` against the intended database before starting the new BE. Only three nullable columns are added; no table/column rename, backfill, reset, or enum change. Dockerfile already runs db push before starting the API. Do not add Prisma migrations contrary to AGENTS.md. Deploy BE before FE when deployment is separately authorized.

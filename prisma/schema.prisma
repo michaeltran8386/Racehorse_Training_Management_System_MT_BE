@@ -934,6 +934,9 @@ model FinancialInvoice {
   owner         User          @relation("OwnerInvoices", fields: [ownerId], references: [id], onDelete: Restrict)
   billingPeriod String        // e.g. "2026-09"
   boardingFee   Decimal       @default(0) @db.Decimal(10, 2)
+  boardingDays  Int?
+  boardingMonthlyRate Decimal? @db.Decimal(10, 2)
+  dueAt         DateTime?
   medicalFee    Decimal       @default(0) @db.Decimal(10, 2)
   trainingFee   Decimal       @default(0) @db.Decimal(10, 2)
   prizeCredit   Decimal       @default(0) @db.Decimal(10, 2)
