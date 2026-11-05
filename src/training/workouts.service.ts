@@ -126,6 +126,17 @@ export class WorkoutsService {
         'Không thể xếp buổi tập vào ngày đã qua.',
       );
     }
+    const now = new Date();
+    if (
+      clubDate(w.scheduledDate) === clubDate(now) &&
+      w.scheduledDate.getTime() < now.getTime() + 29 * 60 * 1000
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'TIME_TOO_SOON',
+        'Thời gian bắt đầu buổi tập trong ngày hôm nay phải sau thời gian hiện tại ít nhất 30 phút.',
+      );
+    }
     if (!withinTrainingHours(w.scheduledDate)) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -444,6 +455,7 @@ export class WorkoutsService {
         'TRIAL_SLOT_TAKEN',
         'MAX_WORKOUTS_PER_DAY',
         'DATE_IN_PAST',
+        'TIME_TOO_SOON',
         'OUTSIDE_PHASE_DATES',
         'OUTSIDE_PLAN_DATES',
       ];

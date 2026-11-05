@@ -177,6 +177,24 @@ export class TrainingPlansService {
       throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
     }
 
+    if (
+      dto.phaseName &&
+      (/^\d+$/.test(dto.phaseName.trim()) || !/[\p{L}]/u.test(dto.phaseName.trim()))
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_PLAN_NAME',
+        'Tên giáo án không được đặt hoàn toàn bằng số và phải chứa chữ cái.',
+      );
+    }
+    if (dto.objective && !/^[\p{L}]/u.test(dto.objective.trim())) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_OBJECTIVE',
+        'Mục tiêu phải bắt đầu bằng chữ cái, không được bắt đầu bằng số hay ký tự đặc biệt.',
+      );
+    }
+
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
     if (startDate < addDays(startOfClubDay(new Date()), -7)) {
@@ -247,6 +265,24 @@ export class TrainingPlansService {
         HttpStatus.BAD_REQUEST,
         'PLAN_CLOSED',
         'Giáo án đã hoàn thành hoặc đã hủy nên không sửa được.',
+      );
+    }
+
+    if (
+      dto.phaseName !== undefined &&
+      (/^\d+$/.test(dto.phaseName.trim()) || !/[\p{L}]/u.test(dto.phaseName.trim()))
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_PLAN_NAME',
+        'Tên giáo án không được đặt hoàn toàn bằng số và phải chứa chữ cái.',
+      );
+    }
+    if (dto.objective !== undefined && !/^[\p{L}]/u.test(dto.objective.trim())) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_OBJECTIVE',
+        'Mục tiêu phải bắt đầu bằng chữ cái, không được bắt đầu bằng số hay ký tự đặc biệt.',
       );
     }
     const startDate = dto.startDate ? new Date(dto.startDate) : existing.startDate;
