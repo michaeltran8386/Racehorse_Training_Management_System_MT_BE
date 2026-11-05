@@ -254,6 +254,11 @@ export class WorkoutsService {
       if (total > phase.maxWeeklyDistance) {
         warnings.push(`Tổng cự ly tuần ${total} m vượt định mức ${phase.maxWeeklyDistance} m.`);
       }
+      if (week.length + 1 > phase.sessionsPerWeek) {
+        warnings.push(
+          `Số buổi trong tuần (${week.length + 1}) vượt định mức ${phase.sessionsPerWeek} buổi/tuần của giai đoạn ${phase.name}.`,
+        );
+      }
     }
     if (heavy) {
       const gap = HEAVY_GAP_HOURS * 60 * 60 * 1000;

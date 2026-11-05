@@ -167,10 +167,22 @@ export class TrainingInsightsService {
       orderBy: { name: 'asc' },
     });
     const horseIds = horses.map((h) => h.id);
-    const [plans, recent, upcoming, todayRows, blocked] = await Promise.all([
+    const [allPlans, recent, upcoming, todayRows, blocked] = await Promise.all([
       this.prisma.trainingPlan.findMany({
-        where: { horseId: { in: horseIds }, status: PlanStatus.ACTIVE },
-        select: { id: true, horseId: true, planCode: true, phaseName: true, phases: true },
+        where: {
+          horseId: { in: horseIds },
+          status: { in: [PlanStatus.ACTIVE, PlanStatus.DRAFT] },
+        },
+        select: {
+          id: true,
+          horseId: true,
+          planCode: true,
+          phaseName: true,
+          phases: true,
+          status: true,
+          updatedAt: true,
+        },
+        orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
       }),
       this.prisma.workoutSession.findMany({
         where: {
@@ -206,11 +218,18 @@ export class TrainingInsightsService {
         },
       }),
     ]);
-    const progress = await this.common.progressOf(plans.map((p) => p.id));
+    const plansByHorse = new Map<string, (typeof allPlans)[0]>();
+    for (const p of allPlans) {
+      if (!plansByHorse.has(p.horseId) || p.status === PlanStatus.ACTIVE) {
+        plansByHorse.set(p.horseId, p);
+      }
+    }
+    const plansToTrack = Array.from(plansByHorse.values());
+    const progress = await this.common.progressOf(plansToTrack.map((p) => p.id));
     const todayClub = clubDate(now);
 
     const rows = horses.map((horse) => {
-      const plan = plans.find((p) => p.horseId === horse.id);
+      const plan = plansByHorse.get(horse.id);
       const phase = plan
         ? phasesOf(plan).find((p) => p.startDate <= todayClub && todayClub <= p.endDate)
         : undefined;
@@ -224,7 +243,14 @@ export class TrainingInsightsService {
       const dayMs = 24 * 60 * 60 * 1000;
       return {
         horse,
-        plan: plan ? { id: plan.id, planCode: plan.planCode, name: plan.phaseName } : null,
+        plan: plan
+          ? {
+              id: plan.id,
+              planCode: plan.planCode,
+              name: plan.phaseName,
+              status: plan.status,
+            }
+          : null,
         currentPhase: phase
           ? {
               name: phase.name,
@@ -250,6 +276,18 @@ export class TrainingInsightsService {
       };
     });
 
+    // Ngựa có giáo án ACTIVE lên đầu, tiếp đến DRAFT, cuối cùng là chưa có giáo án
+    rows.sort((a, b) => {
+      const rank = (r: (typeof rows)[0]) => {
+        if (r.plan?.status === PlanStatus.ACTIVE) return 1;
+        if (r.plan?.status === PlanStatus.DRAFT) return 2;
+        return 3;
+      };
+      const diff = rank(a) - rank(b);
+      if (diff !== 0) return diff;
+      return a.horse.name.localeCompare(b.horse.name);
+    });
+
     const todayTotal = todayRows.reduce((sum, r) => sum + r._count._all, 0);
     const todayDone = todayRows
       .filter((r) => r.status === WorkoutStatus.COMPLETED)
@@ -257,7 +295,7 @@ export class TrainingInsightsService {
 
     return {
       kpis: {
-        activePlans: plans.length,
+        activePlans: allPlans.filter((p) => p.status === PlanStatus.ACTIVE).length,
         managedHorses: horses.length,
         todayCompleted: todayDone,
         todayTotal,
