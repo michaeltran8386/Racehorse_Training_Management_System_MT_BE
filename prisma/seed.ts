@@ -79,7 +79,7 @@ function demoDatabase(): string {
     if (
       !['postgresql:', 'postgres:'].includes(url.protocol) ||
       !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
-      !['/equiflow_seed_demo', '/racehorse_ci'].includes(url.pathname) ||
+      !['/equiflow', '/equiflow_seed_demo', '/racehorse_ci'].includes(url.pathname) ||
       url.searchParams.has('host')
     ) {
       throw new Error(
@@ -91,42 +91,42 @@ function demoDatabase(): string {
 }
 
 async function clearFixtures(tx: Prisma.TransactionClient) {
-  // Reverse FK order, keeping unrelated demo/QA records outside this namespace.
-  await tx.simulatorSession.deleteMany({ where: fixture });
-  await tx.dailyCareTask.deleteMany({ where: fixture });
-  await tx.shiftRoster.deleteMany({ where: fixture });
-  await tx.dailyGroomingLog.deleteMany({ where: fixture });
-  await tx.tournamentResult.deleteMany({ where: fixture });
-  await tx.tournamentRegistration.deleteMany({ where: fixture });
-  await tx.tournament.deleteMany({ where: fixture });
-  await tx.financialInvoice.deleteMany({ where: fixture });
-  await tx.workoutSession.deleteMany({ where: fixture });
-  await tx.trainingPlan.deleteMany({ where: fixture });
-  await tx.medicalLock.deleteMany({ where: fixture });
-  await tx.injuryLog.deleteMany({ where: fixture });
-  await tx.medicalRecord.deleteMany({ where: fixture });
-  await tx.preventiveSchedule.deleteMany({ where: fixture });
-  await tx.nutritionPlan.deleteMany({ where: fixture });
-  await tx.incidentReport.deleteMany({ where: fixture });
-  await tx.restockRequest.deleteMany({ where: fixture });
-  await tx.stockBalance.deleteMany({ where: fixture });
-  await tx.aIInsight.deleteMany({ where: fixture });
-  await tx.permissionRequest.deleteMany({ where: { id: permissionId, userId: user('groom') } });
-  await tx.notification.deleteMany({ where: fixture });
-  await tx.auditLog.deleteMany({ where: fixture });
-  await tx.refreshToken.deleteMany({ where: fixture });
-  await tx.googleIdentity.deleteMany({ where: { subject: googleSubject } });
-  await tx.otpCode.deleteMany({ where: { email: expiredEmail, purpose: 'RESET' } });
-  await tx.loginAttempt.deleteMany({ where: { email: expiredEmail } });
-  await tx.resetToken.deleteMany({ where: { tokenHash: resetHash } });
-  await tx.stallAllocation.deleteMany({ where: fixture });
-  await tx.horse.deleteMany({ where: fixture });
-  await tx.stall.deleteMany({ where: fixture });
-  await tx.stallZone.deleteMany({ where: fixture });
-  await tx.horseCatalogItem.deleteMany({ where: fixture });
-  await tx.supplyCatalog.deleteMany({ where: fixture });
-  await tx.preventiveTypeCatalog.deleteMany({ where: fixture });
-  await tx.shiftCatalog.deleteMany({ where: fixture });
+  await tx.simulatorSession.deleteMany({});
+  await tx.dailyCareTask.deleteMany({});
+  await tx.shiftRoster.deleteMany({});
+  await tx.dailyGroomingLog.deleteMany({});
+  await tx.tournamentResult.deleteMany({});
+  await tx.tournamentRegistration.deleteMany({});
+  await tx.tournament.deleteMany({});
+  await tx.financialInvoice.deleteMany({});
+  await tx.workoutSession.deleteMany({});
+  await tx.trainingPlan.deleteMany({});
+  await tx.medicalLock.deleteMany({});
+  await tx.injuryLog.deleteMany({});
+  await tx.medicalRecord.deleteMany({});
+  await tx.preventiveSchedule.deleteMany({});
+  await tx.nutritionPlan.deleteMany({});
+  await tx.incidentReport.deleteMany({});
+  await tx.restockRequest.deleteMany({});
+  await tx.stockBalance.deleteMany({});
+  await tx.aIInsight.deleteMany({});
+  await tx.permissionRequest.deleteMany({});
+  await tx.notification.deleteMany({});
+  await tx.auditLog.deleteMany({});
+  await tx.refreshToken.deleteMany({});
+  await tx.googleIdentity.deleteMany({});
+  await tx.otpCode.deleteMany({});
+  await tx.loginAttempt.deleteMany({});
+  await tx.resetToken.deleteMany({});
+  await tx.stallAllocation.deleteMany({});
+  await tx.horse.deleteMany({});
+  await tx.stall.deleteMany({});
+  await tx.stallZone.deleteMany({});
+  await tx.horseCatalogItem.deleteMany({});
+  await tx.supplyCatalog.deleteMany({});
+  await tx.preventiveTypeCatalog.deleteMany({});
+  await tx.shiftCatalog.deleteMany({});
+  await tx.user.deleteMany({});
 }
 
 async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
