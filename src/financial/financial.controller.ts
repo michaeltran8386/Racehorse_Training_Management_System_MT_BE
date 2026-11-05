@@ -8,6 +8,7 @@ import { FinancialService } from './financial.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { QueryInvoiceDto } from './dto/query-invoice.dto';
+import { GenerateMonthlyDto } from './dto/generate-monthly.dto';
 
 @ApiTags('Financial Ledger & Invoices (Flow 5: F5-05 & F5-06)')
 @ApiBearerAuth('JWT-auth')
@@ -67,11 +68,8 @@ export class FinancialController {
   @ApiOperation({
     summary: 'Tự động sinh hóa đơn định kỳ đầu tháng cho toàn bộ Chủ ngựa (Chỉ Club Manager)',
   })
-  async generateMonthly(
-    @Body('billingPeriod') billingPeriod: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.financialService.generateMonthlyDrafts(billingPeriod, {
+  async generateMonthly(@Body() dto: GenerateMonthlyDto, @CurrentUser() user: CurrentUserPayload) {
+    return this.financialService.generateMonthlyDrafts(dto.billingPeriod, {
       id: user.userId,
       name: user.fullName || user.email,
       role: user.role,

@@ -1,0 +1,13 @@
+# SDD ledger — plan: docs/superpowers/plans/2026-11-05-equiflow-scope.md
+Spec: ../docs/intent/financial-and-trainer-dashboard.md plus user execution instruction.
+Base: BE origin/dev d00260b; FE origin/dev 588c503. New branch feat/financial-trainer-dashboard in each existing clean checkout. No worktree created.
+Pre-flight: financial tasks share nullable snapshots/deadline and summary fields; trainer tasks share two additive overview objects. Ruling: amended intent wins over superseded weekly matrix/polling plan; implement two action cards, initial load only.
+Ruling: closed-month generation at 00:10 first day, no advisory lock. Serializable transaction and bounded retries preserve idempotence with concurrent manual/scheduled requests. Current ownership requires manual reconciliation on historical transfers.
+Ruling: existing manual creation also calculates boarding server-side; calculated fee/period cannot be edited into disagreement with snapshots. Legacy records preserve custom amounts.
+TDD: new helper/service/overview tests first failed because exports/contracts were absent. Boarding/lifecycle unit tests then passed. Manual snapshot and readonly guard tests observed 2 assertion failures then passed. DTO plainToInstance test observed boardingFee=0 where undefined expected; removed initializer defaults while preserving create-service defaults.
+Review: independent reviewer found missing deadline cell and inherited DTO defaults; both fixed with regression tests. Migration finding rejected: Dockerfile CMD already runs db push and AGENTS forbids migrations. No database mutation performed.
+Checks: BE typecheck PASS; full npm test 63 suites / 817 tests PASS. FE typecheck and build PASS; targeted Playwright 3/3 PASS including bilingual finance, safe empty cards at 375px and no 30-second polling. BE lint PASS (zero warnings); Prisma validate PASS. FE lint exit 0 with pre-existing warnings in unrelated files; no unrelated fixes made.
+Environment: Prisma engine DLL in use; generated client in isolated ignored output then copied generated JS/types/runtime, preserving loaded DLL. Jest temp cache rename denied; used workspace cache. Browser tests required elevated local browser process and temporary config to reuse the task preview server. No dependencies added.
+
+Scope complete: financial calculator/snapshots, monthly scheduling, seven-day issue deadline, overdue sweep and debt, localized finance labels/exports, two actionable trainer widgets, no polling/week matrix. No dependencies, migrations, schema renames, or paid-invoice backfills.
+Not checked: live database integration and production deployment. Browser tests stub HTTP responses only in the test runner; application retains real API behavior. No push/merge/deploy performed.

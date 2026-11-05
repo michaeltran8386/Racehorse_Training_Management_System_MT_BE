@@ -7,9 +7,10 @@ import { apiError } from '../common/exceptions/api-error';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { QueryInvoiceDto } from './dto/query-invoice.dto';
+import { boardingMonth, calculateBoardingFee, BOARDING_MONTHLY_RATE } from './boarding-fee';
 
 export interface FinancialActor {
-  id: string;
+  id: string | null;
   name: string;
   role: string;
 }
@@ -29,6 +30,7 @@ export class FinancialService {
    * Chủ ngựa chỉ được xem hóa đơn đứng tên mình.
    */
   async findAll(query: QueryInvoiceDto, user: FinancialActor) {
+    await this.sweepOverdue();
     const { page = 1, limit = 20, horseId, billingPeriod, status } = query;
     const skip = (page - 1) * limit;
 
@@ -75,6 +77,8 @@ export class FinancialService {
       items: items.map((inv) => ({
         ...inv,
         boardingFee: Number(inv.boardingFee),
+        boardingMonthlyRate:
+          inv.boardingMonthlyRate == null ? null : Number(inv.boardingMonthlyRate),
         medicalFee: Number(inv.medicalFee),
         trainingFee: Number(inv.trainingFee),
         prizeCredit: Number(inv.prizeCredit),
@@ -91,6 +95,7 @@ export class FinancialService {
    * Xem chi tiết hóa đơn
    */
   async findOne(id: string, user: FinancialActor) {
+    await this.sweepOverdue();
     const invoice = await this.prisma.financialInvoice.findUnique({
       where: { id },
       include: {
@@ -114,6 +119,8 @@ export class FinancialService {
     return {
       ...invoice,
       boardingFee: Number(invoice.boardingFee),
+      boardingMonthlyRate:
+        invoice.boardingMonthlyRate == null ? null : Number(invoice.boardingMonthlyRate),
       medicalFee: Number(invoice.medicalFee),
       trainingFee: Number(invoice.trainingFee),
       prizeCredit: Number(invoice.prizeCredit),
@@ -125,7 +132,23 @@ export class FinancialService {
    * Tạo hóa đơn tài chính mới (Club Manager)
    */
   async create(dto: CreateInvoiceDto, user: FinancialActor) {
-    const boardingFee = dto.boardingFee ?? 0;
+    const { start, end } = boardingMonth(dto.billingPeriod);
+    if (end > new Date()) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'BILLING_PERIOD_NOT_CLOSED',
+        'Only completed months can be billed.',
+      );
+    }
+    const allocations = await this.prisma.stallAllocation.findMany({
+      where: {
+        horseId: dto.horseId,
+        startDate: { lt: end },
+        OR: [{ endDate: null }, { endDate: { gte: start } }],
+      },
+    });
+    const calculated = calculateBoardingFee(dto.billingPeriod, allocations);
+    const boardingFee = calculated.boardingFee.toNumber();
     const medicalFee = dto.medicalFee ?? 0;
     const trainingFee = dto.trainingFee ?? 0;
     const prizeCredit = dto.prizeCredit ?? 0;
@@ -136,12 +159,15 @@ export class FinancialService {
         horseId: dto.horseId,
         ownerId: dto.ownerId,
         billingPeriod: dto.billingPeriod,
+        boardingDays: calculated.boardingDays,
+        boardingMonthlyRate: BOARDING_MONTHLY_RATE,
         boardingFee,
         medicalFee,
         trainingFee,
         prizeCredit,
         netAmount,
         status: dto.status ?? InvoiceStatus.DRAFT,
+        ...(dto.status === InvoiceStatus.SENT && { dueAt: new Date(Date.now() + 7 * 86400000) }),
         invoiceUrl: dto.invoiceUrl,
       },
       include: {
@@ -161,6 +187,8 @@ export class FinancialService {
     return {
       ...invoice,
       boardingFee: Number(invoice.boardingFee),
+      boardingMonthlyRate:
+        invoice.boardingMonthlyRate == null ? null : Number(invoice.boardingMonthlyRate),
       medicalFee: Number(invoice.medicalFee),
       trainingFee: Number(invoice.trainingFee),
       prizeCredit: Number(invoice.prizeCredit),
@@ -187,6 +215,17 @@ export class FinancialService {
 
     const boardingFee =
       dto.boardingFee !== undefined ? dto.boardingFee : Number(existing.boardingFee);
+    if (
+      existing.boardingDays != null &&
+      (boardingFee !== Number(existing.boardingFee) ||
+        (dto.billingPeriod !== undefined && dto.billingPeriod !== existing.billingPeriod))
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'BOARDING_FEE_READ_ONLY',
+        'The boarding fee and period are fixed by the stay calculation.',
+      );
+    }
     const medicalFee = dto.medicalFee !== undefined ? dto.medicalFee : Number(existing.medicalFee);
     const trainingFee =
       dto.trainingFee !== undefined ? dto.trainingFee : Number(existing.trainingFee);
@@ -204,6 +243,9 @@ export class FinancialService {
         prizeCredit,
         netAmount,
         ...(dto.status && { status: dto.status }),
+        ...(dto.status === InvoiceStatus.SENT &&
+          existing.status === InvoiceStatus.DRAFT &&
+          !existing.dueAt && { dueAt: new Date(Date.now() + 7 * 86400000) }),
         ...(dto.invoiceUrl !== undefined && { invoiceUrl: dto.invoiceUrl }),
       },
     });
@@ -219,6 +261,8 @@ export class FinancialService {
     return {
       ...updated,
       boardingFee: Number(updated.boardingFee),
+      boardingMonthlyRate:
+        updated.boardingMonthlyRate == null ? null : Number(updated.boardingMonthlyRate),
       medicalFee: Number(updated.medicalFee),
       trainingFee: Number(updated.trainingFee),
       prizeCredit: Number(updated.prizeCredit),
@@ -250,9 +294,23 @@ export class FinancialService {
       );
     }
 
+    if (existing.status === InvoiceStatus.PAID && status !== InvoiceStatus.PAID) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVOICE_ALREADY_PAID',
+        'Paid invoices cannot be modified.',
+      );
+    }
     const updated = await this.prisma.financialInvoice.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        ...(status === InvoiceStatus.SENT &&
+          existing.status === InvoiceStatus.DRAFT &&
+          !existing.dueAt && {
+            dueAt: new Date(Date.now() + 7 * 86400000),
+          }),
+      },
     });
 
     await this.audit.record(
@@ -279,13 +337,15 @@ export class FinancialService {
           link: `/owner/financial-reports?highlight=${encodeURIComponent(id)}`,
           params: { billingPeriod: existing.billingPeriod, horseName: existing.horse.name },
         },
-        user.id,
+        user.id ?? undefined,
       );
     }
 
     return {
       ...updated,
       boardingFee: Number(updated.boardingFee),
+      boardingMonthlyRate:
+        updated.boardingMonthlyRate == null ? null : Number(updated.boardingMonthlyRate),
       medicalFee: Number(updated.medicalFee),
       trainingFee: Number(updated.trainingFee),
       prizeCredit: Number(updated.prizeCredit),
@@ -294,7 +354,6 @@ export class FinancialService {
   }
 
   /**
-<<<<<<< HEAD
    * Thanh toán hóa đơn trực tuyến cho Chủ ngựa
    */
   async payInvoice(
@@ -354,6 +413,8 @@ export class FinancialService {
     return {
       ...updated,
       boardingFee: Number(updated.boardingFee),
+      boardingMonthlyRate:
+        updated.boardingMonthlyRate == null ? null : Number(updated.boardingMonthlyRate),
       medicalFee: Number(updated.medicalFee),
       trainingFee: Number(updated.trainingFee),
       prizeCredit: Number(updated.prizeCredit),
@@ -365,6 +426,7 @@ export class FinancialService {
    * Tổng hợp báo cáo tài chính của Chủ ngựa (SC-5.06)
    */
   async getOwnerSummary(ownerId?: string) {
+    await this.sweepOverdue();
     const where = ownerId ? { ownerId } : {};
     const invoices = await this.prisma.financialInvoice.findMany({
       where,
@@ -396,10 +458,19 @@ export class FinancialService {
       totalExpense: totalBoarding + totalMedical + totalTraining,
       totalPrizeCredit,
       totalNet,
+      outstandingDebt: invoices.reduce(
+        (sum, inv) =>
+          inv.status === InvoiceStatus.SENT || inv.status === InvoiceStatus.OVERDUE
+            ? sum + Math.max(0, Number(inv.netAmount))
+            : sum,
+        0,
+      ),
       invoiceCount: invoices.length,
       invoices: invoices.map((inv) => ({
         ...inv,
         boardingFee: Number(inv.boardingFee),
+        boardingMonthlyRate:
+          inv.boardingMonthlyRate == null ? null : Number(inv.boardingMonthlyRate),
         medicalFee: Number(inv.medicalFee),
         trainingFee: Number(inv.trainingFee),
         prizeCredit: Number(inv.prizeCredit),
@@ -408,64 +479,106 @@ export class FinancialService {
     };
   }
 
-  /**
-   * Tạo tự động hóa đơn nháp đầu tháng cho tất cả ngựa có Chủ sở hữu
-   */
-  async generateMonthlyDrafts(billingPeriod: string, user: FinancialActor) {
-    const horses = await this.prisma.horse.findMany({
-      where: {
-        deletedAt: null,
-        ownerId: { not: null },
-      },
+  async sweepOverdue(): Promise<number> {
+    const { count } = await this.prisma.financialInvoice.updateMany({
+      where: { status: InvoiceStatus.SENT, dueAt: { lt: new Date() }, netAmount: { gt: 0 } },
+      data: { status: InvoiceStatus.OVERDUE },
     });
+    return count;
+  }
 
-    const created: any[] = [];
-
-    for (const h of horses) {
-      if (!h.ownerId) continue;
-
-      const existing = await this.prisma.financialInvoice.findFirst({
-        where: {
-          horseId: h.id,
-          ownerId: h.ownerId,
-          billingPeriod,
-        },
-      });
-
-      if (!existing) {
-        // Phí cơ sở định kỳ: Tiền chuồng 6,000,000; Huấn luyện 4,000,000
-        const boardingFee = 6000000;
-        const trainingFee = 4000000;
-        const netAmount = boardingFee + trainingFee;
-
-        const inv = await this.prisma.financialInvoice.create({
-          data: {
-            horseId: h.id,
-            ownerId: h.ownerId,
-            billingPeriod,
-            boardingFee,
-            medicalFee: 0,
-            trainingFee,
-            prizeCredit: 0,
-            netAmount,
-            status: InvoiceStatus.DRAFT,
+  /** Closed months only: a payment settles its own period, never the next month. */
+  async generateMonthlyDrafts(billingPeriod: string, user: FinancialActor) {
+    const { start, end } = boardingMonth(billingPeriod);
+    if (end > new Date()) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'BILLING_PERIOD_NOT_CLOSED',
+        'Only completed months can be billed.',
+      );
+    }
+    // Serializable retries prevent duplicate invoices when manual and scheduled runs overlap.
+    let createdCount = 0;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        createdCount = await this.prisma.$transaction(
+          async (tx) => {
+            const horses = await tx.horse.findMany({
+              where: {
+                ownerId: { not: null },
+                stallAllocations: {
+                  some: {
+                    startDate: { lt: end },
+                    OR: [{ endDate: null }, { endDate: { gte: start } }],
+                  },
+                },
+              },
+              include: {
+                stallAllocations: {
+                  where: {
+                    startDate: { lt: end },
+                    OR: [{ endDate: null }, { endDate: { gte: start } }],
+                  },
+                },
+              },
+            });
+            let count = 0;
+            for (const horse of horses) {
+              if (!horse.ownerId) continue;
+              const existing = await tx.financialInvoice.findFirst({
+                where: { horseId: horse.id, ownerId: horse.ownerId, billingPeriod },
+              });
+              if (existing) continue;
+              const { boardingDays, boardingFee } = calculateBoardingFee(
+                billingPeriod,
+                horse.stallAllocations,
+              );
+              if (boardingDays === 0) continue;
+              const trainingFee = 4000000;
+              await tx.financialInvoice.create({
+                data: {
+                  horseId: horse.id,
+                  ownerId: horse.ownerId,
+                  billingPeriod,
+                  boardingDays,
+                  boardingMonthlyRate: BOARDING_MONTHLY_RATE,
+                  boardingFee: boardingFee.toNumber(),
+                  medicalFee: 0,
+                  trainingFee,
+                  prizeCredit: 0,
+                  netAmount: boardingFee.plus(trainingFee),
+                  status: InvoiceStatus.DRAFT,
+                },
+              });
+              count++;
+            }
+            return count;
           },
-        });
-        created.push(inv);
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+        break;
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2034' &&
+          attempt < 2
+        )
+          continue;
+        throw err;
       }
     }
 
     await this.audit.record(
       { id: user.id, name: user.name },
       'MONTHLY_INVOICES_GENERATED',
-      `Auto-generated ${created.length} draft invoices for billing period ${billingPeriod}`,
+      `Generated ${createdCount} unissued invoices for billing period ${billingPeriod}`,
       billingPeriod,
-      { entityName: 'FinancialInvoice', newValues: { count: created.length, billingPeriod } },
+      { entityName: 'FinancialInvoice', newValues: { count: createdCount, billingPeriod } },
     );
 
     return {
       success: true,
-      createdCount: created.length,
+      createdCount,
       billingPeriod,
     };
   }
