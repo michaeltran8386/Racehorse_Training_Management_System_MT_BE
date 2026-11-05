@@ -55,30 +55,26 @@ export function buildOtpEmail(options: OtpEmailOptions): GeneratedEmail {
   const durationText = formatDuration(expiresInMinutes);
 
   let badgeText = 'XÁC THỰC TÀI KHOẢN';
-  let contextDescription =
-    `Hệ thống ghi nhận yêu cầu kích hoạt tài khoản truy cập Hệ thống Quản lý Huấn luyện Ngựa đua ${resolvedBrand}.`;
+  let contextDescription = `Hệ thống ghi nhận yêu cầu kích hoạt tài khoản truy cập Hệ thống Quản lý Huấn luyện Ngựa đua ${resolvedBrand}.`;
   let actionInstruction =
     'Quý khách vui lòng sử dụng mã xác thực bên dưới để hoàn tất xác nhận danh tính và kích hoạt quyền truy cập hệ thống.';
   let subjectDetail = 'Mã xác thực tài khoản';
 
   if (purpose === 'reset') {
     badgeText = 'ĐẶT LẠI MẬT KHẨU';
-    contextDescription =
-      `Hệ thống nhận được yêu cầu cấp lại mật khẩu bảo mật cho tài khoản của Quý khách trên hệ thống ${resolvedBrand}.`;
+    contextDescription = `Hệ thống nhận được yêu cầu cấp lại mật khẩu bảo mật cho tài khoản của Quý khách trên hệ thống ${resolvedBrand}.`;
     actionInstruction =
       'Quý khách vui lòng nhập mã xác thực này vào biểu mẫu để tiến hành thiết lập mật khẩu mới.';
     subjectDetail = 'Mã xác thực đặt lại mật khẩu';
   } else if (purpose === 'invite') {
     badgeText = 'LỜI MỜI THAM GIA';
-    contextDescription =
-      `Quý khách được Ban Quản lý Câu lạc bộ ${resolvedBrand} phân quyền tham gia điều hành và quản lý câu lạc bộ.`;
+    contextDescription = `Quý khách được Ban Quản lý Câu lạc bộ ${resolvedBrand} phân quyền tham gia điều hành và quản lý câu lạc bộ.`;
     actionInstruction =
       'Quý khách vui lòng nhập mã xác thực này hoặc bấm nút kích hoạt bên dưới để khởi tạo mật khẩu bảo mật và đăng nhập hệ thống.';
     subjectDetail = 'Mã kích hoạt tài khoản thành viên';
   } else if (purpose === 'tournament') {
     badgeText = 'CHECK-IN GIẢI ĐUA';
-    contextDescription =
-      `Chiến mã của Quý khách đã được xác nhận vào danh sách tham gia giải đua thuộc hệ thống ${resolvedBrand}.`;
+    contextDescription = `Chiến mã của Quý khách đã được xác nhận vào danh sách tham gia giải đua thuộc hệ thống ${resolvedBrand}.`;
     actionInstruction =
       'Quý khách vui lòng xuất trình mã này tại bàn kiểm tra y tế và chuồng cân ngựa trước giờ xuất phát.';
     subjectDetail = 'Mã check-in tham gia giải đua';
