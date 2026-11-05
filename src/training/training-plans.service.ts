@@ -135,13 +135,21 @@ export class TrainingPlansService {
     return { ...plan, progress };
   }
 
-  /** Ngày bắt đầu / kết thúc hợp lệ (SC-2.03): kết thúc ≥ bắt đầu, tối đa 52 tuần. */
+  /** Ngày bắt đầu / kết thúc hợp lệ (SC-2.03): kết thúc ≥ bắt đầu, tối thiểu 7 ngày, tối đa 52 tuần. */
   private assertPlanDates(startDate: Date, endDate: Date) {
     if (startDate > endDate) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
         'INVALID_DATE_RANGE',
         'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.',
+      );
+    }
+    const diffDays = Math.round((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+    if (diffDays < 7) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'PLAN_TOO_SHORT',
+        'Giáo án phải kéo dài ít nhất 1 tuần (7 ngày) giữa thời điểm bắt đầu và thời điểm kết thúc.',
       );
     }
     if (endDate.getTime() - startDate.getTime() > MAX_PLAN_WEEKS * 7 * 24 * 60 * 60 * 1000) {

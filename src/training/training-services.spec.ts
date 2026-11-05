@@ -245,6 +245,13 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       ).toBe('PLAN_TOO_LONG');
     });
 
+    it('rejects plans shorter than 1 week (7 days)', async () => {
+      prisma.horse.findUnique.mockResolvedValue(healthyHorse);
+      expect(
+        await codeOf(plans.createPlan({ ...dto, endDate: clubDate(addDays(today, 5)) }, trainer)),
+      ).toBe('PLAN_TOO_SHORT');
+    });
+
     it('always creates a DRAFT and does not touch the horse status', async () => {
       prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isMedicalLocked: true });
       prisma.trainingPlan.create.mockResolvedValue({ ...draftPlan, horse: healthyHorse });

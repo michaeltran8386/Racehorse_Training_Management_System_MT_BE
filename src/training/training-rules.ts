@@ -142,7 +142,9 @@ export function validatePhases(
       return bad(`Giai đoạn ${name}: Đến ngày phải sau hoặc bằng Từ ngày.`);
     }
     if (start < planStart || end > planEnd) {
-      return bad(`Giai đoạn ${name} phải nằm trong thời gian của giáo án.`);
+      return bad(
+        `Giai đoạn "${name}" (${start} → ${end}) phải nằm trong thời gian của giáo án (${planStart} → ${planEnd}).`,
+      );
     }
     const perWeek = Number(p.sessionsPerWeek);
     if (!Number.isInteger(perWeek) || perWeek < 1 || perWeek > 14) {
