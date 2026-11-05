@@ -22,7 +22,8 @@ npm install
 # 2. Khởi động PostgreSQL 16 bằng Docker
 docker compose up -d
 
-# 3. Đồng bộ bảng & nạp 100% dữ liệu mẫu (20 ô chuồng, 9 ngựa, hồ sơ y tế, giáo án)
+# 3. Trỏ DATABASE_URL và DIRECT_URL vào equiflow_seed_demo (xem mục 4)
+# Sau đó đồng bộ schema và nạp 12 ngựa mẫu
 npm run db:setup
 
 # 4. Khởi động Backend Server
@@ -131,35 +132,39 @@ Mật khẩu mặc định cho tất cả các tài khoản: **`EquiFlow@2026`**
 
 ---
 
-## 4. Dữ liệu Mẫu Toàn Diện Có Sẵn (Seeded Dataset)
+## 4. Dữ liệu mẫu theo vòng đời
 
-Dữ liệu nạp bởi `npm run db:seed` bao quát 100% các tình huống nghiệp vụ:
+Seed tạo 12 ngựa, 20 ô chuồng và dữ liệu cho cả 37 model. Ngày tập, ngày đua, hạn trả và lịch chăm sóc được neo theo ngày chạy seed tại CLB (UTC+7).
 
-### 4.1. Hệ thống Chuồng Trại (3 Khu - 20 Ô chuồng)
-* **Zone A - Barn 1 (Lưới 2x4 = 8 ô):** `STALL-A01` đến `STALL-A04` (`OCCUPIED`), `STALL-A05` đến `STALL-A08` (`AVAILABLE`).
-* **Zone B - Barn 2 (Lưới 2x4 = 8 ô):** `STALL-B01` đến `STALL-B03` (`OCCUPIED`), `STALL-B04` đến `STALL-B07` (`AVAILABLE`), `STALL-B08` (`MAINTENANCE`).
-* **Zone C - Isolation (Lưới 1x4 = 4 ô):** `STALL-C01` (`OCCUPIED`), `STALL-C02` đến `STALL-C03` (`AVAILABLE`), `STALL-C04` (`INACTIVE` - ngừng dùng).
+Dùng **một CSDL PostgreSQL cục bộ riêng** tên `equiflow_seed_demo` (CI dùng `racehorse_ci`). Tạo CSDL mới một lần trong PostgreSQL Docker đang chạy:
 
-### 4.2. Đàn Ngựa Đua (9 Cá thể đầy đủ RFID & 7 Trạng thái)
-1. `HR-000001` - **Thunderbolt Swift** (`ACTIVE`): Chuồng A01, giáo án thi đấu Derby 2026.
-2. `HR-000002` - **Northern Dancer Legacy** (`INJURED`): Chuồng A02, **Khóa Y Tế đang bật**, chặn bài tập nặng.
-3. `HR-000003` - **Shadowfax Wonder** (`UNDER_OBSERVATION`): Chuồng B01, chấn thương gân SDFT 2D đang hồi phục.
-4. `HR-000004` - **Pegasus Dream** (`ACTIVE`): Chuồng A03, điều hòa thể lực đường trường.
-5. `HR-000005` - **Golden Eclipse** (`IN_TRAINING`): Chuồng A04, chu kỳ tập luyện cơ bản.
-6. `HR-000006` - **Storm Runner** (`IN_TRAINING`): Chuồng B02, ngựa đực thuần chủng Thoroughbred.
-7. `HR-000007` - **Midnight Mirage** (`ISOLATED`): Chuồng C01, **Khóa Y Tế cách ly** theo dõi cúm EHV-1.
-8. `HR-000008` - **Red Velvet** (`RESTING`): Chuồng B03, nghỉ dưỡng sau giải đua.
-9. `HR-000009` - **Silver Comet** (`RETIRED`): Ngựa giải nghệ vinh danh sau chức vô địch 2024 (lưu trữ mềm).
+```powershell
+docker compose exec postgres createdb -U postgres equiflow_seed_demo
+```
 
-### 4.3. Hồ sơ Bệnh án & Y tế (Flow 3)
-* **Bệnh án:** Có sẵn bệnh án khám thể lực `BA-2610-001` (`OPEN`), chấn thương cấp tính `BA-2610-002` (`OPEN`), bệnh án viêm phế quản cũ đã chữa khỏi `BA-2609-001` (`CLOSED` - test Reopen), và bệnh án nháp `BA-2610-DRAFT` (`DRAFT`).
-* **Khóa Y Tế:** 2 ca đang khóa (`isLocked: true`) và 1 ca lịch sử đã mở khóa (`isLocked: false` - test tab Lịch sử).
-* **Bản đồ chấn thương 2D:** 1 ca đang điều trị (`ACTIVE`) và 1 ca đã lành (`RESOLVED`).
-* **Lịch chăm sóc định kỳ:** Đầy đủ tiêm phòng, tẩy giun, mài răng và đóng móng (kèm 1 ca quá hạn `OVERDUE` để kiểm tra cảnh báo).
+Trong cửa sổ PowerShell dùng để seed và chạy BE, đặt hai URL theo cấu hình Docker local:
 
-### 4.4. Kế hoạch Huấn luyện & Bài tập (Flow 2)
-* **Giáo án:** Có giáo án đang áp dụng (`ACTIVE`), giáo án nháp (`DRAFT`), và giáo án hoàn thành (`COMPLETED`).
-* **Bài tập:** Bài tập đã hoàn thành (`COMPLETED` kèm telemetry), bài tập lên lịch (`SCHEDULED`), bài tập bị chặn bởi Khóa Y Tế (`BLOCKED` - **RULE-MED-01**), và bài tập bị bỏ lỡ (`MISSED`).
+```powershell
+$env:DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/equiflow_seed_demo?schema=public'
+$env:DIRECT_URL = $env:DATABASE_URL
+npx prisma generate
+npx prisma db push --skip-generate
+npx prisma db seed
+npx ts-node test/seed-lifecycle.check.ts
+npm run start:dev
+```
+
+`npm run db:seed` chạy cùng script. Có thể chạy lại để đưa lịch về ngày hiện tại; script xây lại các giao dịch mẫu trong một transaction, giữ tài khoản mẫu theo ID ổn định và dừng nếu khóa trùng dữ liệu khác. Không trỏ seed vào CSDL đang sử dụng hoặc Supabase. Nếu đang có bộ seed cũ, dùng CSDL demo mới để tránh trùng mã ngựa/chuồng; không cần xóa CSDL cũ.
+
+| Màn hình demo | Dữ liệu để kiểm tra |
+| --- | --- |
+| Dashboard HLV | Bạch Long Mã (08:00, cỏ) và Thần Phong (08:15, cỏ); Hắc Báo (09:30, cát), Dạ Nguyệt (14:00, bơi) và lịch 14 ngày tiếp theo. Sau giờ tập hôm nay, card lấy buổi còn lại hoặc buổi ngày mai. |
+| Phong độ và giải đấu | Hơn 35 buổi có kết quả cho từng ngựa Bạch Long Mã, Lão Tướng và Lôi Chấn; Lão Tướng đã giải nghệ với 3 lần nhất, 2 lần nhì. Cúp Mùa Đông diễn ra sau 20 ngày và đang mở đăng ký. |
+| Thú y | Xích Thố có bệnh án mở, khóa tập nặng và lịch tái khám sau 7 ngày. Tuyết Ảnh cách ly tại C01; Dạ Nguyệt đang phục hồi. |
+| Tài chính | 4 hóa đơn cho các tháng đã kết thúc: đã trả 14.500.000đ, quá hạn 6.000.000đ, đã phát hành 8.200.000đ và chưa phát hành. |
+| Groom và kho | Phân ca 7 ngày, việc cho ăn/vệ sinh hôm nay, 2 mặt hàng dưới ngưỡng tồn, phiếu chờ duyệt/đã duyệt/đã giao và sự cố B04. |
+
+Tài khoản demo: `manager`, `trainer`, `trainer2`, `vet`, `groom`, `groom2`, `groom3`, `owner`, `owner2` (tất cả thêm `@gmail.com`). Mật khẩu demo: `EquiFlow@2026`. Các bản ghi OTP, reset, refresh phục vụ kiểm thử đều đã hết hạn hoặc bị thu hồi.
 
 ---
 

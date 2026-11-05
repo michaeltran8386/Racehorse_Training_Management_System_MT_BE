@@ -138,28 +138,28 @@ export class MailService {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${subject}</title>
 </head>
-<body style="margin: 0; padding: 32px 0; background-color: #080d0a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f1f5f9;">
+<body style="margin: 0; padding: 32px 0; background-color: #0a161c; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #ede6d3;">
   <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
     <tr>
       <td align="center" style="padding: 12px;">
-        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="560" style="background-color: #0e1612; border-radius: 12px; border: 1px solid #1c2e26; overflow: hidden; box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.7);">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="560" style="background-color: #13262d; border-radius: 12px; border: 1px solid #1d3a44; overflow: hidden; box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.75);">
           <tr>
-            <td height="4" style="background-color: #315D4B; font-size: 1px; line-height: 1px;">&nbsp;</td>
+            <td height="4" style="background-color: #f4b942; font-size: 1px; line-height: 1px;">&nbsp;</td>
           </tr>
           <tr>
-            <td style="padding: 32px 40px; font-size: 15px; line-height: 1.6; color: #94a3b8;">
-              <div style="font-size: 22px; font-weight: 800; letter-spacing: 2px; color: #f8fafc; text-transform: uppercase; margin-bottom: 4px;">
-                TMEC
+            <td style="padding: 32px 40px; font-size: 15px; line-height: 1.6; color: #cbd5e1;">
+              <div style="font-size: 22px; font-weight: 800; letter-spacing: 2px; color: #ede6d3; text-transform: uppercase; margin-bottom: 4px;">
+                EquiFlow
               </div>
-              <div style="font-size: 12px; font-weight: 500; color: #6ee7b7; letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 24px;">
+              <div style="font-size: 11px; font-weight: 700; color: #f4b942; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 24px;">
                 Hệ thống Quản lý Huấn luyện Ngựa đua
               </div>
-              <h3 style="color: #f1f5f9; margin-top: 0; margin-bottom: 18px; font-size: 17px; font-weight: 600;">${subject}</h3>
+              <h3 style="color: #ede6d3; margin-top: 0; margin-bottom: 18px; font-size: 17px; font-weight: 700;">${subject}</h3>
               <div>
                 ${formattedBody}
               </div>
-              <div style="border-top: 1px solid #1c2e26; margin-top: 28px; padding-top: 16px; font-size: 12px; color: #52635a;">
-                © ${new Date().getFullYear()} TMEC Racehorse Training & Management System. All rights reserved.
+              <div style="border-top: 1px solid #1d3a44; margin-top: 28px; padding-top: 16px; font-size: 12px; color: #64748b;">
+                © ${new Date().getFullYear()} EquiFlow Racehorse Training & Management System. All rights reserved.
               </div>
             </td>
           </tr>
