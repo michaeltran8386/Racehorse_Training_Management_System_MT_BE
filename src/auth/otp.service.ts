@@ -145,7 +145,7 @@ export class OtpService {
         purpose: 'invite',
         expiresInMinutes: 48 * 60,
         userName: user?.fullName || 'Quý khách',
-        brandName: 'TMEC',
+        brandName: 'EquiFlow',
         actionUrl: inviteUrl,
         actionUrlLabel: 'KÍCH HOẠT TÀI KHOẢN & ĐẶT MẬT KHẨU',
       });
@@ -155,7 +155,7 @@ export class OtpService {
       code,
       purpose: purpose === OtpPurpose.SIGNUP ? 'signup' : 'reset',
       expiresInMinutes: 10,
-      brandName: 'TMEC',
+      brandName: 'EquiFlow',
     });
   }
 }

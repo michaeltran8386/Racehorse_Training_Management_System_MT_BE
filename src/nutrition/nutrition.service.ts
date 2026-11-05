@@ -341,14 +341,28 @@ export class NutritionService {
     const metrics = await this.calculateMetrics(dto.horseId, dto.meals);
     const planCode = await this.generatePlanCode();
     const initialStatus = dto.submitImmediately
-      ? NutritionPlanStatus.PENDING_APPROVAL
+      ? NutritionPlanStatus.APPROVED
       : NutritionPlanStatus.DRAFT;
+
+    if (dto.submitImmediately) {
+      await this.prisma.nutritionPlan.updateMany({
+        where: {
+          horseId: dto.horseId,
+          status: NutritionPlanStatus.APPROVED,
+        },
+        data: {
+          status: NutritionPlanStatus.ARCHIVED,
+        },
+      });
+    }
 
     const created = await this.prisma.nutritionPlan.create({
       data: {
         planCode,
         horseId: dto.horseId,
         status: initialStatus,
+        approvedById: dto.submitImmediately ? currentUser.userId : null,
+        approvedAt: dto.submitImmediately ? new Date() : null,
         dailyFeedWeightKg: metrics.dailyFeedWeightKg,
         targetWeightRatioPct: metrics.targetWeightRatioPct,
         horseWeightSnapshot: metrics.horseWeightKg,
@@ -366,8 +380,8 @@ export class NutritionService {
 
     await this.auditService.record(
       { id: currentUser.userId, name: currentUser.fullName },
-      dto.submitImmediately ? 'SUBMIT_NUTRITION_PLAN' : 'CREATE_NUTRITION_PLAN_DRAFT',
-      `${dto.submitImmediately ? 'Gửi duyệt' : 'Tạo bản thảo'} khẩu phần #${planCode} cho ngựa ${horse.name}`,
+      dto.submitImmediately ? 'APPROVE_NUTRITION_PLAN' : 'CREATE_NUTRITION_PLAN_DRAFT',
+      `${dto.submitImmediately ? 'Áp dụng trực tiếp' : 'Tạo bản thảo'} khẩu phần #${planCode} cho ngựa ${horse.name}`,
       created.id,
       {
         entityName: 'NutritionPlan',
@@ -384,12 +398,12 @@ export class NutritionService {
 
     if (dto.submitImmediately) {
       await this.notifications.notifyRoles(
-        [Role.VETERINARIAN, Role.CLUB_MANAGER],
+        [Role.GROOM, Role.CLUB_MANAGER],
         {
-          type: 'NUTRITION_PLAN_SUBMITTED',
+          type: 'NUTRITION_PLAN_APPROVED',
           category: NotificationCategory.NUTRITION,
-          title: `Khẩu phần ăn mới cho ngựa ${horse.name} đang chờ duyệt`,
-          message: `Huấn luyện viên ${currentUser.fullName} đã gửi duyệt khẩu phần ăn #${planCode} cho ngựa ${horse.name} (${metrics.dailyFeedWeightKg}kg/ngày - ${metrics.targetWeightRatioPct}% trọng lượng).`,
+          title: `Khẩu phần ăn mới cho ngựa ${horse.name} đã được áp dụng`,
+          message: `Huấn luyện viên ${currentUser.fullName} đã áp dụng khẩu phần ăn #${planCode} cho ngựa ${horse.name} (${metrics.dailyFeedWeightKg}kg/ngày - ${metrics.targetWeightRatioPct}% trọng lượng).`,
           link: '/rations',
           senderName: currentUser.fullName,
           params: { horseName: horse.name, planCode },
@@ -481,7 +495,7 @@ export class NutritionService {
   }
 
   /**
-   * Gửi duyệt khẩu phần ăn (Chuyển trạng thái từ DRAFT hoặc REJECTED sang PENDING_APPROVAL).
+   * Kích hoạt & áp dụng khẩu phần ăn cho ngựa (HLV trưởng áp dụng trực tiếp).
    */
   async submitForApproval(id: string, currentUser: CurrentUserPayload) {
     const plan = await this.prisma.nutritionPlan.findUnique({
@@ -501,22 +515,39 @@ export class NutritionService {
       throw apiError(
         HttpStatus.FORBIDDEN,
         'FORBIDDEN_SUBMIT',
-        'Chỉ Huấn luyện viên hoặc Quản lý được gửi duyệt.',
+        'Chỉ Huấn luyện viên hoặc Quản lý được áp dụng khẩu phần.',
       );
     }
 
-    if (plan.status !== NutritionPlanStatus.DRAFT && plan.status !== NutritionPlanStatus.REJECTED) {
+    if (
+      plan.status !== NutritionPlanStatus.DRAFT &&
+      plan.status !== NutritionPlanStatus.REJECTED &&
+      plan.status !== NutritionPlanStatus.PENDING_APPROVAL
+    ) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
         'INVALID_STATUS_FOR_SUBMIT',
-        'Chỉ có thể gửi duyệt khẩu phần ở trạng thái Bản nháp (DRAFT) hoặc Đã bị từ chối (REJECTED).',
+        'Chỉ có thể áp dụng khẩu phần ở trạng thái Bản nháp (DRAFT) hoặc Đã bị từ chối (REJECTED).',
       );
     }
+
+    // Tự động lưu trữ (ARCHIVED) khẩu phần APPROVED cũ của ngựa này nếu có
+    await this.prisma.nutritionPlan.updateMany({
+      where: {
+        horseId: plan.horseId,
+        status: NutritionPlanStatus.APPROVED,
+      },
+      data: {
+        status: NutritionPlanStatus.ARCHIVED,
+      },
+    });
 
     const updated = await this.prisma.nutritionPlan.update({
       where: { id },
       data: {
-        status: NutritionPlanStatus.PENDING_APPROVAL,
+        status: NutritionPlanStatus.APPROVED,
+        approvedById: currentUser.userId,
+        approvedAt: new Date(),
         rejectionReason: null, // Xóa lý do từ chối cũ nếu có
       },
       include: {
@@ -527,22 +558,22 @@ export class NutritionService {
 
     await this.auditService.record(
       { id: currentUser.userId, name: currentUser.fullName },
-      'SUBMIT_NUTRITION_PLAN',
-      `Gửi duyệt khẩu phần #${plan.planCode || id.slice(0, 8)} cho ngựa ${plan.horse.name}`,
+      'APPROVE_NUTRITION_PLAN',
+      `Áp dụng khẩu phần #${plan.planCode || id.slice(0, 8)} cho ngựa ${plan.horse.name}`,
       id,
       {
         entityName: 'NutritionPlan',
-        newValues: { status: NutritionPlanStatus.PENDING_APPROVAL },
+        newValues: { status: NutritionPlanStatus.APPROVED },
       },
     );
 
     await this.notifications.notifyRoles(
-      [Role.VETERINARIAN, Role.CLUB_MANAGER],
+      [Role.GROOM, Role.CLUB_MANAGER],
       {
-        type: 'NUTRITION_PLAN_SUBMITTED',
+        type: 'NUTRITION_PLAN_APPROVED',
         category: NotificationCategory.NUTRITION,
-        title: `Khẩu phần ăn mới cho ngựa ${plan.horse.name} đang chờ duyệt`,
-        message: `Khẩu phần #${plan.planCode || id.slice(0, 8)} cho ngựa ${plan.horse.name} đã được gửi duyệt.`,
+        title: `Khẩu phần ăn cho ngựa ${plan.horse.name} đã được áp dụng`,
+        message: `Khẩu phần #${plan.planCode || id.slice(0, 8)} cho ngựa ${plan.horse.name} đã được áp dụng.`,
         link: '/rations',
         senderName: currentUser.fullName,
         params: { horseName: plan.horse.name, planCode: plan.planCode || '' },
@@ -554,7 +585,7 @@ export class NutritionService {
   }
 
   /**
-   * Bác sĩ thú y hoặc Quản lý thẩm định & phê duyệt/từ chối khẩu phần ăn.
+   * Thẩm định & phê duyệt/từ chối khẩu phần ăn (Bác sĩ thú y hoặc Quản lý).
    */
   async review(id: string, dto: ReviewNutritionPlanDto, currentUser: CurrentUserPayload) {
     if (currentUser.role !== UserRole.VETERINARIAN && currentUser.role !== UserRole.CLUB_MANAGER) {
