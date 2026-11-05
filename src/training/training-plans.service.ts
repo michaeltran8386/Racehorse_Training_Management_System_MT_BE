@@ -176,6 +176,13 @@ export class TrainingPlansService {
     if (horse.status === HorseStatus.RETIRED) {
       throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
     }
+    if (horse.isMedicalLocked) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_MEDICAL_LOCKED',
+        'Ngựa đang bị Khóa huấn luyện y tế. Không thể tạo giáo án mới cho đến khi Bác sĩ thú y gỡ khóa.',
+      );
+    }
 
     if (
       dto.phaseName &&
@@ -633,6 +640,13 @@ export class TrainingPlansService {
     }
     if (horse.status === HorseStatus.RETIRED) {
       throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
+    }
+    if (horse.isMedicalLocked) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_MEDICAL_LOCKED',
+        'Ngựa đang bị Khóa huấn luyện y tế. Không thể tạo giáo án mới cho đến khi Bác sĩ thú y gỡ khóa.',
+      );
     }
 
     const now = new Date();

@@ -253,7 +253,7 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
     });
 
     it('always creates a DRAFT and does not touch the horse status', async () => {
-      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isMedicalLocked: true });
+      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isMedicalLocked: false });
       prisma.trainingPlan.create.mockResolvedValue({ ...draftPlan, horse: healthyHorse });
 
       await plans.createPlan(dto, trainer);
@@ -262,6 +262,11 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
         expect.objectContaining({ data: expect.objectContaining({ status: PlanStatus.DRAFT }) }),
       );
       expect(prisma.horse.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects plan creation when the horse is under medical lock', async () => {
+      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isMedicalLocked: true });
+      expect(await codeOf(plans.createPlan(dto, trainer))).toBe('HORSE_MEDICAL_LOCKED');
     });
 
     it('rejects a retired horse and a plan without phases', async () => {
@@ -453,7 +458,12 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
     });
 
     it('rejects a trial on the same surface within 15 minutes', async () => {
-      prisma.workoutSession.findFirst.mockResolvedValue({ id: 'w-x', horse: { name: 'Bolt' } });
+      prisma.workoutSession.findFirst.mockImplementation(async (args: any) => {
+        if (args?.where?.workoutType === 'TRIAL') {
+          return { id: 'w-x', horse: { name: 'Bolt' } };
+        }
+        return null;
+      });
       expect(
         await codeOf(
           workouts.createWorkout(
@@ -526,7 +536,12 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
     });
 
     it('warns when the groom already has a workout at the same time', async () => {
-      prisma.workoutSession.findFirst.mockResolvedValue({ id: 'w-other' });
+      prisma.workoutSession.findFirst.mockImplementation(async (args: any) => {
+        if (args?.where?.assignedStaffUserId) {
+          return { id: 'w-other' };
+        }
+        return null;
+      });
       prisma.user.findUnique.mockResolvedValue({
         id: 'groom-1',
         fullName: 'John',

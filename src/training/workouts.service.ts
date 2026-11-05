@@ -194,6 +194,27 @@ export class WorkoutsService {
     const notSelf = excludeWorkoutId ? { id: { not: excludeWorkoutId } } : {};
     const live = { ...notSelf, status: { not: WorkoutStatus.CANCELLED } };
 
+    // 2b. Ngựa không thể có 2 buổi tập trùng thời điểm (cách nhau dưới 30 phút).
+    const timeOverlap = await tx.workoutSession.findFirst({
+      where: {
+        ...live,
+        horseId: plan.horseId,
+        scheduledDate: {
+          gte: new Date(w.scheduledDate.getTime() - 29 * 60 * 1000),
+          lte: new Date(w.scheduledDate.getTime() + 29 * 60 * 1000),
+        },
+      },
+      select: { id: true },
+    });
+    if (timeOverlap) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_WORKOUT_TIME_CONFLICT',
+        'Ngựa đã có buổi tập khác trong khung giờ này.',
+        { workoutId: timeOverlap.id },
+      );
+    }
+
     // 3. Chạy thử trùng mặt sân trong cùng khung 15 phút.
     if (w.workoutType === 'TRIAL') {
       const slot = TRIAL_SLOT_MINUTES * 60 * 1000;
@@ -454,6 +475,7 @@ export class WorkoutsService {
         'HORSE_RETIRED',
         'TRIAL_SLOT_TAKEN',
         'MAX_WORKOUTS_PER_DAY',
+        'HORSE_WORKOUT_TIME_CONFLICT',
         'DATE_IN_PAST',
         'TIME_TOO_SOON',
         'OUTSIDE_PHASE_DATES',
