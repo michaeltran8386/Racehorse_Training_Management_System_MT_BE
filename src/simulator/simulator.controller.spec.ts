@@ -33,6 +33,18 @@ describe('SimulatorController', () => {
     controller = module.get<SimulatorController>(SimulatorController);
   });
 
+  it('reports the early-start flag only outside production', () => {
+    const env = { ...process.env };
+    process.env.SIMULATOR_ALLOW_EARLY = 'false';
+    expect(controller.getConfig()).toEqual({ allowEarlyStart: false });
+    process.env.SIMULATOR_ALLOW_EARLY = 'true';
+    process.env.NODE_ENV = 'development';
+    expect(controller.getConfig()).toEqual({ allowEarlyStart: true });
+    process.env.NODE_ENV = 'production';
+    expect(controller.getConfig()).toEqual({ allowEarlyStart: false });
+    process.env = env;
+  });
+
   it('delegates to simulatorService.listRecent with default limit', async () => {
     const mockResponse: SimulatorSessionsResponse = {
       active: [],
