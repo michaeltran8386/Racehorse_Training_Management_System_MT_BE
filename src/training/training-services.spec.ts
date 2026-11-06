@@ -535,10 +535,14 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       expect(prisma.workoutSession.create).toHaveBeenCalled();
     });
 
-    it('warns when the groom already has a workout at the same time', async () => {
+    it('blocks when the groom already has a workout within 30 minutes', async () => {
       prisma.workoutSession.findFirst.mockImplementation(async (args: any) => {
         if (args?.where?.assignedStaffUserId) {
-          return { id: 'w-other' };
+          return {
+            id: 'w-other',
+            scheduledDate: new Date('2026-11-07T08:30:00.000Z'),
+            horse: { name: 'Red Velvet' },
+          };
         }
         return null;
       });
@@ -548,10 +552,12 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
         role: 'GROOM',
         status: 'ACTIVE',
       });
-      const error = await workouts.createWorkout('plan-1', workoutDto, trainer).catch((e) => e);
-      expect(error.getResponse().data.warnings).toContain(
-        'Nhân viên John đã có buổi tập trùng giờ.',
-      );
+      const error = await workouts
+        .createWorkout('plan-1', { ...workoutDto, acknowledgeWarnings: true }, trainer)
+        .catch((e) => e);
+      expect(error.getResponse().code).toBe('GROOM_TIME_CONFLICT');
+      expect(error.getResponse().data).toMatchObject({ groom: 'John', horse: 'Red Velvet' });
+      expect(prisma.workoutSession.create).not.toHaveBeenCalled();
     });
 
     it('weekly repeat creates the matching days and reports skipped ones', async () => {

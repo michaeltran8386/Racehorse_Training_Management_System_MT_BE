@@ -11,6 +11,7 @@ import {
   addDays,
   allowEarlyWorkoutStart,
   clubDate,
+  clubTime,
   effectiveIntensity,
   effectiveSurface,
   isHeavy,
@@ -313,6 +314,7 @@ export class WorkoutsService {
         );
       }
     }
+    // 7. Một người chăm sóc không thể kèm 2 ngựa cùng lúc (cách nhau dưới 30 phút) -> chặn hẳn.
     const overlap = GROOM_OVERLAP_MINUTES * 60 * 1000;
     const busy = await tx.workoutSession.findFirst({
       where: {
@@ -323,9 +325,18 @@ export class WorkoutsService {
           lt: new Date(w.scheduledDate.getTime() + overlap),
         },
       },
+      select: { id: true, scheduledDate: true, horse: { select: { name: true } } },
     });
     if (busy) {
-      warnings.push(`Nhân viên ${groom.fullName} đã có buổi tập trùng giờ.`);
+      const t = clubTime(busy.scheduledDate);
+      const time = `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
+      const date = clubDate(busy.scheduledDate);
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'GROOM_TIME_CONFLICT',
+        `Nhân viên ${groom.fullName} đã được giao buổi tập của ${busy.horse.name} lúc ${time} ngày ${date}. Chọn người chăm sóc khác hoặc lệch giờ ít nhất ${GROOM_OVERLAP_MINUTES} phút.`,
+        { workoutId: busy.id, groom: groom.fullName, horse: busy.horse.name, time, date },
+      );
     }
 
     return { medicalOverride: medical, warnings };
