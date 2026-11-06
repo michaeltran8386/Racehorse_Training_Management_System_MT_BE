@@ -950,20 +950,24 @@ async function seedStableCare(tx: Prisma.TransactionClient) {
           .flatMap((m) => m.items)
           .reduce((sum, item) => sum + item.amount, 0);
       const start = Math.max(-12, horses[i][8]);
+      const status = i === 0 || i === 6 ? ('PENDING_APPROVAL' as const) : i === 4 ? ('REJECTED' as const) : ('APPROVED' as const);
+      const isApproved = status === 'APPROVED';
       return {
         id: nutrition(h.id),
         planCode: `DD-${pad(i + 1, 6)}`,
         horseId: h.id,
-        status: 'APPROVED' as const,
+        status,
         horseWeightSnapshot: weight,
         dailyFeedWeightKg,
         targetWeightRatioPct: Number(((dailyFeedWeightKg / weight) * 100).toFixed(2)),
         mealsJson: h.mealsJson,
         validFrom: clubDateTime(start, 0),
-        validTo: clubDateTime(28, 18),
+        validTo: isApproved ? clubDateTime(28, 18) : null,
         createdById: trainerOf(i + 1),
-        approvedById: vet,
-        approvedAt: clubDateTime(start, 0),
+        approvedById: isApproved ? vet : null,
+        approvedAt: isApproved ? clubDateTime(start, 0) : null,
+        rejectionReason: status === 'REJECTED' ? 'Tỷ lệ cỏ thô chưa đáp ứng nhu cầu tiêu hóa. Cần tăng lượng cỏ khô Timothy và giảm cám đậm đặc.' : null,
+        vetNotes: status === 'REJECTED' ? 'Ngựa có tiền sử tiêu hóa nhạy cảm. HLV vui lòng điều chỉnh lại theo khuyến cáo.' : null,
         specialInstructions: h.isLocked
           ? 'Theo dõi lượng nước uống; không cho tập nặng.'
           : 'Chia khẩu phần theo bữa; cung cấp nước sạch liên tục.',

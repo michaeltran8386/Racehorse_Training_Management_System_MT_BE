@@ -203,7 +203,7 @@ describe('NutritionService', () => {
       );
     });
 
-    it('directly activates and applies plan (DRAFT -> APPROVED) and notifies staff', async () => {
+    it('submits plan for veterinarian approval (DRAFT -> PENDING_APPROVAL) and notifies staff', async () => {
       prismaMock.nutritionPlan.findUnique.mockResolvedValue({
         id: 'plan-1',
         planCode: 'NP-2610-001',
@@ -214,22 +214,22 @@ describe('NutritionService', () => {
 
       prismaMock.nutritionPlan.update.mockResolvedValue({
         id: 'plan-1',
-        status: NutritionPlanStatus.APPROVED,
+        status: NutritionPlanStatus.PENDING_APPROVAL,
       });
 
       const res = await service.submitForApproval('plan-1', mockTrainerUser);
 
-      expect(res.status).toBe(NutritionPlanStatus.APPROVED);
+      expect(res.status).toBe(NutritionPlanStatus.PENDING_APPROVAL);
       expect(auditMock.record).toHaveBeenCalledWith(
         expect.anything(),
-        'APPROVE_NUTRITION_PLAN',
+        'SUBMIT_NUTRITION_PLAN',
         expect.anything(),
         expect.anything(),
         expect.anything(),
       );
       expect(notificationsMock.notifyRoles).toHaveBeenCalledWith(
-        [Role.GROOM, Role.CLUB_MANAGER],
-        expect.objectContaining({ type: 'NUTRITION_PLAN_APPROVED' }),
+        [Role.VETERINARIAN, Role.CLUB_MANAGER],
+        expect.objectContaining({ type: 'NUTRITION_PLAN_SUBMITTED' }),
         mockTrainerUser.userId,
       );
     });
