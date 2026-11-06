@@ -619,6 +619,14 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
   });
 
   describe('recordResult (SC-2.06)', () => {
+    // Không phụ thuộc .env trên máy: mặc định cờ dev tắt, test nào cần thì tự bật.
+    const savedEnv = { ...process.env };
+    beforeEach(() => {
+      process.env.SIMULATOR_ALLOW_EARLY = 'false';
+    });
+    afterEach(() => {
+      process.env = { ...savedEnv };
+    });
     const result = {
       actualDistanceMeters: 1200,
       actualTimeSeconds: 80,
@@ -644,6 +652,21 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       });
       expect(await codeOf(workouts.recordResult('w-1', result, trainer))).toBe(
         'WORKOUT_NOT_STARTED',
+      );
+    });
+
+    it('records before start time when SIMULATOR_ALLOW_EARLY=true outside production', async () => {
+      process.env.SIMULATOR_ALLOW_EARLY = 'true';
+      process.env.NODE_ENV = 'development';
+      prisma.workoutSession.findUnique.mockResolvedValue({
+        ...started,
+        scheduledDate: tomorrow0630,
+      });
+      await workouts.recordResult('w-1', result, trainer);
+      expect(prisma.workoutSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: WorkoutStatus.COMPLETED }),
+        }),
       );
     });
 

@@ -9,6 +9,7 @@ import { RecordWorkoutResultDto } from './dto/record-result.dto';
 import { CancelWorkoutDto, RestoreWorkoutDto } from './dto/workout-actions.dto';
 import {
   addDays,
+  allowEarlyWorkoutStart,
   clubDate,
   effectiveIntensity,
   effectiveSurface,
@@ -658,7 +659,7 @@ export class WorkoutsService {
       const editing = existing.status === WorkoutStatus.COMPLETED;
 
       if (existing.status === WorkoutStatus.SCHEDULED) {
-        if (existing.scheduledDate > now) {
+        if (existing.scheduledDate > now && !allowEarlyWorkoutStart()) {
           throw apiError(
             HttpStatus.BAD_REQUEST,
             'WORKOUT_NOT_STARTED',

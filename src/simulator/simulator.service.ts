@@ -27,7 +27,7 @@ import {
 } from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
 import { UserRole } from '../common/enums/role.enum';
-import { isHeavy } from '../training/training-rules';
+import { allowEarlyWorkoutStart, isHeavy } from '../training/training-rules';
 
 @Injectable()
 export class SimulatorService {
@@ -38,14 +38,6 @@ export class SimulatorService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
-
-  // Cờ dev: SIMULATOR_ALLOW_EARLY=true cho mở mô phỏng trước giờ bắt đầu để test ngay. Không bao giờ bật ở production.
-  private allowEarlyStart(): boolean {
-    return (
-      this.config.get<string>('SIMULATOR_ALLOW_EARLY') === 'true' &&
-      this.config.get<string>('NODE_ENV') !== 'production'
-    );
-  }
 
   async startWorkout(
     workoutId: string,
@@ -98,7 +90,7 @@ export class SimulatorService {
           'Only scheduled workouts can be simulated.',
         );
       }
-      if (workout.scheduledDate > new Date() && !this.allowEarlyStart()) {
+      if (workout.scheduledDate > new Date() && !allowEarlyWorkoutStart()) {
         throw apiError(
           HttpStatus.CONFLICT,
           'WORKOUT_NOT_STARTED',

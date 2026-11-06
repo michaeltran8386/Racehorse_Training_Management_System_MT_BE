@@ -1,5 +1,13 @@
 import { WorkoutStatus } from '@prisma/client';
 
+/**
+ * Cờ dev SIMULATOR_ALLOW_EARLY=true: cho mở mô phỏng và ghi kết quả trước giờ bắt đầu buổi tập để test ngay.
+ * Luôn tắt khi NODE_ENV=production. ConfigModule nạp .env vào process.env lúc khởi động.
+ */
+export function allowEarlyWorkoutStart(): boolean {
+  return process.env.SIMULATOR_ALLOW_EARLY === 'true' && process.env.NODE_ENV !== 'production';
+}
+
 /** 7 loại bài tập cố định (Flow 2 DL-2.01, Q-2.06). */
 export const WORKOUT_TYPES = [
   'WALK', // Đi bộ

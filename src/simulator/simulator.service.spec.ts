@@ -8,10 +8,12 @@ import { CurrentUserPayload } from '../common/decorators/current-user.decorator'
 describe('SimulatorService', () => {
   let service: SimulatorService;
   let prisma: any;
-  let env: Record<string, string>;
-  const config = {
-    get: jest.fn((key: string) => env[key] ?? 'http://localhost:5175'),
-  };
+  const config = { get: jest.fn(() => 'http://localhost:5175') };
+  const originalEnv = { ...process.env };
+  const setEnv = (vars: Record<string, string>) => Object.assign(process.env, vars);
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   const mockActor: CurrentUserPayload = {
     userId: 'user-head-trainer-1',
@@ -51,7 +53,8 @@ describe('SimulatorService', () => {
   };
 
   beforeEach(async () => {
-    env = {};
+    // Không phụ thuộc .env trên máy: mặc định cờ dev tắt, test nào cần thì tự bật.
+    setEnv({ SIMULATOR_ALLOW_EARLY: 'false' });
     prisma = {
       $transaction: jest.fn(async (callback: (tx: any) => unknown) => callback(prisma)),
       user: {
@@ -442,7 +445,7 @@ describe('SimulatorService', () => {
     });
 
     it('starts a future workout early when SIMULATOR_ALLOW_EARLY=true outside production', async () => {
-      env = { SIMULATOR_ALLOW_EARLY: 'true', NODE_ENV: 'development' };
+      setEnv({ SIMULATOR_ALLOW_EARLY: 'true', NODE_ENV: 'development' });
       const workout = { ...eligibleWorkout(), scheduledDate: new Date(Date.now() + 60_000) };
       prisma.workoutSession.findUnique.mockResolvedValue(workout);
       prisma.simulatorSession.upsert.mockResolvedValue({
@@ -457,7 +460,7 @@ describe('SimulatorService', () => {
     });
 
     it('ignores SIMULATOR_ALLOW_EARLY in production', async () => {
-      env = { SIMULATOR_ALLOW_EARLY: 'true', NODE_ENV: 'production' };
+      setEnv({ SIMULATOR_ALLOW_EARLY: 'true', NODE_ENV: 'production' });
       prisma.workoutSession.findUnique.mockResolvedValue({
         ...eligibleWorkout(),
         scheduledDate: new Date(Date.now() + 60_000),
