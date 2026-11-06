@@ -160,6 +160,7 @@ async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
     { code: 'A', name: 'Barn 1 · Đua', rows: 2, cols: 4, sortOrder: 1 },
     { code: 'B', name: 'Barn 2 · Huấn luyện & nghỉ', rows: 2, cols: 4, sortOrder: 2 },
     { code: 'C', name: 'Cách ly', rows: 1, cols: 4, sortOrder: 3 },
+    { code: 'H', name: 'Khu Lưu giữ (Nợ phí)', rows: 1, cols: 4, sortOrder: 4 },
   ];
   await tx.stallZone.createMany({
     data: zones.map((z) => ({ id: zone(z.code), ...z, ...stamp(-90) })),
