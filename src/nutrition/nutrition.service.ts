@@ -541,8 +541,8 @@ export class NutritionService {
       {
         type: 'NUTRITION_PLAN_SUBMITTED',
         category: NotificationCategory.NUTRITION,
-        title: `Khẩu phần ăn mới cho ngựa ${plan.horse.name} đang chờ duyệt`,
-        message: `Khẩu phần #${plan.planCode || id.slice(0, 8)} cho ngựa ${plan.horse.name} đã được gửi duyệt.`,
+        title: `Khẩu phần ăn cho ngựa ${plan.horse.name} đang chờ duyệt`,
+        message: `Huấn luyện viên ${currentUser.fullName} đã gửi duyệt khẩu phần #${plan.planCode || id.slice(0, 8)} cho ngựa ${plan.horse.name}.`,
         link: '/rations',
         senderName: currentUser.fullName,
         params: { horseName: plan.horse.name, planCode: plan.planCode || '' },
@@ -554,7 +554,7 @@ export class NutritionService {
   }
 
   /**
-   * Bác sĩ thú y hoặc Quản lý thẩm định & phê duyệt/từ chối khẩu phần ăn.
+   * Thẩm định & phê duyệt/từ chối khẩu phần ăn (Bác sĩ thú y hoặc Quản lý).
    */
   async review(id: string, dto: ReviewNutritionPlanDto, currentUser: CurrentUserPayload) {
     if (currentUser.role !== UserRole.VETERINARIAN && currentUser.role !== UserRole.CLUB_MANAGER) {

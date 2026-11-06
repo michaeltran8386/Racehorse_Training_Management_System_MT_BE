@@ -20,11 +20,20 @@ describe('FinancialService', () => {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      stallAllocation: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            startDate: new Date('2026-10-01T00:00:00+07:00'),
+            endDate: new Date('2026-11-01T00:00:00+07:00'),
+          },
+        ]),
       },
       horse: {
         findMany: jest.fn(),
       },
-      $transaction: jest.fn((promises) => Promise.all(promises)),
+      $transaction: jest.fn((arg) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg))),
     };
 
     audit = {
@@ -286,12 +295,24 @@ describe('FinancialService', () => {
 
   describe('generateMonthlyDrafts', () => {
     it('should generate draft invoices for active owned horses', async () => {
-      prisma.horse.findMany.mockResolvedValue([{ id: 'h-1', ownerId: 'o-1', name: 'Thunder' }]);
+      prisma.horse.findMany.mockResolvedValue([
+        {
+          id: 'h-1',
+          ownerId: 'o-1',
+          name: 'Thunder',
+          stallAllocations: [
+            {
+              startDate: new Date('2020-11-01T00:00:00+07:00'),
+              endDate: new Date('2020-12-01T00:00:00+07:00'),
+            },
+          ],
+        },
+      ]);
       prisma.financialInvoice.findFirst.mockResolvedValue(null);
       prisma.financialInvoice.create.mockResolvedValue({ id: 'new-inv' });
 
       const user = { id: 'u-mgr', name: 'Manager', role: 'CLUB_MANAGER' };
-      const res = await service.generateMonthlyDrafts('2026-11', user);
+      const res = await service.generateMonthlyDrafts('2020-11', user);
       expect(res.createdCount).toBe(1);
     });
   });

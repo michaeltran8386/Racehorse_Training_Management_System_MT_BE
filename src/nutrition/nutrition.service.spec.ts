@@ -203,7 +203,7 @@ describe('NutritionService', () => {
       );
     });
 
-    it('submits plan for approval (DRAFT -> PENDING_APPROVAL) and notifies veterinarians', async () => {
+    it('submits plan for veterinarian approval (DRAFT -> PENDING_APPROVAL) and notifies staff', async () => {
       prismaMock.nutritionPlan.findUnique.mockResolvedValue({
         id: 'plan-1',
         planCode: 'NP-2610-001',

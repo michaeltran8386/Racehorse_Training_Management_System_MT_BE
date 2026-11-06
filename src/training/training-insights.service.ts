@@ -181,57 +181,73 @@ export class TrainingInsightsService {
       orderBy: { name: 'asc' },
     });
     const horseIds = horses.map((h) => h.id);
-    const [allPlans, recent, upcoming, todayRows, blocked] = await Promise.all([
-      this.prisma.trainingPlan.findMany({
-        where: {
-          horseId: { in: horseIds },
-          status: { in: [PlanStatus.ACTIVE, PlanStatus.DRAFT] },
-        },
-        select: {
-          id: true,
-          horseId: true,
-          planCode: true,
-          phaseName: true,
-          phases: true,
-          status: true,
-          updatedAt: true,
-        },
-        orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
-      }),
-      this.prisma.workoutSession.findMany({
-        where: {
-          horseId: { in: horseIds },
-          status: WorkoutStatus.COMPLETED,
-          scheduledDate: { gte: addDays(today, -60), lte: now },
-        },
-        orderBy: { scheduledDate: 'asc' },
-      }),
-      this.prisma.workoutSession.findMany({
-        where: {
-          horseId: { in: horseIds },
-          status: WorkoutStatus.SCHEDULED,
-          scheduledDate: { gte: now },
-        },
-        orderBy: { scheduledDate: 'asc' },
-        select: { horseId: true, scheduledDate: true, workoutType: true },
-      }),
-      this.prisma.workoutSession.groupBy({
-        by: ['status'],
-        where: {
-          horseId: { in: horseIds },
-          scheduledDate: { gte: today, lt: addDays(today, 1) },
-          status: { not: WorkoutStatus.CANCELLED },
-        },
-        _count: { _all: true },
-      }),
-      this.prisma.workoutSession.count({
-        where: {
-          horseId: { in: horseIds },
-          status: WorkoutStatus.BLOCKED,
-          scheduledDate: { gte: today, lt: addDays(today, 8) },
-        },
-      }),
-    ]);
+    const [allPlans, recent, upcoming, todayRows, blocked, nextWorkout, latestPlan] =
+      await Promise.all([
+        this.prisma.trainingPlan.findMany({
+          where: {
+            horseId: { in: horseIds },
+            status: { in: [PlanStatus.ACTIVE, PlanStatus.DRAFT] },
+          },
+          select: {
+            id: true,
+            horseId: true,
+            planCode: true,
+            phaseName: true,
+            phases: true,
+            status: true,
+            updatedAt: true,
+          },
+          orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
+        }),
+        this.prisma.workoutSession.findMany({
+          where: {
+            horseId: { in: horseIds },
+            status: WorkoutStatus.COMPLETED,
+            scheduledDate: { gte: addDays(today, -60), lte: now },
+          },
+          orderBy: { scheduledDate: 'asc' },
+        }),
+        this.prisma.workoutSession.findMany({
+          where: {
+            horseId: { in: horseIds },
+            status: WorkoutStatus.SCHEDULED,
+            scheduledDate: { gte: now },
+          },
+          orderBy: { scheduledDate: 'asc' },
+          select: { horseId: true, scheduledDate: true, workoutType: true },
+        }),
+        this.prisma.workoutSession.groupBy({
+          by: ['status'],
+          where: {
+            horseId: { in: horseIds },
+            scheduledDate: { gte: today, lt: addDays(today, 1) },
+            status: { not: WorkoutStatus.CANCELLED },
+          },
+          _count: { _all: true },
+        }),
+        this.prisma.workoutSession.count({
+          where: {
+            horseId: { in: horseIds },
+            status: WorkoutStatus.BLOCKED,
+            scheduledDate: { gte: today, lt: addDays(today, 8) },
+          },
+        }),
+        this.prisma.workoutSession.findFirst({
+          where: {
+            horseId: { in: horseIds },
+            status: WorkoutStatus.SCHEDULED,
+            scheduledDate: { gt: now },
+            trainingPlan: { status: PlanStatus.ACTIVE },
+          },
+          orderBy: [{ scheduledDate: 'asc' }, { id: 'asc' }],
+          include: { horse: { select: { name: true, horseCode: true } } },
+        }),
+        this.prisma.trainingPlan.findFirst({
+          where: { horseId: { in: horseIds }, status: PlanStatus.ACTIVE },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+          include: { horse: { select: { name: true } } },
+        }),
+      ]);
     const plansByHorse = new Map<string, (typeof allPlans)[0]>();
     for (const p of allPlans) {
       if (!plansByHorse.has(p.horseId) || p.status === PlanStatus.ACTIVE) {
@@ -352,6 +368,35 @@ export class TrainingInsightsService {
         horsesInjuredOrLocked,
       },
       rows,
+      nextWorkout: nextWorkout
+        ? {
+            id: nextWorkout.id,
+            planId: nextWorkout.trainingPlanId,
+            horseId: nextWorkout.horseId,
+            horseName: nextWorkout.horse.name,
+            horseCode: nextWorkout.horse.horseCode,
+            workoutType: nextWorkout.workoutType,
+            scheduledDate: nextWorkout.scheduledDate.toISOString(),
+            intensity: nextWorkout.intensity,
+            surface: nextWorkout.trackSurface,
+            status: nextWorkout.status,
+          }
+        : null,
+      latestPlan: latestPlan
+        ? {
+            id: latestPlan.id,
+            planCode: latestPlan.planCode,
+            name: latestPlan.phaseName,
+            horseId: latestPlan.horseId,
+            horseName: latestPlan.horse.name,
+            status: latestPlan.status,
+            startDate: latestPlan.startDate.toISOString(),
+            endDate: latestPlan.endDate.toISOString(),
+            currentPhaseName:
+              phasesOf(latestPlan).find((p) => p.startDate <= todayClub && todayClub <= p.endDate)
+                ?.name ?? null,
+          }
+        : null,
     };
   }
 }
