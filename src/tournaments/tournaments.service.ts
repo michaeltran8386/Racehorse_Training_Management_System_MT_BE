@@ -511,6 +511,11 @@ export class TournamentsService {
         reasons.push('Horse is currently under Veterinary Medical Lock');
       }
 
+      // Điều kiện 1b: Lưu giữ do nợ phí
+      if (h.isDebtImpounded) {
+        reasons.push('Horse is currently under Debt Impoundment due to overdue payment');
+      }
+
       // Điều kiện 2: Trạng thái ngựa
       if (
         h.status === HorseStatus.UNDER_OBSERVATION ||
@@ -536,6 +541,7 @@ export class TournamentsService {
         avatarUrl: h.avatarUrl,
         status: h.status,
         isMedicalLocked: h.isMedicalLocked,
+        isDebtImpounded: h.isDebtImpounded,
         completedWorkouts,
         owner: h.owner,
         isRegistered,
