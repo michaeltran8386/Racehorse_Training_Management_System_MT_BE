@@ -39,6 +39,14 @@ export class SimulatorService {
     private readonly config: ConfigService,
   ) {}
 
+  // Cờ dev: SIMULATOR_ALLOW_EARLY=true cho mở mô phỏng trước giờ bắt đầu để test ngay. Không bao giờ bật ở production.
+  private allowEarlyStart(): boolean {
+    return (
+      this.config.get<string>('SIMULATOR_ALLOW_EARLY') === 'true' &&
+      this.config.get<string>('NODE_ENV') !== 'production'
+    );
+  }
+
   async startWorkout(
     workoutId: string,
     actor: CurrentUserPayload,
@@ -90,7 +98,7 @@ export class SimulatorService {
           'Only scheduled workouts can be simulated.',
         );
       }
-      if (workout.scheduledDate > new Date()) {
+      if (workout.scheduledDate > new Date() && !this.allowEarlyStart()) {
         throw apiError(
           HttpStatus.CONFLICT,
           'WORKOUT_NOT_STARTED',
