@@ -250,6 +250,13 @@ export class FinancialService {
       },
     });
 
+    if (dto.status === InvoiceStatus.OVERDUE) {
+      await this.applyDebtImpoundToHorses([existing.horseId]);
+      await this.applyBadDebtToOwners([existing.ownerId]);
+    } else if (dto.status === InvoiceStatus.PAID) {
+      await this.checkAndReleaseDebtSanctions(existing.horseId, existing.ownerId, user);
+    }
+
     await this.audit.record(
       { id: user.id, name: user.name },
       'INVOICE_UPDATED',
@@ -324,6 +331,13 @@ export class FinancialService {
         newValues: { status },
       },
     );
+
+    if (status === InvoiceStatus.OVERDUE) {
+      await this.applyDebtImpoundToHorses([existing.horseId]);
+      await this.applyBadDebtToOwners([existing.ownerId]);
+    } else if (status === InvoiceStatus.PAID) {
+      await this.checkAndReleaseDebtSanctions(existing.horseId, existing.ownerId, user);
+    }
 
     // Nếu phát hành hóa đơn (SENT), gửi thông báo cho Chủ ngựa
     if (status === InvoiceStatus.SENT && existing.ownerId) {
@@ -410,6 +424,8 @@ export class FinancialService {
       },
     );
 
+    await this.checkAndReleaseDebtSanctions(existing.horseId, existing.ownerId, user);
+
     return {
       ...updated,
       boardingFee: Number(updated.boardingFee),
@@ -480,11 +496,96 @@ export class FinancialService {
   }
 
   async sweepOverdue(): Promise<number> {
+    const overdueCandidates = await this.prisma.financialInvoice.findMany({
+      where: { status: InvoiceStatus.SENT, dueAt: { lt: new Date() }, netAmount: { gt: 0 } },
+      select: { id: true, horseId: true, ownerId: true },
+    });
+
     const { count } = await this.prisma.financialInvoice.updateMany({
       where: { status: InvoiceStatus.SENT, dueAt: { lt: new Date() }, netAmount: { gt: 0 } },
       data: { status: InvoiceStatus.OVERDUE },
     });
+
+    if (overdueCandidates && overdueCandidates.length > 0) {
+      const horseIds = Array.from(new Set(overdueCandidates.map((i) => i.horseId)));
+      const ownerIds = Array.from(new Set(overdueCandidates.map((i) => i.ownerId)));
+      await this.applyDebtImpoundToHorses(horseIds);
+      await this.applyBadDebtToOwners(ownerIds);
+    }
+
     return count;
+  }
+
+  async applyDebtImpoundToHorses(horseIds: string[]) {
+    if (horseIds.length === 0 || !this.prisma.horse?.updateMany) return;
+    await this.prisma.horse.updateMany({
+      where: { id: { in: horseIds } },
+      data: {
+        isDebtImpounded: true,
+        debtImpoundedAt: new Date(),
+        debtImpoundReason: 'Quá hạn thanh toán chi phí nuôi dưỡng / lưu chuồng.',
+      },
+    });
+  }
+
+  async applyBadDebtToOwners(ownerIds: string[]) {
+    if (ownerIds.length === 0 || !this.prisma.user?.updateMany) return;
+    await this.prisma.user.updateMany({
+      where: { id: { in: ownerIds } },
+      data: {
+        isBadDebtFlagged: true,
+        badDebtFlaggedAt: new Date(),
+        badDebtReason: 'Có hóa đơn dịch vụ lưu chuồng quá hạn thanh toán.',
+      },
+    });
+  }
+
+  async checkAndReleaseDebtSanctions(horseId: string, ownerId: string, actor: FinancialActor) {
+    if (!this.prisma.financialInvoice?.count) return;
+
+    // 1. Kiểm tra xem ngựa này còn hóa đơn nào OVERDUE không
+    const remainingHorseOverdue = await this.prisma.financialInvoice.count({
+      where: { horseId, status: InvoiceStatus.OVERDUE, netAmount: { gt: 0 } },
+    });
+    if (remainingHorseOverdue === 0 && this.prisma.horse?.update) {
+      await this.prisma.horse.update({
+        where: { id: horseId },
+        data: {
+          isDebtImpounded: false,
+          debtImpoundedAt: null,
+          debtImpoundReason: null,
+        },
+      });
+      await this.audit.record(
+        { id: actor.id, name: actor.name },
+        'HORSE_DEBT_RELEASED',
+        `Horse ${horseId} was released from debt impound following full invoice payment`,
+        horseId,
+        { entityName: 'Horse', newValues: { isDebtImpounded: false } },
+      );
+    }
+
+    // 2. Kiểm tra xem chủ ngựa còn hóa đơn nào OVERDUE trên bất kỳ ngựa nào không
+    const remainingOwnerOverdue = await this.prisma.financialInvoice.count({
+      where: { ownerId, status: InvoiceStatus.OVERDUE, netAmount: { gt: 0 } },
+    });
+    if (remainingOwnerOverdue === 0 && this.prisma.user?.update) {
+      await this.prisma.user.update({
+        where: { id: ownerId },
+        data: {
+          isBadDebtFlagged: false,
+          badDebtFlaggedAt: null,
+          badDebtReason: null,
+        },
+      });
+      await this.audit.record(
+        { id: actor.id, name: actor.name },
+        'OWNER_BAD_DEBT_CLEARED',
+        `Owner ${ownerId} bad debt flag was cleared following full invoice payment`,
+        ownerId,
+        { entityName: 'User', newValues: { isBadDebtFlagged: false } },
+      );
+    }
   }
 
   /** Closed months only: a payment settles its own period, never the next month. */
