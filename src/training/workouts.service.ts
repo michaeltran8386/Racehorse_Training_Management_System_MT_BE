@@ -113,6 +113,14 @@ export class WorkoutsService {
         'Ngựa đang bị Khóa huấn luyện y tế. Không thể xếp bài tập nặng.',
       );
     }
+    // 1b. Lưu giữ do nợ phí + bài nặng: chặn, chỉ cho phép đi bộ / vận động nhẹ (WALK)
+    if (horse.isDebtImpounded && heavy) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'DEBT_IMPOUNDED',
+        'Ngựa đang bị lưu giữ do nợ phí. Chỉ được phép đi bộ / vận động nhẹ (WALK), không được xếp bài tập nặng.',
+      );
+    }
     // 2. Ngựa ngừng quản lý.
     if (horse.status === HorseStatus.RETIRED) {
       throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');

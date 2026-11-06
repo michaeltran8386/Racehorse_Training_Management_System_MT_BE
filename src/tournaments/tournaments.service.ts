@@ -621,6 +621,15 @@ export class TournamentsService {
       );
     }
 
+    // Chặn cứng: Lưu giữ do nợ phí
+    if (horse.isDebtImpounded) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'DEBT_IMPOUNDED',
+        `Cannot register horse ${horse.name}: Horse is currently impounded due to overdue payment by owner.`,
+      );
+    }
+
     if (horse.status === HorseStatus.RETIRED) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
