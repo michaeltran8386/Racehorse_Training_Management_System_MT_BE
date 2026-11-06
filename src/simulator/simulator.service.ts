@@ -27,7 +27,7 @@ import {
 } from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
 import { UserRole } from '../common/enums/role.enum';
-import { isHeavy } from '../training/training-rules';
+import { allowEarlyWorkoutStart, isHeavy } from '../training/training-rules';
 
 @Injectable()
 export class SimulatorService {
@@ -90,7 +90,7 @@ export class SimulatorService {
           'Only scheduled workouts can be simulated.',
         );
       }
-      if (workout.scheduledDate > new Date()) {
+      if (workout.scheduledDate > new Date() && !allowEarlyWorkoutStart()) {
         throw apiError(
           HttpStatus.CONFLICT,
           'WORKOUT_NOT_STARTED',

@@ -8,6 +8,12 @@ import { CurrentUserPayload } from '../common/decorators/current-user.decorator'
 describe('SimulatorService', () => {
   let service: SimulatorService;
   let prisma: any;
+  const config = { get: jest.fn(() => 'http://localhost:5175') };
+  const originalEnv = { ...process.env };
+  const setEnv = (vars: Record<string, string>) => Object.assign(process.env, vars);
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
 
   const mockActor: CurrentUserPayload = {
     userId: 'user-head-trainer-1',
@@ -47,6 +53,8 @@ describe('SimulatorService', () => {
   };
 
   beforeEach(async () => {
+    // Không phụ thuộc .env trên máy: mặc định cờ dev tắt, test nào cần thì tự bật.
+    setEnv({ SIMULATOR_ALLOW_EARLY: 'false' });
     prisma = {
       $transaction: jest.fn(async (callback: (tx: any) => unknown) => callback(prisma)),
       user: {
@@ -133,7 +141,7 @@ describe('SimulatorService', () => {
       providers: [
         SimulatorService,
         { provide: PrismaService, useValue: prisma },
-        { provide: ConfigService, useValue: { get: jest.fn(() => 'http://localhost:5175') } },
+        { provide: ConfigService, useValue: config },
       ],
     }).compile();
 
@@ -434,6 +442,33 @@ describe('SimulatorService', () => {
         response: expect.objectContaining({ code }),
       });
       expect(prisma.simulatorSession.upsert).not.toHaveBeenCalled();
+    });
+
+    it('starts a future workout early when SIMULATOR_ALLOW_EARLY=true outside production', async () => {
+      setEnv({ SIMULATOR_ALLOW_EARLY: 'true', NODE_ENV: 'development' });
+      const workout = { ...eligibleWorkout(), scheduledDate: new Date(Date.now() + 60_000) };
+      prisma.workoutSession.findUnique.mockResolvedValue(workout);
+      prisma.simulatorSession.upsert.mockResolvedValue({
+        id: 'server-session-1',
+        status: 'PENDING',
+        workoutSessionId: workout.id,
+      });
+
+      await expect(service.startWorkout(workout.id, mockActor)).resolves.toMatchObject({
+        sessionId: 'server-session-1',
+      });
+    });
+
+    it('ignores SIMULATOR_ALLOW_EARLY in production', async () => {
+      setEnv({ SIMULATOR_ALLOW_EARLY: 'true', NODE_ENV: 'production' });
+      prisma.workoutSession.findUnique.mockResolvedValue({
+        ...eligibleWorkout(),
+        scheduledDate: new Date(Date.now() + 60_000),
+      });
+
+      await expect(service.startWorkout('workout-1', mockActor)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'WORKOUT_NOT_STARTED' }),
+      });
     });
 
     it('returns only the assigned horse and workout context', async () => {

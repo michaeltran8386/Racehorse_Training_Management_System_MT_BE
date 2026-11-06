@@ -81,7 +81,10 @@ export class TrainingPlansService {
     const progress = await this.common.progressOf(items.map((p) => p.id));
 
     return {
-      items: items.map((p) => ({ ...p, progress: progress.get(p.id) ?? { completed: 0, due: 0 } })),
+      items: items.map((p) => ({
+        ...p,
+        progress: progress.get(p.id) ?? { completed: 0, total: 0, due: 0, overdue: 0 },
+      })),
       total,
       page,
       pageSize,
@@ -125,18 +128,28 @@ export class TrainingPlansService {
     }
     const progress = (await this.common.progressOf([plan.id])).get(plan.id) ?? {
       completed: 0,
+      total: 0,
       due: 0,
+      overdue: 0,
     };
     return { ...plan, progress };
   }
 
-  /** Ngày bắt đầu / kết thúc hợp lệ (SC-2.03): kết thúc ≥ bắt đầu, tối đa 52 tuần. */
+  /** Ngày bắt đầu / kết thúc hợp lệ (SC-2.03): kết thúc ≥ bắt đầu, tối thiểu 7 ngày, tối đa 52 tuần. */
   private assertPlanDates(startDate: Date, endDate: Date) {
     if (startDate > endDate) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
         'INVALID_DATE_RANGE',
         'Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.',
+      );
+    }
+    const diffDays = Math.round((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
+    if (diffDays < 7) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'PLAN_TOO_SHORT',
+        'Giáo án phải kéo dài ít nhất 1 tuần (7 ngày) giữa thời điểm bắt đầu và thời điểm kết thúc.',
       );
     }
     if (endDate.getTime() - startDate.getTime() > MAX_PLAN_WEEKS * 7 * 24 * 60 * 60 * 1000) {
@@ -162,6 +175,31 @@ export class TrainingPlansService {
     }
     if (horse.status === HorseStatus.RETIRED) {
       throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
+    }
+    if (horse.isMedicalLocked) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_MEDICAL_LOCKED',
+        'Ngựa đang bị Khóa huấn luyện y tế. Không thể tạo giáo án mới cho đến khi Bác sĩ thú y gỡ khóa.',
+      );
+    }
+
+    if (
+      dto.phaseName &&
+      (/^\d+$/.test(dto.phaseName.trim()) || !/[\p{L}]/u.test(dto.phaseName.trim()))
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_PLAN_NAME',
+        'Tên giáo án không được đặt hoàn toàn bằng số và phải chứa chữ cái.',
+      );
+    }
+    if (dto.objective && !/^[\p{L}]/u.test(dto.objective.trim())) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_OBJECTIVE',
+        'Mục tiêu phải bắt đầu bằng chữ cái, không được bắt đầu bằng số hay ký tự đặc biệt.',
+      );
     }
 
     const startDate = new Date(dto.startDate);
@@ -234,6 +272,24 @@ export class TrainingPlansService {
         HttpStatus.BAD_REQUEST,
         'PLAN_CLOSED',
         'Giáo án đã hoàn thành hoặc đã hủy nên không sửa được.',
+      );
+    }
+
+    if (
+      dto.phaseName !== undefined &&
+      (/^\d+$/.test(dto.phaseName.trim()) || !/[\p{L}]/u.test(dto.phaseName.trim()))
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_PLAN_NAME',
+        'Tên giáo án không được đặt hoàn toàn bằng số và phải chứa chữ cái.',
+      );
+    }
+    if (dto.objective !== undefined && !/^[\p{L}]/u.test(dto.objective.trim())) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_OBJECTIVE',
+        'Mục tiêu phải bắt đầu bằng chữ cái, không được bắt đầu bằng số hay ký tự đặc biệt.',
       );
     }
     const startDate = dto.startDate ? new Date(dto.startDate) : existing.startDate;
@@ -584,6 +640,13 @@ export class TrainingPlansService {
     }
     if (horse.status === HorseStatus.RETIRED) {
       throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
+    }
+    if (horse.isMedicalLocked) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_MEDICAL_LOCKED',
+        'Ngựa đang bị Khóa huấn luyện y tế. Không thể tạo giáo án mới cho đến khi Bác sĩ thú y gỡ khóa.',
+      );
     }
 
     const now = new Date();

@@ -163,15 +163,41 @@ export class TrainingInsightsService {
     const today = startOfClubDay(now);
     const horses = await this.prisma.horse.findMany({
       where: { deletedAt: null, status: { not: HorseStatus.RETIRED } },
-      select: { id: true, name: true, horseCode: true, status: true, isMedicalLocked: true },
+      select: {
+        id: true,
+        name: true,
+        horseCode: true,
+        status: true,
+        isMedicalLocked: true,
+        avatarUrl: true,
+        breed: true,
+        gender: true,
+        stallAllocations: {
+          where: { isActive: true },
+          take: 1,
+          select: { stall: { select: { code: true } } },
+        },
+      },
       orderBy: { name: 'asc' },
     });
     const horseIds = horses.map((h) => h.id);
-    const [plans, recent, upcoming, todayRows, blocked, nextWorkout, latestPlan] =
+    const [allPlans, recent, upcoming, todayRows, blocked, nextWorkout, latestPlan] =
       await Promise.all([
         this.prisma.trainingPlan.findMany({
-          where: { horseId: { in: horseIds }, status: PlanStatus.ACTIVE },
-          select: { id: true, horseId: true, planCode: true, phaseName: true, phases: true },
+          where: {
+            horseId: { in: horseIds },
+            status: { in: [PlanStatus.ACTIVE, PlanStatus.DRAFT] },
+          },
+          select: {
+            id: true,
+            horseId: true,
+            planCode: true,
+            phaseName: true,
+            phases: true,
+            status: true,
+            updatedAt: true,
+          },
+          orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
         }),
         this.prisma.workoutSession.findMany({
           where: {
@@ -222,11 +248,18 @@ export class TrainingInsightsService {
           include: { horse: { select: { name: true } } },
         }),
       ]);
-    const progress = await this.common.progressOf(plans.map((p) => p.id));
+    const plansByHorse = new Map<string, (typeof allPlans)[0]>();
+    for (const p of allPlans) {
+      if (!plansByHorse.has(p.horseId) || p.status === PlanStatus.ACTIVE) {
+        plansByHorse.set(p.horseId, p);
+      }
+    }
+    const plansToTrack = Array.from(plansByHorse.values());
+    const progress = await this.common.progressOf(plansToTrack.map((p) => p.id));
     const todayClub = clubDate(now);
 
     const rows = horses.map((horse) => {
-      const plan = plans.find((p) => p.horseId === horse.id);
+      const plan = plansByHorse.get(horse.id);
       const phase = plan
         ? phasesOf(plan).find((p) => p.startDate <= todayClub && todayClub <= p.endDate)
         : undefined;
@@ -238,9 +271,27 @@ export class TrainingInsightsService {
       const avg4w = this.common.sumLoad(mine, addDays(today, -35), addDays(now, -7)) / 4;
       const next = upcoming.find((w) => w.horseId === horse.id);
       const dayMs = 24 * 60 * 60 * 1000;
+      const stallCode = (horse as any).stallAllocations?.[0]?.stall?.code ?? null;
       return {
-        horse,
-        plan: plan ? { id: plan.id, planCode: plan.planCode, name: plan.phaseName } : null,
+        horse: {
+          id: horse.id,
+          name: horse.name,
+          horseCode: horse.horseCode,
+          status: horse.status,
+          isMedicalLocked: horse.isMedicalLocked,
+          avatarUrl: (horse as any).avatarUrl ?? null,
+          breed: (horse as any).breed ?? null,
+          gender: (horse as any).gender ?? null,
+          stallCode,
+        },
+        plan: plan
+          ? {
+              id: plan.id,
+              planCode: plan.planCode,
+              name: plan.phaseName,
+              status: plan.status,
+            }
+          : null,
         currentPhase: phase
           ? {
               name: phase.name,
@@ -251,7 +302,9 @@ export class TrainingInsightsService {
               ),
             }
           : null,
-        progress: plan ? (progress.get(plan.id) ?? { completed: 0, due: 0 }) : null,
+        progress: plan
+          ? (progress.get(plan.id) ?? { completed: 0, total: 0, due: 0, overdue: 0 })
+          : null,
         latestScore: latest?.performanceScore ?? null,
         previousAvgScore: prev3.length
           ? Math.round((prev3.reduce((a, b) => a + b, 0) / prev3.length) * 10) / 10
@@ -264,19 +317,55 @@ export class TrainingInsightsService {
       };
     });
 
+    // Ngựa có giáo án ACTIVE lên đầu, tiếp đến DRAFT, cuối cùng là chưa có giáo án
+    rows.sort((a, b) => {
+      const rank = (r: (typeof rows)[0]) => {
+        if (r.plan?.status === PlanStatus.ACTIVE) return 1;
+        if (r.plan?.status === PlanStatus.DRAFT) return 2;
+        return 3;
+      };
+      const diff = rank(a) - rank(b);
+      if (diff !== 0) return diff;
+      return a.horse.name.localeCompare(b.horse.name);
+    });
+
     const todayTotal = todayRows.reduce((sum, r) => sum + r._count._all, 0);
     const todayDone = todayRows
       .filter((r) => r.status === WorkoutStatus.COMPLETED)
       .reduce((sum, r) => sum + r._count._all, 0);
 
+    const inTraining = allPlans.filter((p) => p.status === PlanStatus.ACTIVE).length;
+    const withActive = new Set(
+      allPlans.filter((p) => p.status === PlanStatus.ACTIVE).map((p) => p.horseId),
+    );
+    const withDraft = new Set(
+      allPlans.filter((p) => p.status === PlanStatus.DRAFT).map((p) => p.horseId),
+    );
+    const horsesWithoutPlan = horses.filter(
+      (h) => !withActive.has(h.id) && !withDraft.has(h.id),
+    ).length;
+    const horsesDraftPlan = horses.filter(
+      (h) => !withActive.has(h.id) && withDraft.has(h.id),
+    ).length;
+    const horsesInjuredOrLocked = horses.filter(
+      (h) =>
+        h.isMedicalLocked ||
+        h.status === HorseStatus.INJURED ||
+        h.status === HorseStatus.UNDER_OBSERVATION,
+    ).length;
+
     return {
       kpis: {
-        activePlans: plans.length,
+        activePlans: inTraining,
         managedHorses: horses.length,
         todayCompleted: todayDone,
         todayTotal,
         blockedNext7Days: blocked,
         loadSpikeHorses: rows.filter((r) => r.loadSpike).length,
+        horsesInTraining: inTraining,
+        horsesWithoutPlan,
+        horsesDraftPlan,
+        horsesInjuredOrLocked,
       },
       rows,
       nextWorkout: nextWorkout

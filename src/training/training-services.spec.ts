@@ -245,8 +245,15 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       ).toBe('PLAN_TOO_LONG');
     });
 
+    it('rejects plans shorter than 1 week (7 days)', async () => {
+      prisma.horse.findUnique.mockResolvedValue(healthyHorse);
+      expect(
+        await codeOf(plans.createPlan({ ...dto, endDate: clubDate(addDays(today, 5)) }, trainer)),
+      ).toBe('PLAN_TOO_SHORT');
+    });
+
     it('always creates a DRAFT and does not touch the horse status', async () => {
-      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isMedicalLocked: true });
+      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isMedicalLocked: false });
       prisma.trainingPlan.create.mockResolvedValue({ ...draftPlan, horse: healthyHorse });
 
       await plans.createPlan(dto, trainer);
@@ -255,6 +262,11 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
         expect.objectContaining({ data: expect.objectContaining({ status: PlanStatus.DRAFT }) }),
       );
       expect(prisma.horse.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects plan creation when the horse is under medical lock', async () => {
+      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isMedicalLocked: true });
+      expect(await codeOf(plans.createPlan(dto, trainer))).toBe('HORSE_MEDICAL_LOCKED');
     });
 
     it('rejects a retired horse and a plan without phases', async () => {
@@ -457,7 +469,12 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
     });
 
     it('rejects a trial on the same surface within 15 minutes', async () => {
-      prisma.workoutSession.findFirst.mockResolvedValue({ id: 'w-x', horse: { name: 'Bolt' } });
+      prisma.workoutSession.findFirst.mockImplementation(async (args: any) => {
+        if (args?.where?.workoutType === 'TRIAL') {
+          return { id: 'w-x', horse: { name: 'Bolt' } };
+        }
+        return null;
+      });
       expect(
         await codeOf(
           workouts.createWorkout(
@@ -529,18 +546,29 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       expect(prisma.workoutSession.create).toHaveBeenCalled();
     });
 
-    it('warns when the groom already has a workout at the same time', async () => {
-      prisma.workoutSession.findFirst.mockResolvedValue({ id: 'w-other' });
+    it('blocks when the groom already has a workout within 30 minutes', async () => {
+      prisma.workoutSession.findFirst.mockImplementation(async (args: any) => {
+        if (args?.where?.assignedStaffUserId) {
+          return {
+            id: 'w-other',
+            scheduledDate: new Date('2026-11-07T08:30:00.000Z'),
+            horse: { name: 'Red Velvet' },
+          };
+        }
+        return null;
+      });
       prisma.user.findUnique.mockResolvedValue({
         id: 'groom-1',
         fullName: 'John',
         role: 'GROOM',
         status: 'ACTIVE',
       });
-      const error = await workouts.createWorkout('plan-1', workoutDto, trainer).catch((e) => e);
-      expect(error.getResponse().data.warnings).toContain(
-        'Nhân viên John đã có buổi tập trùng giờ.',
-      );
+      const error = await workouts
+        .createWorkout('plan-1', { ...workoutDto, acknowledgeWarnings: true }, trainer)
+        .catch((e) => e);
+      expect(error.getResponse().code).toBe('GROOM_TIME_CONFLICT');
+      expect(error.getResponse().data).toMatchObject({ groom: 'John', horse: 'Red Velvet' });
+      expect(prisma.workoutSession.create).not.toHaveBeenCalled();
     });
 
     it('weekly repeat creates the matching days and reports skipped ones', async () => {
@@ -608,6 +636,14 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
   });
 
   describe('recordResult (SC-2.06)', () => {
+    // Không phụ thuộc .env trên máy: mặc định cờ dev tắt, test nào cần thì tự bật.
+    const savedEnv = { ...process.env };
+    beforeEach(() => {
+      process.env.SIMULATOR_ALLOW_EARLY = 'false';
+    });
+    afterEach(() => {
+      process.env = { ...savedEnv };
+    });
     const result = {
       actualDistanceMeters: 1200,
       actualTimeSeconds: 80,
@@ -633,6 +669,21 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       });
       expect(await codeOf(workouts.recordResult('w-1', result, trainer))).toBe(
         'WORKOUT_NOT_STARTED',
+      );
+    });
+
+    it('records before start time when SIMULATOR_ALLOW_EARLY=true outside production', async () => {
+      process.env.SIMULATOR_ALLOW_EARLY = 'true';
+      process.env.NODE_ENV = 'development';
+      prisma.workoutSession.findUnique.mockResolvedValue({
+        ...started,
+        scheduledDate: tomorrow0630,
+      });
+      await workouts.recordResult('w-1', result, trainer);
+      expect(prisma.workoutSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: WorkoutStatus.COMPLETED }),
+        }),
       );
     });
 
@@ -746,6 +797,30 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
         where: { status: WorkoutStatus.SCHEDULED, scheduledDate: { lt: addDays(today, -1) } },
         data: { status: WorkoutStatus.MISSED },
       });
+    });
+
+    it('calculates progressOf with total, completed, due, and overdue counts (Task T1: 4/10 = 40%)', async () => {
+      prisma.workoutSession.groupBy
+        .mockResolvedValueOnce([
+          { trainingPlanId: 'plan-1', status: WorkoutStatus.COMPLETED, _count: { _all: 4 } },
+          { trainingPlanId: 'plan-1', status: WorkoutStatus.SCHEDULED, _count: { _all: 6 } },
+        ])
+        .mockResolvedValueOnce([
+          { trainingPlanId: 'plan-1', status: WorkoutStatus.COMPLETED, _count: { _all: 4 } },
+          { trainingPlanId: 'plan-1', status: WorkoutStatus.SCHEDULED, _count: { _all: 2 } },
+        ]);
+
+      const progressMap = await common.progressOf(['plan-1']);
+      const planProgress = progressMap.get('plan-1');
+
+      expect(planProgress).toEqual({
+        total: 10,
+        completed: 4,
+        due: 6,
+        overdue: 2,
+      });
+      expect(planProgress!.completed / planProgress!.total).toBe(0.4);
+      expect(planProgress!.overdue).toBe(2);
     });
 
     it('returns no fitness points (instead of made-up data) when nothing is completed', async () => {

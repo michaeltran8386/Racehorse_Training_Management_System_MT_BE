@@ -8,6 +8,7 @@ import { SimulatorSessionsResponse } from './simulator.types';
 import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { SimulatorSessionStatus } from '@prisma/client';
 import { StartExamDto } from './dto/exam-packet.dto';
+import { allowEarlyWorkoutStart } from '../training/training-rules';
 
 @ApiTags('Simulator Realtime & Sessions')
 @ApiBearerAuth('JWT-auth')
@@ -36,6 +37,13 @@ export class SimulatorController {
   })
   getSimulatorStaff() {
     return this.simulatorService.getStaffForSimulator();
+  }
+
+  @Get('config')
+  @Roles(UserRole.HEAD_TRAINER)
+  @ApiOperation({ summary: 'Cờ dev: có cho mô phỏng / ghi kết quả trước giờ tập không' })
+  getConfig() {
+    return { allowEarlyStart: allowEarlyWorkoutStart() };
   }
 
   @Post('workouts/:workoutId/start')

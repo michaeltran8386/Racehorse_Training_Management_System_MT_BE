@@ -77,26 +77,60 @@ export class TrainingCommonService {
   }
 
   /**
-   * Tiến độ = số buổi Hoàn thành / số buổi đã đến hạn (không tính buổi đã hủy). Dùng cho SC-2.01, SC-2.02.
+   * Tiến độ = số buổi Hoàn thành / tổng buổi của giáo án (không tính buổi đã hủy). Dùng cho SC-2.01, SC-2.02, SC-2.04.
+   * - completed: số buổi đã hoàn thành
+   * - total: tổng số buổi của giáo án (không tính CANCELLED)
+   * - due: số buổi đã đến hạn (scheduledDate <= now, không tính CANCELLED)
+   * - overdue: số buổi đã đến hạn mà chưa ghi kết quả (SCHEDULED | MISSED)
    */
   async progressOf(planIds: string[]) {
+    if (!planIds.length) {
+      return new Map<string, { completed: number; total: number; due: number; overdue: number }>();
+    }
     const now = new Date();
-    const rows = await this.prisma.workoutSession.groupBy({
-      by: ['trainingPlanId', 'status'],
-      where: {
-        trainingPlanId: { in: planIds },
-        scheduledDate: { lte: now },
-        status: { not: WorkoutStatus.CANCELLED },
-      },
-      _count: { _all: true },
-    });
-    const result = new Map<string, { completed: number; due: number }>();
-    for (const r of rows) {
-      const cur = result.get(r.trainingPlanId) ?? { completed: 0, due: 0 };
-      cur.due += r._count._all;
-      if (r.status === WorkoutStatus.COMPLETED) cur.completed += r._count._all;
+    const [allRows, dueRows] = await Promise.all([
+      this.prisma.workoutSession.groupBy({
+        by: ['trainingPlanId', 'status'],
+        where: {
+          trainingPlanId: { in: planIds },
+          status: { not: WorkoutStatus.CANCELLED },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.workoutSession.groupBy({
+        by: ['trainingPlanId', 'status'],
+        where: {
+          trainingPlanId: { in: planIds },
+          scheduledDate: { lte: now },
+          status: { not: WorkoutStatus.CANCELLED },
+        },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const result = new Map<
+      string,
+      { completed: number; total: number; due: number; overdue: number }
+    >();
+
+    for (const r of allRows) {
+      const cur = result.get(r.trainingPlanId) ?? { completed: 0, total: 0, due: 0, overdue: 0 };
+      cur.total += r._count._all;
+      if (r.status === WorkoutStatus.COMPLETED) {
+        cur.completed += r._count._all;
+      }
       result.set(r.trainingPlanId, cur);
     }
+
+    for (const r of dueRows) {
+      const cur = result.get(r.trainingPlanId) ?? { completed: 0, total: 0, due: 0, overdue: 0 };
+      cur.due += r._count._all;
+      if (r.status === WorkoutStatus.SCHEDULED || r.status === WorkoutStatus.MISSED) {
+        cur.overdue += r._count._all;
+      }
+      result.set(r.trainingPlanId, cur);
+    }
+
     return result;
   }
 

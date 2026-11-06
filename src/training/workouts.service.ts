@@ -9,7 +9,9 @@ import { RecordWorkoutResultDto } from './dto/record-result.dto';
 import { CancelWorkoutDto, RestoreWorkoutDto } from './dto/workout-actions.dto';
 import {
   addDays,
+  allowEarlyWorkoutStart,
   clubDate,
+  clubTime,
   effectiveIntensity,
   effectiveSurface,
   isHeavy,
@@ -134,6 +136,17 @@ export class WorkoutsService {
         'Không thể xếp buổi tập vào ngày đã qua.',
       );
     }
+    const now = new Date();
+    if (
+      clubDate(w.scheduledDate) === clubDate(now) &&
+      w.scheduledDate.getTime() < now.getTime() + 29 * 60 * 1000
+    ) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'TIME_TOO_SOON',
+        'Thời gian bắt đầu buổi tập trong ngày hôm nay phải sau thời gian hiện tại ít nhất 30 phút.',
+      );
+    }
     if (!withinTrainingHours(w.scheduledDate)) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -190,6 +203,27 @@ export class WorkoutsService {
 
     const notSelf = excludeWorkoutId ? { id: { not: excludeWorkoutId } } : {};
     const live = { ...notSelf, status: { not: WorkoutStatus.CANCELLED } };
+
+    // 2b. Ngựa không thể có 2 buổi tập trùng thời điểm (cách nhau dưới 30 phút).
+    const timeOverlap = await tx.workoutSession.findFirst({
+      where: {
+        ...live,
+        horseId: plan.horseId,
+        scheduledDate: {
+          gte: new Date(w.scheduledDate.getTime() - 29 * 60 * 1000),
+          lte: new Date(w.scheduledDate.getTime() + 29 * 60 * 1000),
+        },
+      },
+      select: { id: true },
+    });
+    if (timeOverlap) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_WORKOUT_TIME_CONFLICT',
+        'Ngựa đã có buổi tập khác trong khung giờ này.',
+        { workoutId: timeOverlap.id },
+      );
+    }
 
     // 3. Chạy thử trùng mặt sân trong cùng khung 15 phút.
     if (w.workoutType === 'TRIAL') {
@@ -262,6 +296,11 @@ export class WorkoutsService {
       if (total > phase.maxWeeklyDistance) {
         warnings.push(`Tổng cự ly tuần ${total} m vượt định mức ${phase.maxWeeklyDistance} m.`);
       }
+      if (week.length + 1 > phase.sessionsPerWeek) {
+        warnings.push(
+          `Số buổi trong tuần (${week.length + 1}) vượt định mức ${phase.sessionsPerWeek} buổi/tuần của giai đoạn ${phase.name}.`,
+        );
+      }
     }
     if (heavy) {
       const gap = HEAVY_GAP_HOURS * 60 * 60 * 1000;
@@ -283,6 +322,7 @@ export class WorkoutsService {
         );
       }
     }
+    // 7. Một người chăm sóc không thể kèm 2 ngựa cùng lúc (cách nhau dưới 30 phút) -> chặn hẳn.
     const overlap = GROOM_OVERLAP_MINUTES * 60 * 1000;
     const busy = await tx.workoutSession.findFirst({
       where: {
@@ -293,9 +333,18 @@ export class WorkoutsService {
           lt: new Date(w.scheduledDate.getTime() + overlap),
         },
       },
+      select: { id: true, scheduledDate: true, horse: { select: { name: true } } },
     });
     if (busy) {
-      warnings.push(`Nhân viên ${groom.fullName} đã có buổi tập trùng giờ.`);
+      const t = clubTime(busy.scheduledDate);
+      const time = `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
+      const date = clubDate(busy.scheduledDate);
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'GROOM_TIME_CONFLICT',
+        `Nhân viên ${groom.fullName} đã được giao buổi tập của ${busy.horse.name} lúc ${time} ngày ${date}. Chọn người chăm sóc khác hoặc lệch giờ ít nhất ${GROOM_OVERLAP_MINUTES} phút.`,
+        { workoutId: busy.id, groom: groom.fullName, horse: busy.horse.name, time, date },
+      );
     }
 
     return { medicalOverride: medical, warnings };
@@ -446,7 +495,9 @@ export class WorkoutsService {
         'HORSE_RETIRED',
         'TRIAL_SLOT_TAKEN',
         'MAX_WORKOUTS_PER_DAY',
+        'HORSE_WORKOUT_TIME_CONFLICT',
         'DATE_IN_PAST',
+        'TIME_TOO_SOON',
         'OUTSIDE_PHASE_DATES',
         'OUTSIDE_PLAN_DATES',
       ];
@@ -627,7 +678,7 @@ export class WorkoutsService {
       const editing = existing.status === WorkoutStatus.COMPLETED;
 
       if (existing.status === WorkoutStatus.SCHEDULED) {
-        if (existing.scheduledDate > now) {
+        if (existing.scheduledDate > now && !allowEarlyWorkoutStart()) {
           throw apiError(
             HttpStatus.BAD_REQUEST,
             'WORKOUT_NOT_STARTED',

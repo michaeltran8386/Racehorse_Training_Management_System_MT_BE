@@ -63,6 +63,8 @@ export const WORKOUT_INCLUDE = {
   trainingPlan: { select: { id: true, phaseName: true, status: true, phases: true } },
   resultRecordedBy: { select: { id: true, fullName: true } },
   resultUpdatedBy: { select: { id: true, fullName: true } },
+  // Trạng thái lần mô phỏng (nếu có): FE hiện "Đã mô phỏng · chờ ghi kết quả" thay vì "Đã lên lịch".
+  simulatorSession: { select: { status: true } },
 } satisfies Prisma.WorkoutSessionInclude;
 
 /** Dữ liệu buổi tập sau khi gộp bản cũ + thay đổi, dùng chung cho kiểm tra DL-2.01. */
