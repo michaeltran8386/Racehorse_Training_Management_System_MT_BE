@@ -556,6 +556,30 @@ describe('TournamentsService', () => {
       );
     });
 
+    it('should block registration when horse is debt impounded', async () => {
+      prisma.tournament.findUnique.mockResolvedValue({
+        id: 't-1',
+        name: 'Cup',
+        status: TournamentStatus.OPEN_REGISTRATION,
+        registrationDeadline: new Date(Date.now() + 86400000),
+      });
+
+      prisma.horse.findUnique.mockResolvedValue({
+        id: 'h-impounded',
+        name: 'Thunderbolt',
+        isDebtImpounded: true,
+        deletedAt: null,
+      });
+
+      const actor = { id: 'u2', name: 'Trainer', role: 'HEAD_TRAINER' };
+
+      await expect(
+        service.registerHorse('t-1', { horseId: 'h-impounded' }, actor),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'DEBT_IMPOUNDED' }),
+      });
+    });
+
     it('should allow registering an eligible horse', async () => {
       prisma.tournament.findUnique.mockResolvedValue({
         id: 't-1',

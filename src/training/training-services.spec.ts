@@ -404,6 +404,17 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
         ),
       ).toBe('MEDICAL_LOCK_ACTIVE');
 
+      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, isDebtImpounded: true });
+      expect(
+        await codeOf(
+          workouts.createWorkout(
+            'plan-1',
+            { ...workoutDto, workoutType: 'BREEZE', targetSpeedKmh: 55, jockeyName: 'An' },
+            trainer,
+          ),
+        ),
+      ).toBe('DEBT_IMPOUNDED');
+
       const ok = await workouts.createWorkout(
         'plan-1',
         { ...workoutDto, workoutType: 'WALK', intensity: 'LIGHT' },

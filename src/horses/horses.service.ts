@@ -196,6 +196,17 @@ export class HorsesService {
     const horseCode = await this.generateHorseCode();
     const microchipRfid = microchip;
 
+    if (dto.ownerId) {
+      const owner = await this.prisma.user.findUnique({ where: { id: dto.ownerId } });
+      if (owner?.isBadDebtFlagged) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'OWNER_BAD_DEBT',
+          'Chủ ngựa đang bị đánh dấu nợ xấu do quá hạn thanh toán. Không thể đăng ký thêm ngựa mới cho chủ ngựa này.',
+        );
+      }
+    }
+
     // Hồ sơ mới luôn ở Nghỉ ngơi. Nếu chọn ô chuồng ngay khi tạo: khóa dòng ô (FOR UPDATE),
     // kiểm ô còn trống rồi đặt OCCUPIED, tất cả trong một transaction -> 2 người không gán trùng 1 ô.
     const horse = await this.prisma.$transaction(async (tx) => {
@@ -429,6 +440,14 @@ export class HorsesService {
       );
     }
 
+    if (horse.isDebtImpounded) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'DEBT_IMPOUNDED',
+        'Ngựa đang bị lưu giữ do nợ phí quá hạn. Không thể chuyển nhượng hoặc xuất chuồng.',
+      );
+    }
+
     if (horse.ownerId === dto.newOwnerId) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -439,7 +458,14 @@ export class HorsesService {
 
     const newOwner = await this.prisma.user.findUnique({
       where: { id: dto.newOwnerId },
-      select: { id: true, fullName: true, email: true, role: true, status: true },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        role: true,
+        status: true,
+        isBadDebtFlagged: true,
+      },
     });
 
     if (!newOwner || newOwner.role !== Role.HORSE_OWNER) {
@@ -447,6 +473,14 @@ export class HorsesService {
         HttpStatus.BAD_REQUEST,
         'INVALID_NEW_OWNER',
         'The specified account does not exist or is not registered as a Horse Owner.',
+      );
+    }
+
+    if (newOwner.isBadDebtFlagged) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'OWNER_BAD_DEBT',
+        'Chủ ngựa mới đang bị đánh dấu nợ xấu. Không thể tiếp nhận chuyển nhượng.',
       );
     }
 
