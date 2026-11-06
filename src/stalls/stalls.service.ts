@@ -611,6 +611,13 @@ export class StallsService {
           'Ngựa không còn ở ô chuồng này. Vui lòng tải lại.',
         );
       }
+      if (old.horse.isDebtImpounded) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'DEBT_IMPOUNDED',
+          `Ngựa ${old.horse.name} đang bị lưu giữ do nợ phí. Không thể xuất chuồng / trả ô chuồng. Vui lòng chuyển sang Khu Lưu giữ nếu cần giải phóng ô chuồng hiện tại.`,
+        );
+      }
       await tx.stallAllocation.update({
         where: { id: allocationId },
         data: { isActive: false, endDate: new Date() },

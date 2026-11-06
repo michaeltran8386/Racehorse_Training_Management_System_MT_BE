@@ -220,5 +220,18 @@ describe('StallsService (SC-1.04, SC-1.07, DL-1.02, DL-1.03)', () => {
         response: expect.objectContaining({ code: 'SAME_STALL' }),
       });
     });
+
+    it('returnStall is refused if horse is debt impounded', async () => {
+      prisma.stallAllocation.findUnique.mockResolvedValue({
+        id: 'al-1',
+        isActive: true,
+        stallId: 's-1',
+        stall: freeStall,
+        horse: { name: 'Thunderbolt', isDebtImpounded: true },
+      });
+      await expect(service.returnStall('al-1', {}, manager)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'DEBT_IMPOUNDED' }),
+      });
+    });
   });
 });

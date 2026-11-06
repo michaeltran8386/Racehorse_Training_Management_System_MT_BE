@@ -260,6 +260,28 @@ describe('HorsesService', () => {
       });
     });
 
+    it('should reject creating horse for an owner flagged with bad debt', async () => {
+      prisma.horse.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({ id: 'bad-owner', isBadDebtFlagged: true });
+
+      await expect(
+        service.create(
+          {
+            name: 'New Horse',
+            breed: 'Thoroughbred',
+            dob: '2021-01-01',
+            weightKg: 490,
+            gender: 'Colt',
+            color: 'Bay',
+            ownerId: 'bad-owner',
+          },
+          mockManager,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'OWNER_BAD_DEBT' }),
+      });
+    });
+
     it('should throw 409 STALL_OCCUPIED when the chosen stall already has a horse', async () => {
       prisma.horse.findFirst.mockResolvedValue(null);
       prisma.horse.findUnique.mockResolvedValue(null);
@@ -467,6 +489,51 @@ describe('HorsesService', () => {
       ).rejects.toMatchObject({
         status: HttpStatus.BAD_REQUEST,
         response: expect.objectContaining({ code: 'HORSE_RETIRED' }),
+      });
+    });
+
+    it('should throw 400 DEBT_IMPOUNDED if horse is impounded due to debt', async () => {
+      const impoundedHorse = {
+        id: 'h-1',
+        name: 'Thunderbolt',
+        status: HorseStatus.ACTIVE,
+        ownerId: 'owner-1',
+        isDebtImpounded: true,
+      };
+
+      prisma.horse.findUnique.mockResolvedValue(impoundedHorse);
+
+      await expect(
+        service.transferOwner('h-1', { newOwnerId: 'owner-new' }, mockManager),
+      ).rejects.toMatchObject({
+        status: HttpStatus.BAD_REQUEST,
+        response: expect.objectContaining({ code: 'DEBT_IMPOUNDED' }),
+      });
+    });
+
+    it('should throw 400 OWNER_BAD_DEBT if new owner has bad debt', async () => {
+      const normalHorse = {
+        id: 'h-1',
+        name: 'Thunderbolt',
+        status: HorseStatus.ACTIVE,
+        ownerId: 'owner-1',
+        isDebtImpounded: false,
+      };
+      const badDebtOwner = {
+        id: 'owner-bad',
+        role: Role.HORSE_OWNER,
+        status: UserStatus.ACTIVE,
+        isBadDebtFlagged: true,
+      };
+
+      prisma.horse.findUnique.mockResolvedValue(normalHorse);
+      prisma.user.findUnique.mockResolvedValue(badDebtOwner);
+
+      await expect(
+        service.transferOwner('h-1', { newOwnerId: 'owner-bad' }, mockManager),
+      ).rejects.toMatchObject({
+        status: HttpStatus.BAD_REQUEST,
+        response: expect.objectContaining({ code: 'OWNER_BAD_DEBT' }),
       });
     });
 

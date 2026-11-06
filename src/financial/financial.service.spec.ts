@@ -14,8 +14,8 @@ describe('FinancialService', () => {
   beforeEach(async () => {
     prisma = {
       financialInvoice: {
-        findMany: jest.fn(),
-        count: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
         findUnique: jest.fn(),
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -32,6 +32,12 @@ describe('FinancialService', () => {
       },
       horse: {
         findMany: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      user: {
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       $transaction: jest.fn((arg) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg))),
     };
@@ -336,6 +342,95 @@ describe('FinancialService', () => {
       expect(summary.totalBoarding).toBe(5000000);
       expect(summary.totalPrizeCredit).toBe(3000000);
       expect(summary.totalNet).toBe(5000000);
+    });
+  });
+
+  describe('sweepOverdue & debt impound enforcement', () => {
+    it('should find overdue candidates, impound horses and flag bad debt on owners', async () => {
+      prisma.financialInvoice.findMany.mockResolvedValue([
+        { id: 'inv-od-1', horseId: 'h-1', ownerId: 'o-1' },
+      ]);
+      prisma.financialInvoice.updateMany.mockResolvedValue({ count: 1 });
+
+      const count = await service.sweepOverdue();
+
+      expect(count).toBe(1);
+      expect(prisma.financialInvoice.updateMany).toHaveBeenCalledWith({
+        where: {
+          status: InvoiceStatus.SENT,
+          dueAt: { lt: expect.any(Date) },
+          netAmount: { gt: 0 },
+        },
+        data: { status: InvoiceStatus.OVERDUE },
+      });
+      expect(prisma.horse.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['h-1'] } },
+        data: expect.objectContaining({
+          isDebtImpounded: true,
+          debtImpoundReason: expect.any(String),
+        }),
+      });
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['o-1'] } },
+        data: expect.objectContaining({
+          isBadDebtFlagged: true,
+          badDebtReason: expect.any(String),
+        }),
+      });
+    });
+
+    it('should automatically release horse impound and clear owner bad debt when all overdue invoices are paid', async () => {
+      const owner = { id: 'o-1', name: 'Owner', role: 'HORSE_OWNER' };
+      const invoice = {
+        id: 'inv-od-1',
+        horseId: 'h-1',
+        ownerId: 'o-1',
+        status: InvoiceStatus.OVERDUE,
+        netAmount: 1000000,
+        boardingFee: 1000000,
+        medicalFee: 0,
+        trainingFee: 0,
+        prizeCredit: 0,
+        billingPeriod: '2026-10',
+        horse: { name: 'Thunder' },
+      };
+
+      prisma.financialInvoice.findUnique.mockResolvedValue(invoice);
+      prisma.financialInvoice.update.mockResolvedValue({ ...invoice, status: InvoiceStatus.PAID });
+      prisma.financialInvoice.count.mockResolvedValue(0); // 0 remaining overdue
+
+      await service.payInvoice('inv-od-1', { paymentMethod: 'VIETQR' }, owner);
+
+      expect(prisma.horse.update).toHaveBeenCalledWith({
+        where: { id: 'h-1' },
+        data: {
+          isDebtImpounded: false,
+          debtImpoundedAt: null,
+          debtImpoundReason: null,
+        },
+      });
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'o-1' },
+        data: {
+          isBadDebtFlagged: false,
+          badDebtFlaggedAt: null,
+          badDebtReason: null,
+        },
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.anything(),
+        'HORSE_DEBT_RELEASED',
+        expect.any(String),
+        'h-1',
+        expect.anything(),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.anything(),
+        'OWNER_BAD_DEBT_CLEARED',
+        expect.any(String),
+        'o-1',
+        expect.anything(),
+      );
     });
   });
 });
