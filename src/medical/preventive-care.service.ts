@@ -269,6 +269,12 @@ export class PreventiveCareService {
       ];
     }
 
+    where.horse = {
+      ...where.horse,
+      status: { not: HorseStatus.RETIRED },
+      deletedAt: null,
+    };
+
     const now = new Date();
     if (status) {
       if (status === 'OVERDUE') {
@@ -519,7 +525,7 @@ export class PreventiveCareService {
     await runTx(async (tx: any) => {
       for (const hId of horseIds) {
         const horse = await tx.horse.findUnique({ where: { id: hId, deletedAt: null } });
-        if (!horse) continue;
+        if (!horse || horse.status === HorseStatus.RETIRED) continue;
 
         let schedule = dto.scheduleId
           ? await tx.preventiveSchedule.findUnique({ where: { id: dto.scheduleId } })
@@ -682,6 +688,14 @@ export class PreventiveCareService {
       throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', 'Horse not found.');
     }
 
+    if (horse.status === HorseStatus.RETIRED) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'HORSE_RETIRED',
+        'The horse has retired; preventive care schedules cannot be created.',
+      );
+    }
+
     let scheduleType: PreventiveType = PreventiveType.VACCINATION;
     const catUpper = (dto.category || '').toUpperCase();
     if (catUpper === 'DEWORMING') {
@@ -751,6 +765,15 @@ export class PreventiveCareService {
     }
 
     const dueDate = new Date(dto.dueDate);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    if (dueDate < todayStart) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_DUE_DATE',
+        'The due date must be today or in the future.',
+      );
+    }
 
     const schedule = await this.prisma.preventiveSchedule.create({
       data: {
