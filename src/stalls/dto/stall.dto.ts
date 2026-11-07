@@ -39,14 +39,14 @@ export class CreateZoneDto {
 
   @ApiProperty({ default: 1 })
   @IsInt()
-  @Min(1, { message: 'Số hàng phải từ 1 đến 30.' })
-  @Max(30, { message: 'Số hàng phải từ 1 đến 30.' })
+  @Min(1, { message: 'Số hàng phải từ 1 đến 4.' })
+  @Max(4, { message: 'Số hàng phải từ 1 đến 4.' })
   rows: number;
 
   @ApiProperty({ default: 1 })
   @IsInt()
-  @Min(1, { message: 'Số cột phải từ 1 đến 30.' })
-  @Max(30, { message: 'Số cột phải từ 1 đến 30.' })
+  @Min(1, { message: 'Số cột phải từ 1 đến 4.' })
+  @Max(4, { message: 'Số cột phải từ 1 đến 4.' })
   cols: number;
 
   @ApiPropertyOptional({ description: 'Tự tạo ô cho toàn bộ lưới, mã {Mã khu}-{số thứ tự}' })
@@ -81,15 +81,15 @@ export class UpdateZoneDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
-  @Min(1, { message: 'Số hàng phải từ 1 đến 30.' })
-  @Max(30, { message: 'Số hàng phải từ 1 đến 30.' })
+  @Min(1, { message: 'Số hàng phải từ 1 đến 4.' })
+  @Max(4, { message: 'Số hàng phải từ 1 đến 4.' })
   rows?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()
-  @Min(1, { message: 'Số cột phải từ 1 đến 30.' })
-  @Max(30, { message: 'Số cột phải từ 1 đến 30.' })
+  @Min(1, { message: 'Số cột phải từ 1 đến 4.' })
+  @Max(4, { message: 'Số cột phải từ 1 đến 4.' })
   cols?: number;
 
   @ApiPropertyOptional()
