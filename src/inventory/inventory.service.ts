@@ -741,29 +741,50 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Helper: Trừ kho tự động khi hoàn thành bữa ăn (FEEDING task)
+   * Helper: Trừ kho tự động khi hoàn thành bữa ăn (FEEDING task) hoặc cho uống thuốc (MEDICATION task)
    */
   async deductStockForFeeding(
     zoneId: string,
-    items: Array<{ supplyId?: string; amount?: number }>,
+    items: Array<{ supplyId?: string; supplyName?: string; amount?: number }>,
   ) {
     if (!zoneId || !items || !Array.isArray(items) || items.length === 0) return;
 
     for (const item of items) {
-      if (!item.supplyId || !item.amount || Number(item.amount) <= 0) continue;
+      if (!item.amount || Number(item.amount) <= 0) continue;
       const amount = Number(item.amount);
+      let supplyId = item.supplyId;
+
+      if (!supplyId && item.supplyName) {
+        try {
+          const found = await this.prisma.supplyCatalog.findFirst({
+            where: {
+              OR: [
+                { name: { equals: item.supplyName, mode: 'insensitive' } },
+                { name: { contains: item.supplyName, mode: 'insensitive' } },
+              ],
+              isActive: true,
+            },
+            select: { id: true },
+          });
+          if (found) supplyId = found.id;
+        } catch {
+          // ignore lookup error
+        }
+      }
+
+      if (!supplyId) continue;
 
       try {
         await this.prisma.stockBalance.upsert({
           where: {
             zoneId_supplyId: {
               zoneId,
-              supplyId: item.supplyId,
+              supplyId,
             },
           },
           create: {
             zoneId,
-            supplyId: item.supplyId,
+            supplyId,
             quantity: new Prisma.Decimal(-amount),
             minThreshold: new Prisma.Decimal(10),
           },
@@ -772,30 +793,51 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
           },
         });
       } catch (err) {
-        console.error(`Failed to deduct stock for zone ${zoneId}, supply ${item.supplyId}:`, err);
+        console.error(`Failed to deduct stock for zone ${zoneId}, supply ${supplyId}:`, err);
       }
     }
   }
 
   /**
-   * Helper: Hoàn lại số lượng tồn kho khi hoàn tác bữa ăn
+   * Helper: Hoàn lại số lượng tồn kho khi hoàn tác bữa ăn hoặc cho uống thuốc
    */
   async restoreStockForFeeding(
     zoneId: string,
-    items: Array<{ supplyId?: string; amount?: number }>,
+    items: Array<{ supplyId?: string; supplyName?: string; amount?: number }>,
   ) {
     if (!zoneId || !items || !Array.isArray(items) || items.length === 0) return;
 
     for (const item of items) {
-      if (!item.supplyId || !item.amount || Number(item.amount) <= 0) continue;
+      if (!item.amount || Number(item.amount) <= 0) continue;
       const amount = Number(item.amount);
+      let supplyId = item.supplyId;
+
+      if (!supplyId && item.supplyName) {
+        try {
+          const found = await this.prisma.supplyCatalog.findFirst({
+            where: {
+              OR: [
+                { name: { equals: item.supplyName, mode: 'insensitive' } },
+                { name: { contains: item.supplyName, mode: 'insensitive' } },
+              ],
+              isActive: true,
+            },
+            select: { id: true },
+          });
+          if (found) supplyId = found.id;
+        } catch {
+          // ignore lookup error
+        }
+      }
+
+      if (!supplyId) continue;
 
       try {
         await this.prisma.stockBalance.update({
           where: {
             zoneId_supplyId: {
               zoneId,
-              supplyId: item.supplyId,
+              supplyId,
             },
           },
           data: {
@@ -803,7 +845,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
           },
         });
       } catch (err) {
-        console.error(`Failed to restore stock for zone ${zoneId}, supply ${item.supplyId}:`, err);
+        console.error(`Failed to restore stock for zone ${zoneId}, supply ${supplyId}:`, err);
       }
     }
   }
