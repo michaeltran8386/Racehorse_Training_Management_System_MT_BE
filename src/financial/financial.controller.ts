@@ -28,6 +28,20 @@ export class FinancialController {
     });
   }
 
+    @Get('statement-breakdown')
+  @Roles(UserRole.CLUB_MANAGER, UserRole.HORSE_OWNER)
+  @ApiOperation({
+    summary: 'Báo cáo chi tiết sao kê công nợ 2 tầng (Tổng quan 4 nhóm & Phân rã từng dịch vụ)',
+  })
+  async getStatementBreakdown(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('billingPeriod') billingPeriod?: string,
+    @Query('ownerId') queryOwnerId?: string,
+  ) {
+    const targetOwnerId = user.role === UserRole.HORSE_OWNER ? user.userId : queryOwnerId;
+    return this.financialService.getOwnerStatementBreakdown(targetOwnerId, billingPeriod);
+  }
+
   @Get('owner-summary')
   @Roles(UserRole.CLUB_MANAGER, UserRole.HORSE_OWNER)
   @ApiOperation({

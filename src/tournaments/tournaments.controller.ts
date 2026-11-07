@@ -103,9 +103,24 @@ export class TournamentsController {
     });
   }
 
+    @Get(':id/eligibility/:horseId')
+  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER, UserRole.HORSE_OWNER)
+  @ApiOperation({ summary: 'Kiểm tra điều kiện tham gia giải đua của chiến mã (minh bạch 6 tiêu chuẩn)' })
+  async checkEligibility(
+    @Param('id') tournamentId: string,
+    @Param('horseId') horseId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.tournamentsService.checkHorseEligibility(tournamentId, horseId, {
+      id: user.userId,
+      name: user.fullName || user.email,
+      role: user.role,
+    });
+  }
+
   @Post(':id/registrations')
-  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER)
-  @ApiOperation({ summary: 'Đăng ký ngựa tham gia giải đua (SC-5.02: Trainer / CM)' })
+  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER, UserRole.HORSE_OWNER)
+  @ApiOperation({ summary: 'Đăng ký ngựa tham gia giải đua (Trainer / CM / Owner)' })
   async registerHorse(
     @Param('id') id: string,
     @Body() dto: RegisterHorseDto,

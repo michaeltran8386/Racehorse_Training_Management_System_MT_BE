@@ -91,6 +91,7 @@ describe('AI assistant core', () => {
     expect(routeTools('Vật tư nào đang dưới ngưỡng?')).toEqual(['inventory_status']);
     expect(routeTools('Tuần này ca trực của tôi thế nào?')).toEqual(['groom_shifts']);
     expect(routeTools('Tổng chi phí nuôi ngựa của tôi là bao nhiêu?')).toEqual(['owner_costs']);
+    expect(routeTools('Các giải đua sắp tới có những giải nào?')).toEqual(['owner_races']);
     expect(routeTools('Làm sao để đề xuất vật tư?')).toEqual([]);
   });
 

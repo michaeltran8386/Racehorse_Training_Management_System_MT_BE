@@ -53,6 +53,9 @@ describe('TournamentsService', () => {
       workoutSession: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      medicalRecord: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       $queryRaw: jest.fn().mockResolvedValue([]),
       $transaction: jest.fn((callbackOrPromises) => {
         if (typeof callbackOrPromises === 'function') {
@@ -1395,6 +1398,119 @@ describe('TournamentsService', () => {
           fullName: 'Owner',
         }),
       ).rejects.toThrow('Tournament non-existent not found');
+    });
+  });
+describe('checkHorseEligibility & Withdrawal Period', () => {
+    it('returns 6 structured checks for an eligible horse', async () => {
+      prisma.tournament.findUnique.mockResolvedValue({
+        id: 't-1',
+        name: 'Spring Cup',
+        raceDate: new Date('2026-11-20T09:00:00Z'),
+        minAgeYears: 2,
+        entryFee: 3000000,
+        prizePool: 50000000,
+        registrations: [],
+      });
+
+      prisma.horse.findUnique.mockResolvedValue({
+        id: 'h-1',
+        name: 'Thunder',
+        horseCode: 'THU-001',
+        dob: new Date('2022-01-01'),
+        status: HorseStatus.ACTIVE,
+        isMedicalLocked: false,
+        isDebtImpounded: false,
+        ownerId: 'owner-1',
+        workoutSessions: [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }, { id: 'w4' }],
+      });
+
+      prisma.medicalRecord.findMany.mockResolvedValue([]);
+
+      const result = await service.checkHorseEligibility('t-1', 'h-1', {
+        id: 'owner-1',
+        name: 'Owner',
+        role: 'HORSE_OWNER',
+      });
+
+      expect(result.eligible).toBe(true);
+      expect(result.checks).toHaveLength(6);
+      expect(result.checks.every((c: any) => c.passed)).toBe(true);
+      expect(result.blockingReasons).toHaveLength(0);
+    });
+
+    it('detects active medication in withdrawal period and blocks registration', async () => {
+      prisma.tournament.findUnique.mockResolvedValue({
+        id: 't-1',
+        name: 'Spring Cup',
+        raceDate: new Date('2026-11-20T09:00:00Z'),
+        minAgeYears: 2,
+        entryFee: 3000000,
+        prizePool: 50000000,
+        registrations: [],
+      });
+
+      prisma.horse.findUnique.mockResolvedValue({
+        id: 'h-1',
+        name: 'Thunder',
+        horseCode: 'THU-001',
+        dob: new Date('2022-01-01'),
+        status: HorseStatus.ACTIVE,
+        isMedicalLocked: false,
+        isDebtImpounded: false,
+        ownerId: 'owner-1',
+        workoutSessions: [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }, { id: 'w4' }],
+      });
+
+      prisma.medicalRecord.findMany.mockResolvedValue([
+        {
+          examinationDate: new Date('2026-11-15T00:00:00Z'),
+          prescriptions: JSON.stringify([
+            {
+              medicationName: 'Phenylbutazone Anti-Inflammatory',
+              startDate: '2026-11-15',
+              endDate: '2026-11-15',
+              withdrawalDays: 10,
+            },
+          ]),
+        },
+      ]);
+
+      const result = await service.checkHorseEligibility('t-1', 'h-1', {
+        id: 'owner-1',
+        name: 'Owner',
+        role: 'HORSE_OWNER',
+      });
+
+      expect(result.eligible).toBe(false);
+      const withdrawalCheck = result.checks.find((c: any) => c.key === 'WITHDRAWAL_PERIOD');
+      expect(withdrawalCheck?.passed).toBe(false);
+      expect(result.blockingReasons[0]).toContain('Phenylbutazone Anti-Inflammatory');
+    });
+
+    it('forbids HORSE_OWNER from checking eligibility of another owner horse', async () => {
+      prisma.tournament.findUnique.mockResolvedValue({
+        id: 't-1',
+        name: 'Spring Cup',
+        raceDate: new Date('2026-11-20T09:00:00Z'),
+        registrations: [],
+      });
+
+      prisma.horse.findUnique.mockResolvedValue({
+        id: 'h-foreign',
+        name: 'Other Horse',
+        ownerId: 'other-owner',
+      });
+
+      await expect(
+        service.checkHorseEligibility('t-1', 'h-foreign', {
+          id: 'hacker-owner',
+          name: 'Hacker',
+          role: 'HORSE_OWNER',
+        }),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: expect.objectContaining({ code: 'FORBIDDEN' }),
+      });
     });
   });
 });

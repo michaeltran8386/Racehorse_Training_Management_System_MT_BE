@@ -13,6 +13,7 @@ import { ShiftRostersService } from '../shift-rosters/shift-rosters.service';
 import { WorkoutsService } from '../training/workouts.service';
 import { shiftCovers, toMinutes } from '../daily-tasks/daily-schedule';
 import { KnowledgeService } from './knowledge.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 export interface ToolDef {
   name: string;
@@ -109,6 +110,13 @@ export const TOOLS: ToolDef[] = [
     inputSchema: NO_ARGS,
     roles: 'ALL',
   },
+  {
+    name: 'owner_races',
+    description:
+      'Giải đua sắp tới, đăng ký và kết quả tiền thưởng giải đua của ngựa trong phạm vi quyền.',
+    inputSchema: NO_ARGS,
+    roles: [UserRole.CLUB_MANAGER, UserRole.HORSE_OWNER],
+  },
 ];
 
 export const toolsFor = (role: string) =>
@@ -162,6 +170,7 @@ export class AiToolsService {
     private readonly financial: FinancialService,
     private readonly incidents: IncidentsService,
     private readonly health: HealthOverviewService,
+    private readonly prisma?: PrismaService,
   ) {}
 
   /** Kiểm tra quyền + tham số theo inputSchema rồi chạy. */
@@ -209,6 +218,8 @@ export class AiToolsService {
         return this.inventoryTool(user, asOf);
       case 'owner_costs':
         return this.costTool(user, asOf);
+      case 'owner_races':
+        return this.raceTool(user, asOf);
       case 'incident_reports':
         return this.incidentTool(asOf);
       default:
@@ -432,6 +443,106 @@ export class AiToolsService {
       route: '/financial-reports',
       asOf,
       domain: 'financial',
+    };
+  }
+
+
+  private async raceTool(user: CurrentUserPayload, asOf: string): Promise<ToolData> {
+    const owner = user.role === UserRole.HORSE_OWNER;
+    const upcoming = (this.prisma?.tournament?.findMany
+      ? await this.prisma.tournament.findMany({
+          where: {
+            raceDate: { gte: new Date() },
+          },
+          orderBy: { raceDate: 'asc' },
+          take: 5,
+        })
+      : []) as any[];
+
+    let ownerResults: any[] = [];
+    if (owner && this.prisma?.horse?.findMany && this.prisma?.tournamentResult?.findMany) {
+      const myHorses = (await this.prisma.horse.findMany({
+        where: { ownerId: user.userId },
+        select: { id: true, name: true, horseCode: true },
+      })) as any[];
+      const horseIds = myHorses.map((h) => h.id);
+      if (horseIds.length > 0) {
+        ownerResults = (await this.prisma.tournamentResult.findMany({
+          where: {
+            registration: {
+              horseId: { in: horseIds },
+            },
+          },
+          include: {
+            registration: {
+              include: {
+                tournament: true,
+                horse: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        })) as any[];
+      }
+    }
+
+    const alerts: ToolData['alerts'] = [];
+    if (upcoming.length === 0) {
+      alerts.push({ level: 'info', text: 'Hiện không có giải đua sắp tới nào được lên lịch.' });
+    }
+
+    const rows: ToolData['rows'] = [];
+    if (ownerResults.length > 0) {
+      for (const res of ownerResults) {
+        rows.push({
+          tournament: res.registration?.tournament?.name ?? 'Giải đua',
+          date: res.registration?.tournament?.raceDate ? clubDate(res.registration.tournament.raceDate) : '—',
+          horse: res.registration?.horse?.name ?? '—',
+          rank: res.finalRank ? `#${res.finalRank}` : 'Tham gia',
+          grossPrize: vnd(Number(res.grossPrize ?? 0)),
+          netPayout: vnd(Number(res.netOwnerPayout ?? 0)),
+        });
+      }
+    } else {
+      for (const t of upcoming) {
+        rows.push({
+          tournament: t.name,
+          date: clubDate(t.raceDate),
+          distance: `${t.distanceMeters ?? '—'}m`,
+          fee: vnd(Number(t.entryFee ?? 0)),
+          status: label(t.status),
+        });
+      }
+    }
+
+    return {
+      tool: 'owner_races',
+      title: ownerResults.length > 0 ? 'Kết quả & Tiền thưởng giải đua' : 'Giải đua sắp diễn ra',
+      summary:
+        ownerResults.length > 0
+          ? `Ngựa của bạn có ${ownerResults.length} kết quả thi đấu gần nhất. Tổng tiền thưởng thực nhận: ${vnd(
+              ownerResults.reduce((s, r) => s + Number(r.netOwnerPayout ?? 0), 0),
+            )}.`
+          : `Có ${upcoming.length} giải đua sắp diễn ra trong hệ thống TMEC.`,
+      columns:
+        ownerResults.length > 0
+          ? [
+              { key: 'tournament', label: 'Giải đua' },
+              { key: 'horse', label: 'Ngựa' },
+              { key: 'rank', label: 'Hạng' },
+              { key: 'netPayout', label: 'Thực nhận' },
+            ]
+          : [
+              { key: 'tournament', label: 'Giải đua' },
+              { key: 'date', label: 'Ngày đua' },
+              { key: 'distance', label: 'Cự ly' },
+              { key: 'fee', label: 'Phí tham gia' },
+            ],
+      rows,
+      alerts,
+      route: '/races',
+      asOf,
     };
   }
 

@@ -17,6 +17,9 @@ import {
 import { cleanInput, inspectUserMessage } from './guard';
 import { normalize, toPlainText } from './knowledge';
 import { KnowledgeService, ROLE_DOCS } from './knowledge.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { FinancialService } from '../financial/financial.service';
+import { UserRole } from '../common/enums/role.enum';
 
 export const DISCLAIMER_MEDICAL =
   'Thông tin y tế chỉ để tham khảo, không thay thế chẩn đoán và quyết định của Bác sĩ thú y.';
@@ -64,6 +67,11 @@ export interface DataBlock {
 }
 
 /** Định dạng output cố định 6 phần của Trợ lý TMEC. */
+export interface ChatCardPayload {
+  type: 'HORSE_CARD' | 'RACE_CARD' | 'SETTLEMENT_CARD' | 'BILLING_CARD';
+  data: any;
+}
+
 export interface ChatResult {
   traceId: string;
   status: ChatStatus;
@@ -76,6 +84,7 @@ export interface ChatResult {
   aiGenerated: boolean;
   cached: boolean;
   quota: { used: number; limit: number };
+  cardPayload?: ChatCardPayload | null;
 }
 type Answer = Omit<ChatResult, 'traceId' | 'quota' | 'cached'>;
 
@@ -121,6 +130,8 @@ export class AiService {
   constructor(
     private readonly knowledge: KnowledgeService,
     private readonly tools: AiToolsService,
+    private readonly prisma?: PrismaService,
+    private readonly financial?: FinancialService,
   ) {}
 
   quota(userId: string) {
@@ -139,6 +150,18 @@ export class AiService {
     const started = Date.now();
     const message = cleanInput(rawMessage);
     const trace = this.newTrace(user, message);
+
+    if (user.role === UserRole.HORSE_OWNER && this.prisma?.ownerAiMessage?.create) {
+      this.prisma.ownerAiMessage
+        .create({
+          data: {
+            ownerId: user.userId,
+            sender: 'USER',
+            content: rawMessage,
+          },
+        })
+        .catch((e) => this.logger.warn(`Failed to record user message: ${(e as Error).message}`));
+    }
     const done = (r: Answer, cached = false): ChatResult => {
       trace.status = r.status;
       trace.latencyMs = Date.now() - started;
@@ -154,6 +177,19 @@ export class AiService {
           latencyMs: trace.latencyMs,
         }),
       );
+      if (user.role === UserRole.HORSE_OWNER && this.prisma?.ownerAiMessage?.create) {
+        this.prisma.ownerAiMessage
+          .create({
+            data: {
+              ownerId: user.userId,
+              sender: 'ASSISTANT',
+              content: r.summary,
+              cardType: r.cardPayload?.type ?? null,
+              cardData: r.cardPayload?.data ? (r.cardPayload.data as any) : undefined,
+            },
+          })
+          .catch((e) => this.logger.warn(`Failed to record assistant message: ${(e as Error).message}`));
+      }
       return { ...r, traceId: trace.traceId, cached, quota: this.quota(user.userId) };
     };
 
@@ -274,14 +310,53 @@ export class AiService {
 
     // 4. Gemini chỉ diễn giải số liệu đã có; lỗi/khóa thiếu/output sai -> giữ câu tất định.
     const llm = await this.generate(trace, message, docs, data);
-    const r: Answer = llm
-      ? {
-          ...base,
-          summary: llm.answer,
-          sources: base.sources.filter((s) => llm.citations.includes(s.id)),
-          aiGenerated: true,
+    let cardPayload: ChatCardPayload | null = null;
+    if (user.role === UserRole.HORSE_OWNER) {
+      if (data.some((d) => d.tool === 'owner_costs')) {
+        try {
+          const breakdown = this.financial?.getOwnerStatementBreakdown ? await this.financial.getOwnerStatementBreakdown(user.userId) : null;
+          cardPayload = {
+            type: 'BILLING_CARD',
+            data: breakdown,
+          };
+        } catch (e) {
+          this.logger.warn(`Failed to build BILLING_CARD: ${(e as Error).message}`);
         }
-      : base;
+      } else if (data.some((d) => d.tool === 'owner_races')) {
+        const raceData = data.find((d) => d.tool === 'owner_races');
+        const hasSettlement = raceData?.rows?.some((row) => row.netPayout !== undefined);
+        cardPayload = {
+          type: hasSettlement ? 'SETTLEMENT_CARD' : 'RACE_CARD',
+          data: {
+            title: raceData?.title,
+            rows: raceData?.rows ?? [],
+            alerts: raceData?.alerts ?? [],
+          },
+        };
+      } else if (data.some((d) => d.tool === 'list_my_horses' || d.tool === 'medical_lock_status')) {
+        const horseData = data.find((d) => d.tool === 'list_my_horses' || d.tool === 'medical_lock_status');
+        cardPayload = {
+          type: 'HORSE_CARD',
+          data: {
+            title: horseData?.title,
+            horses: horseData?.rows ?? [],
+            alerts: alerts,
+          },
+        };
+      }
+    }
+
+    const r: Answer = {
+      ...(llm
+        ? {
+            ...base,
+            summary: llm.answer,
+            sources: base.sources.filter((s) => llm.citations.includes(s.id)),
+            aiGenerated: true,
+          }
+        : base),
+      cardPayload,
+    };
     this.cache.set(key, r);
     return done(r);
   }
@@ -359,6 +434,7 @@ export class AiService {
       sources: [],
       disclaimer: null,
       aiGenerated: false,
+      cardPayload: null,
     };
   }
 
@@ -460,6 +536,22 @@ export class AiService {
       trace.mode = 'LLM_REJECTED';
       return null;
     }
+  }
+
+  async getConciergeHistory(ownerId: string) {
+    if (!this.prisma?.ownerAiMessage?.findMany) return [];
+    return this.prisma.ownerAiMessage.findMany({
+      where: { ownerId },
+      orderBy: { createdAt: 'asc' },
+      take: 50,
+    });
+  }
+
+  async clearConciergeHistory(ownerId: string) {
+    if (!this.prisma?.ownerAiMessage?.deleteMany) return { count: 0 };
+    return this.prisma.ownerAiMessage.deleteMany({
+      where: { ownerId },
+    });
   }
 
   // Ngày theo giờ CLB (UTC+7).

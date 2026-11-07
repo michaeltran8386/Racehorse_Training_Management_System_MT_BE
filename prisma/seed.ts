@@ -98,6 +98,7 @@ async function clearFixtures(tx: Prisma.TransactionClient) {
   await tx.tournamentResult.deleteMany({});
   await tx.tournamentRegistration.deleteMany({});
   await tx.tournament.deleteMany({});
+  await tx.ownerAiMessage.deleteMany({});
   await tx.financialInvoice.deleteMany({});
   await tx.workoutSession.deleteMany({});
   await tx.trainingPlan.deleteMany({});
@@ -1181,6 +1182,11 @@ async function seedRacingAndInvoices(tx: Prisma.TransactionClient) {
   await tx.tournament.createMany({
     data: events.map((e) => ({
       id: tournament(e.key),
+      code: `TOURN-${e.key.toUpperCase()}`,
+      entryFee: 3000000,
+      trackCondition: 'GOOD',
+      maxFieldSize: 12,
+      minAgeYears: 2,
       name: `${e.name} ${clubDay(e.day).slice(0, 4)}`,
       raceDate: clubDateTime(e.day, 15),
       location: 'Trường đua Thiên Mã',
@@ -1209,6 +1215,7 @@ async function seedRacingAndInvoices(tx: Prisma.TransactionClient) {
           horseId: horse(n),
           registeredByTrainerId: trainerOf(n),
           status: 'CONFIRMED' as const,
+          entryFeeBilled: 3000000,
           registrationDate: clubDateTime(day, 9),
           ...stamp(day),
         };
@@ -1228,6 +1235,12 @@ async function seedRacingAndInvoices(tx: Prisma.TransactionClient) {
             avgSpeedKmh,
             finishTimeSeconds: Number(((e.distance * 3.6) / avgSpeedKmh).toFixed(2)),
             prizeMoneyWon,
+            grossPrize: prizeMoneyWon,
+            trainerCut: Math.round(prizeMoneyWon * 0.1),
+            jockeyCut: Math.round(prizeMoneyWon * 0.05),
+            entryFeeDeducted: 3000000,
+            netOwnerPayout: Math.round(prizeMoneyWon * 0.85) - 3000000,
+            settledAt: clubDateTime(e.day, 17),
             officialNotes: `${['Huy chương vàng', 'Huy chương bạc', 'Huy chương đồng'][finalRank - 1]} · Kết quả chính thức.`,
             createdAt: clubDateTime(e.day, 16),
             updatedAt: clubDateTime(e.day, 16),
@@ -1271,6 +1284,33 @@ async function seedRacingAndInvoices(tx: Prisma.TransactionClient) {
                 : now,
       };
     }),
+  });
+  const sampleOwner = user(horses[0][6]);
+  await tx.ownerAiMessage.createMany({
+    data: [
+      {
+        ownerId: sampleOwner,
+        sender: 'USER',
+        content: 'Chào em, chiến mã Thunder của tôi tháng này chi phí nuôi dưỡng và giải đua thế nào?',
+        createdAt: clubDateTime(-2, 10),
+      },
+      {
+        ownerId: sampleOwner,
+        sender: 'AI',
+        content: 'Dạ chào anh! Chiến mã Thunder tháng này có tổng chi phí nuôi dưỡng là 15.500.000 đ và đạt thành tích xuất sắc tại Cúp Mùa Thu với tiền thưởng thực nhận +37.500.000 đ. Dưới đây là thẻ tóm tắt chi phí:',
+        cardType: 'BILLING_CARD',
+        cardData: {
+          period: '2026-10',
+          horseName: 'Thunder',
+          totalBoarding: 7000000,
+          totalFeed: 3500000,
+          totalMedical: 5000000,
+          totalRaceNet: 37500000,
+          finalBalanceDue: -22000000,
+        },
+        createdAt: clubDateTime(-2, 10, 1),
+      },
+    ],
   });
 }
 
