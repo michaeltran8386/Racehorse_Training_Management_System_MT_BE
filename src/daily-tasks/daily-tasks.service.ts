@@ -80,6 +80,14 @@ export class DailyTasksService {
           orderBy: { updatedAt: 'desc' },
           take: 1,
         },
+        medicalRecords: {
+          where: { status: 'OPEN' },
+          select: {
+            id: true,
+            prescriptions: true,
+            prescriptionDetails: true,
+          },
+        },
       },
     });
 
@@ -104,6 +112,43 @@ export class DailyTasksService {
             : undefined,
       );
       planByHorse.set(horse.id, horse.nutritionPlans[0]?.id);
+
+      const activeMeds: Array<{
+        name: string;
+        dosage: string | number;
+        unit?: string;
+        route?: string;
+        notes?: string;
+        supplyId?: string;
+      }> = [];
+
+      for (const rec of (horse as any).medicalRecords || []) {
+        const raw = rec.prescriptions || rec.prescriptionDetails;
+        if (!raw) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          const rxs = Array.isArray(parsed) ? parsed : [parsed];
+          for (const rx of rxs) {
+            if (rx && rx.status === 'ACTIVE') {
+              const start = rx.startDate ? String(rx.startDate).slice(0, 10) : '';
+              const end = rx.endDate ? String(rx.endDate).slice(0, 10) : '';
+              if ((!start || dateStr >= start) && (!end || dateStr <= end)) {
+                activeMeds.push({
+                  name: rx.medicationName || 'Thuốc thú y',
+                  dosage: rx.dosage || '1',
+                  unit: rx.unit,
+                  route: rx.route || rx.administrationRoute,
+                  notes: rx.notes,
+                  supplyId: rx.supplyId,
+                });
+              }
+            }
+          }
+        } catch {
+          // ignore malformed JSON
+        }
+      }
+
       return {
         id: horse.id,
         zoneId: stall?.zoneId || undefined,
@@ -112,6 +157,7 @@ export class DailyTasksService {
         allocationGroomId: horse.stallAllocations[0]?.assignedGroomUserId || undefined,
         isLocked,
         mealsJson: horse.nutritionPlans[0]?.mealsJson,
+        medications: activeMeds,
       };
     });
     const planned = planDailyTasks(
@@ -432,8 +478,12 @@ export class DailyTasksService {
       },
     );
 
-    // Trừ kho tự động nếu là việc cho ăn (FEEDING)
-    if (task.taskType === DailyTaskType.FEEDING && task.stallZoneId && task.itemsSnapshotJson) {
+    // Trừ kho tự động nếu là việc cho ăn (FEEDING) hoặc cho uống thuốc (MEDICATION)
+    if (
+      (task.taskType === DailyTaskType.FEEDING || task.taskType === DailyTaskType.MEDICATION) &&
+      task.stallZoneId &&
+      task.itemsSnapshotJson
+    ) {
       await this.inventoryService.deductStockForFeeding(
         task.stallZoneId,
         task.itemsSnapshotJson as any,
@@ -519,8 +569,12 @@ export class DailyTasksService {
       },
     );
 
-    // Hoàn lại kho vật tư nếu hoàn tác việc cho ăn (FEEDING)
-    if (task.taskType === DailyTaskType.FEEDING && task.stallZoneId && task.itemsSnapshotJson) {
+    // Hoàn lại kho vật tư nếu hoàn tác việc cho ăn (FEEDING) hoặc cho uống thuốc (MEDICATION)
+    if (
+      (task.taskType === DailyTaskType.FEEDING || task.taskType === DailyTaskType.MEDICATION) &&
+      task.stallZoneId &&
+      task.itemsSnapshotJson
+    ) {
       await this.inventoryService.restoreStockForFeeding(
         task.stallZoneId,
         task.itemsSnapshotJson as any,

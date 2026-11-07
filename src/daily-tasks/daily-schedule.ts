@@ -12,6 +12,14 @@ export interface ScheduleHorse {
   allocationGroomId?: string;
   isLocked: boolean;
   mealsJson?: unknown;
+  medications?: Array<{
+    name: string;
+    dosage: string | number;
+    unit?: string;
+    route?: string;
+    notes?: string;
+    supplyId?: string;
+  }>;
 }
 
 export interface ScheduleRoster {
@@ -188,6 +196,28 @@ function templatesFor(horse: ScheduleHorse): Template[] {
       },
     );
   }
+
+  if (horse.medications && horse.medications.length > 0) {
+    for (const med of horse.medications) {
+      list.push({
+        taskType: DailyTaskType.MEDICATION,
+        title: `Cho uống thuốc: ${med.name}`,
+        description: `Liều lượng: ${med.dosage} ${med.unit || ''}. Đường dùng: ${med.route || 'Uống'}.${med.notes ? ` Ghi chú: ${med.notes}` : ''}`,
+        mealType: null,
+        baseTime: '08:00',
+        minutes: 10,
+        itemsSnapshotJson: [
+          {
+            supplyId: med.supplyId,
+            supplyName: med.name,
+            amount: Number(med.dosage) || 1,
+            unit: med.unit,
+          },
+        ],
+      });
+    }
+  }
+
   return list;
 }
 
