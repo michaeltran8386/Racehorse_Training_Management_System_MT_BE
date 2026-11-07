@@ -210,6 +210,38 @@ export class ShiftRostersService {
       }
     }
 
+    // Kiểm tra ràng buộc: trong 1 ca trực, 1 Groom chỉ được phân công làm việc tại 1 khu chuồng duy nhất
+    if (uniqueGroomIds.length > 0) {
+      const conflict = await this.prisma.shiftRoster.findFirst({
+        where: {
+          date: { in: targetDates },
+          shiftId: dto.shiftId,
+          zoneId: { not: dto.zoneId },
+          groomUserId: { in: uniqueGroomIds },
+        },
+        include: {
+          groom: { select: { fullName: true } },
+          zone: { select: { name: true, code: true } },
+          shift: { select: { name: true } },
+        },
+      });
+
+      if (conflict) {
+        const conflictDateStr = conflict.date.toISOString().slice(0, 10);
+        throw apiError(
+          HttpStatus.CONFLICT,
+          'GROOM_ALREADY_ASSIGNED_IN_SHIFT',
+          `Nhân viên ${conflict.groom?.fullName || 'Groom'} đã được phân công trực tại ${conflict.zone.name} (${conflict.zone.code}) trong ${conflict.shift.name} ngày ${conflictDateStr}. Trong một ca trực, mỗi Groom chỉ được phân công trực tại 1 khu chuồng.`,
+          {
+            groomName: conflict.groom?.fullName,
+            zoneName: conflict.zone.name,
+            shiftName: conflict.shift.name,
+            date: conflictDateStr,
+          },
+        );
+      }
+    }
+
     // Thực hiện trong transaction
     await this.prisma.$transaction(async (tx) => {
       for (const tDate of targetDates) {

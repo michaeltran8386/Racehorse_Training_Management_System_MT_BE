@@ -87,7 +87,7 @@ describe('SuppliesService (SC-4.10)', () => {
         {
           code: 'SUP_NEW',
           name: 'Vật tư mới',
-          category: SupplyCategory.TOOL_EQUIPMENT,
+          category: SupplyCategory.SUPPLEMENT_GENERAL,
           unit: SupplyUnit.SET,
           unitPrice: 100000,
         },

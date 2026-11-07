@@ -64,6 +64,7 @@ describe('ShiftRostersService (SC-4.01)', () => {
       shiftRoster: {
         findMany: jest.fn().mockResolvedValue([sampleRoster]),
         findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
         create: jest.fn().mockResolvedValue(sampleRoster),
@@ -115,6 +116,29 @@ describe('ShiftRostersService (SC-4.01)', () => {
         ),
       ).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'INVALID_GROOMS_SELECTED' }),
+      });
+    });
+
+    it('rejects if groom is already assigned to another zone in the same shift', async () => {
+      prisma.shiftRoster.findFirst.mockResolvedValueOnce({
+        date: new Date('2026-10-19T00:00:00.000Z'),
+        groom: { fullName: 'Groom Dung' },
+        zone: { name: 'Khu A', code: 'A' },
+        shift: { name: 'Ca sáng' },
+      });
+
+      await expect(
+        service.assignSlot(
+          {
+            date: '2026-10-19',
+            shiftId: 'shift-1',
+            zoneId: 'zone-2',
+            groomUserIds: ['groom-1'],
+          },
+          managerUser,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'GROOM_ALREADY_ASSIGNED_IN_SHIFT' }),
       });
     });
   });
