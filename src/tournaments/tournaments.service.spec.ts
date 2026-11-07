@@ -1400,7 +1400,7 @@ describe('TournamentsService', () => {
       ).rejects.toThrow('Tournament non-existent not found');
     });
   });
-describe('checkHorseEligibility & Withdrawal Period', () => {
+  describe('checkHorseEligibility & Withdrawal Period', () => {
     it('returns 6 structured checks for an eligible horse', async () => {
       prisma.tournament.findUnique.mockResolvedValue({
         id: 't-1',

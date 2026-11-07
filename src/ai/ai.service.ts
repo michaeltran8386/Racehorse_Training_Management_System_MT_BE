@@ -188,7 +188,9 @@ export class AiService {
               cardData: r.cardPayload?.data ? (r.cardPayload.data as any) : undefined,
             },
           })
-          .catch((e) => this.logger.warn(`Failed to record assistant message: ${(e as Error).message}`));
+          .catch((e) =>
+            this.logger.warn(`Failed to record assistant message: ${(e as Error).message}`),
+          );
       }
       return { ...r, traceId: trace.traceId, cached, quota: this.quota(user.userId) };
     };
@@ -314,7 +316,9 @@ export class AiService {
     if (user.role === UserRole.HORSE_OWNER) {
       if (data.some((d) => d.tool === 'owner_costs')) {
         try {
-          const breakdown = this.financial?.getOwnerStatementBreakdown ? await this.financial.getOwnerStatementBreakdown(user.userId) : null;
+          const breakdown = this.financial?.getOwnerStatementBreakdown
+            ? await this.financial.getOwnerStatementBreakdown(user.userId)
+            : null;
           cardPayload = {
             type: 'BILLING_CARD',
             data: breakdown,
@@ -333,8 +337,12 @@ export class AiService {
             alerts: raceData?.alerts ?? [],
           },
         };
-      } else if (data.some((d) => d.tool === 'list_my_horses' || d.tool === 'medical_lock_status')) {
-        const horseData = data.find((d) => d.tool === 'list_my_horses' || d.tool === 'medical_lock_status');
+      } else if (
+        data.some((d) => d.tool === 'list_my_horses' || d.tool === 'medical_lock_status')
+      ) {
+        const horseData = data.find(
+          (d) => d.tool === 'list_my_horses' || d.tool === 'medical_lock_status',
+        );
         cardPayload = {
           type: 'HORSE_CARD',
           data: {

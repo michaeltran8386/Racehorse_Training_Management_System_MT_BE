@@ -446,18 +446,19 @@ export class AiToolsService {
     };
   }
 
-
   private async raceTool(user: CurrentUserPayload, asOf: string): Promise<ToolData> {
     const owner = user.role === UserRole.HORSE_OWNER;
-    const upcoming = (this.prisma?.tournament?.findMany
-      ? await this.prisma.tournament.findMany({
-          where: {
-            raceDate: { gte: new Date() },
-          },
-          orderBy: { raceDate: 'asc' },
-          take: 5,
-        })
-      : []) as any[];
+    const upcoming = (
+      this.prisma?.tournament?.findMany
+        ? await this.prisma.tournament.findMany({
+            where: {
+              raceDate: { gte: new Date() },
+            },
+            orderBy: { raceDate: 'asc' },
+            take: 5,
+          })
+        : []
+    ) as any[];
 
     let ownerResults: any[] = [];
     if (owner && this.prisma?.horse?.findMany && this.prisma?.tournamentResult?.findMany) {
@@ -497,7 +498,9 @@ export class AiToolsService {
       for (const res of ownerResults) {
         rows.push({
           tournament: res.registration?.tournament?.name ?? 'Giải đua',
-          date: res.registration?.tournament?.raceDate ? clubDate(res.registration.tournament.raceDate) : '—',
+          date: res.registration?.tournament?.raceDate
+            ? clubDate(res.registration.tournament.raceDate)
+            : '—',
           horse: res.registration?.horse?.name ?? '—',
           rank: res.finalRank ? `#${res.finalRank}` : 'Tham gia',
           grossPrize: vnd(Number(res.grossPrize ?? 0)),

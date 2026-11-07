@@ -721,25 +721,26 @@ export class FinancialService {
     const finalBalanceDue = totalNet;
 
     const horseIds = Array.from(new Set(invoices.map((i) => i.horseId).filter(Boolean)));
-    const raceResults = horseIds.length > 0
-      ? await this.prisma.tournamentResult.findMany({
-          where: {
-            registration: {
-              horseId: { in: horseIds },
-            },
-          },
-          include: {
-            registration: {
-              include: {
-                tournament: { select: { id: true, name: true, raceDate: true, location: true } },
-                horse: { select: { id: true, name: true, horseCode: true } },
+    const raceResults =
+      horseIds.length > 0
+        ? await this.prisma.tournamentResult.findMany({
+            where: {
+              registration: {
+                horseId: { in: horseIds },
               },
             },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 20,
-        })
-      : [];
+            include: {
+              registration: {
+                include: {
+                  tournament: { select: { id: true, name: true, raceDate: true, location: true } },
+                  horse: { select: { id: true, name: true, horseCode: true } },
+                },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 20,
+          })
+        : [];
 
     const raceSettlements = raceResults.map((r: any) => ({
       tournamentId: r.registration?.tournament?.id,
@@ -786,5 +787,4 @@ export class FinancialService {
       },
     };
   }
-
 }

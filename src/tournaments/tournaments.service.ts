@@ -631,7 +631,13 @@ export class TournamentsService {
     }
 
     const checks: Array<{
-      key: 'STATUS' | 'AGE' | 'MEDICAL_LOCK' | 'DEBT_IMPOUND' | 'WITHDRAWAL_PERIOD' | 'TRAINING_FITNESS';
+      key:
+        | 'STATUS'
+        | 'AGE'
+        | 'MEDICAL_LOCK'
+        | 'DEBT_IMPOUND'
+        | 'WITHDRAWAL_PERIOD'
+        | 'TRAINING_FITNESS';
       label: string;
       passed: boolean;
       details?: string;
@@ -663,10 +669,13 @@ export class TournamentsService {
 
     // 2. Độ tuổi tối thiểu
     const raceDate = tournament.raceDate ? new Date(tournament.raceDate) : new Date();
-    const dob = horse.dob ? new Date(horse.dob) : new Date(raceDate.getTime() - 4 * 365.25 * 86400000);
-    const ageYears = (!isNaN(raceDate.getTime()) && !isNaN(dob.getTime()))
-      ? Math.floor((raceDate.getTime() - dob.getTime()) / (365.25 * 86400000))
-      : 4;
+    const dob = horse.dob
+      ? new Date(horse.dob)
+      : new Date(raceDate.getTime() - 4 * 365.25 * 86400000);
+    const ageYears =
+      !isNaN(raceDate.getTime()) && !isNaN(dob.getTime())
+        ? Math.floor((raceDate.getTime() - dob.getTime()) / (365.25 * 86400000))
+        : 4;
     const minAge = tournament.minAgeYears ?? 2;
     const agePassed = ageYears >= minAge;
     checks.push({
@@ -684,7 +693,8 @@ export class TournamentsService {
     }
 
     // 3. Khóa y tế
-    const hasMedLock = horse.isMedicalLocked || (horse.medicalLocks && horse.medicalLocks.length > 0);
+    const hasMedLock =
+      horse.isMedicalLocked || (horse.medicalLocks && horse.medicalLocks.length > 0);
     checks.push({
       key: 'MEDICAL_LOCK',
       label: 'Không bị khóa y tế',
@@ -774,7 +784,10 @@ export class TournamentsService {
     }
 
     // 6. Thể lực luyện tập gần đây
-    const completedWorkouts = (horse.workoutSessions && Array.isArray(horse.workoutSessions)) ? horse.workoutSessions.length : 4;
+    const completedWorkouts =
+      horse.workoutSessions && Array.isArray(horse.workoutSessions)
+        ? horse.workoutSessions.length
+        : 4;
     const fitnessPassed = completedWorkouts >= 4;
     checks.push({
       key: 'TRAINING_FITNESS',
@@ -788,7 +801,9 @@ export class TournamentsService {
       );
     }
 
-    const isRegistered = Array.isArray(tournament.registrations) ? tournament.registrations.some((r) => r.horseId === horseId) : false;
+    const isRegistered = Array.isArray(tournament.registrations)
+      ? tournament.registrations.some((r) => r.horseId === horseId)
+      : false;
 
     return {
       eligible: blockingReasons.length === 0,
@@ -1189,9 +1204,11 @@ export class TournamentsService {
               trainerCut: Math.round((item.prizeMoneyWon ?? 0) * 0.1),
               jockeyCut: Math.round((item.prizeMoneyWon ?? 0) * 0.05),
               entryFeeDeducted: Number(tournament.entryFee) || 0,
-              netOwnerPayout: (item.prizeMoneyWon ?? 0) > 0
-                ? Math.round((item.prizeMoneyWon ?? 0) * 0.85) - (Number(tournament.entryFee) || 0)
-                : -(Number(tournament.entryFee) || 0),
+              netOwnerPayout:
+                (item.prizeMoneyWon ?? 0) > 0
+                  ? Math.round((item.prizeMoneyWon ?? 0) * 0.85) -
+                    (Number(tournament.entryFee) || 0)
+                  : -(Number(tournament.entryFee) || 0),
               settledAt: now,
               officialNotes: item.officialNotes,
             },
@@ -1204,9 +1221,11 @@ export class TournamentsService {
               trainerCut: Math.round((item.prizeMoneyWon ?? 0) * 0.1),
               jockeyCut: Math.round((item.prizeMoneyWon ?? 0) * 0.05),
               entryFeeDeducted: Number(tournament.entryFee) || 0,
-              netOwnerPayout: (item.prizeMoneyWon ?? 0) > 0
-                ? Math.round((item.prizeMoneyWon ?? 0) * 0.85) - (Number(tournament.entryFee) || 0)
-                : -(Number(tournament.entryFee) || 0),
+              netOwnerPayout:
+                (item.prizeMoneyWon ?? 0) > 0
+                  ? Math.round((item.prizeMoneyWon ?? 0) * 0.85) -
+                    (Number(tournament.entryFee) || 0)
+                  : -(Number(tournament.entryFee) || 0),
               settledAt: now,
               officialNotes: item.officialNotes,
             },

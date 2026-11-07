@@ -103,9 +103,11 @@ export class TournamentsController {
     });
   }
 
-    @Get(':id/eligibility/:horseId')
+  @Get(':id/eligibility/:horseId')
   @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER, UserRole.HORSE_OWNER)
-  @ApiOperation({ summary: 'Kiểm tra điều kiện tham gia giải đua của chiến mã (minh bạch 6 tiêu chuẩn)' })
+  @ApiOperation({
+    summary: 'Kiểm tra điều kiện tham gia giải đua của chiến mã (minh bạch 6 tiêu chuẩn)',
+  })
   async checkEligibility(
     @Param('id') tournamentId: string,
     @Param('horseId') horseId: string,
