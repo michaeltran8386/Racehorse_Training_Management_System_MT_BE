@@ -471,18 +471,8 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       if (cat === 'FEED') {
         whereSupply.category = { in: [SupplyCategory.FEED_HAY, SupplyCategory.FEED_GRAIN] };
       } else if (cat === 'MEDICINE') {
-        whereSupply.category = {
-          in: [
-            SupplyCategory.MEDICINE,
-            SupplyCategory.VACCINE,
-            SupplyCategory.DEWORMER,
-            SupplyCategory.SUPPLEMENT_VITAMIN,
-            SupplyCategory.SUPPLEMENT_MINERAL,
-            SupplyCategory.SUPPLEMENT_ELECTROLYTE,
-            SupplyCategory.SUPPLEMENT_GENERAL,
-          ],
-        };
-      } else if (cat === 'CARE') {
+        whereSupply.category = { in: [SupplyCategory.MEDICINE] };
+      } else if (cat === 'CARE' || cat === 'SUPPLEMENT') {
         whereSupply.category = {
           in: [
             SupplyCategory.SUPPLEMENT_VITAMIN,
@@ -490,10 +480,6 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
             SupplyCategory.SUPPLEMENT_ELECTROLYTE,
             SupplyCategory.SUPPLEMENT_GENERAL,
           ],
-        };
-      } else if (cat === 'EQUIPMENT') {
-        whereSupply.category = {
-          in: [SupplyCategory.TOOL_EQUIPMENT, SupplyCategory.CLEANING_SUPPLY],
         };
       } else if (Object.values(SupplyCategory).includes(cat as SupplyCategory)) {
         whereSupply.category = cat as SupplyCategory;

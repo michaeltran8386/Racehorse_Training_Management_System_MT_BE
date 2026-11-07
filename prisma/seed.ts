@@ -765,8 +765,6 @@ const food = [
   ['OATS', 'Cám yến mạch', 'FEED_GRAIN', 'KG', 24000],
   ['ELECTROLYTE', 'Điện giải cho ngựa', 'SUPPLEMENT_ELECTROLYTE', 'PACKET', 45000],
   ['ANTI_INFLAM', 'Thuốc chống viêm thú y', 'MEDICINE', 'VIAL', 180000],
-  ['BANDAGE', 'Băng cuốn đàn hồi', 'TOOL_EQUIPMENT', 'PIECE', 35000],
-  ['DISINFECTANT', 'Dung dịch vệ sinh chuồng', 'CLEANING_SUPPLY', 'LITER', 65000],
 ] as const;
 const nutrition = (horseId: string) => id(`nutrition/${horseId}`);
 
