@@ -40,6 +40,10 @@ const DATA_ROUTES: [string, RegExp][] = [
     /\b(chi phi|hoa don|tai chinh|sao ke|phai tra|thanh toan|cong no|invoice|cost)\b/,
   ],
   ['incident_reports', /\b(su co|incident)\b/],
+  [
+    'owner_races',
+    /\b(giai dua|cuoc dua|thi dau|dang ky dua|tien thuong dua|ket qua dua|race|tournament)\b/,
+  ],
   ['herd_health', /\b(suc khoe|chan thuong|cach ly|qua han|herd|health)\b/],
 ];
 const HOW_TO = /\b(la gi|lam sao|lam the nao|cach nao|o dau|huong dan|quy trinh|how to|what is)\b/;
@@ -81,8 +85,8 @@ const ROLE_EXAMPLES: Record<string, string[]> = {
   GROOM: ['Ca trực của tôi tuần này?', 'Lịch tập hôm nay?', 'Vật tư nào sắp hết?'],
   HORSE_OWNER: [
     'Ngựa của tôi đang thế nào?',
-    'Chi phí nuôi ngựa của tôi?',
-    'Lịch tập của ngựa tôi tuần này?',
+    'Báo cáo chi phí nuôi ngựa tháng này?',
+    'Giải đua sắp tới và kết quả thi đấu?',
   ],
 };
 

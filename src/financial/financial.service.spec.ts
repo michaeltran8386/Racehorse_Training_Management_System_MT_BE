@@ -39,6 +39,9 @@ describe('FinancialService', () => {
         update: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      tournamentResult: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       $transaction: jest.fn((arg) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg))),
     };
 
@@ -320,6 +323,57 @@ describe('FinancialService', () => {
       const user = { id: 'u-mgr', name: 'Manager', role: 'CLUB_MANAGER' };
       const res = await service.generateMonthlyDrafts('2020-11', user);
       expect(res.createdCount).toBe(1);
+    });
+  });
+
+  describe('getOwnerStatementBreakdown (2-tier progressive disclosure)', () => {
+    it('aggregates summary level 1 and provides drilldown level 2', async () => {
+      prisma.financialInvoice.findMany.mockResolvedValue([
+        {
+          id: 'inv-1',
+          horseId: 'h-1',
+          billingPeriod: '2026-10',
+          boardingFee: 7000000,
+          boardingDays: 30,
+          medicalFee: 1500000,
+          trainingFee: 2000000,
+          prizeCredit: 15000000,
+          netAmount: -4500000,
+          status: InvoiceStatus.SENT,
+          horse: { id: 'h-1', name: 'Thunder', horseCode: 'HR-001' },
+          owner: { id: 'o-1', fullName: 'John Doe', email: 'owner@gmail.com' },
+        },
+      ]);
+
+      prisma.tournamentResult = {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            finalRank: 1,
+            grossPrize: 20000000,
+            trainerCut: 2000000,
+            jockeyCut: 1000000,
+            entryFeeDeducted: 2000000,
+            netOwnerPayout: 15000000,
+            registration: {
+              tournament: { id: 't-1', name: 'Autumn Cup', raceDate: new Date('2026-10-15') },
+              horse: { id: 'h-1', name: 'Thunder' },
+            },
+          },
+        ]),
+      } as any;
+
+      const breakdown = await service.getOwnerStatementBreakdown('o-1', '2026-10');
+
+      expect(breakdown.summary.totalExpense).toBe(10500000);
+      expect(breakdown.summary.totalRaceNet).toBe(15000000);
+      expect(breakdown.summary.finalBalanceDue).toBe(-4500000);
+      expect(breakdown.summary.isSurplus).toBe(true);
+      expect(breakdown.summary.surplusAmount).toBe(4500000);
+
+      expect(breakdown.drilldown.invoices).toHaveLength(1);
+      expect(breakdown.drilldown.raceSettlements).toHaveLength(1);
+      expect(breakdown.drilldown.raceSettlements[0].tournamentName).toBe('Autumn Cup');
+      expect(breakdown.drilldown.raceSettlements[0].netOwnerPayout).toBe(15000000);
     });
   });
 
