@@ -38,7 +38,9 @@ Kiểm tra sức khỏe hệ thống: `GET http://localhost:3000/api/health` -> 
 ## 2. Hướng dẫn Thiết lập Chi tiết
 
 ### 2.1. Cấu hình biến môi trường (`.env`)
+
 Sao chép file `.env.example` thành `.env`:
+
 ```powershell
 # Windows PowerShell
 Copy-Item .env.example .env
@@ -86,7 +88,9 @@ DEV_FIXED_OTP=false
 ### 2.2. Hai cách quản lý Database PostgreSQL bằng Docker
 
 #### Cách 1: Dùng Docker Compose (Tiện lợi nhất)
+
 Trong thư mục `Racehorse_Training_Management_System_MT_BE`:
+
 ```bash
 # Bật database chạy nền
 docker compose up -d
@@ -96,7 +100,9 @@ docker compose down
 ```
 
 #### Cách 2: Dùng lệnh `docker run` trực tiếp
+
 Nếu không muốn dùng compose, bạn có thể chạy 1 dòng lệnh:
+
 ```powershell
 docker run -d --name equiflow-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=equiflow -p 5432:5432 -v equiflow_pg_data:/var/lib/postgresql/data postgres:16-alpine
 ```
@@ -104,11 +110,14 @@ docker run -d --name equiflow-postgres -e POSTGRES_USER=postgres -e POSTGRES_PAS
 ---
 
 ### 2.3. Xem và quản lý dữ liệu bằng Prisma Studio (GUI)
+
 Để xem toàn bộ bảng biểu trực quan trên trình duyệt (thay thế cho pgAdmin hoặc DBeaver):
+
 ```bash
 npm run db:studio
 # hoặc: npx prisma studio
 ```
+
 Trình duyệt sẽ tự động mở tại **`http://localhost:5555`**.
 
 ---
@@ -117,52 +126,39 @@ Trình duyệt sẽ tự động mở tại **`http://localhost:5555`**.
 
 Mật khẩu mặc định cho tất cả các tài khoản: **`EquiFlow@2026`**
 
-| Vai trò (Role) | Email | Họ và tên | Trạng thái | Nghiệp vụ chính |
-| :--- | :--- | :--- | :--- | :--- |
-| **Club Manager** | `manager@gmail.com` | Michael Tran | `ACTIVE` | Quản trị tài khoản, phân quyền, sơ đồ chuồng, xem audit log |
-| **Head Trainer** | `trainer@gmail.com` | David Nguyen | `ACTIVE` | Lập giáo án huấn luyện, xếp lịch bài tập, ghi nhận kết quả |
-| **Veterinarian** | `vet@gmail.com` | Dr. Sarah Connor | `ACTIVE` | Khám lâm sàng, đặt/mở Khóa Y Tế, chấm chấn thương 2D |
-| **Groom Hand 1** | `groom@gmail.com` | John Smith | `ACTIVE` | Chăm sóc chuồng Barn 1 (A01-A03), thực hiện bài tập nhẹ |
-| **Groom Hand 2** | `groom2@gmail.com` | Lê Văn Phúc | `ACTIVE` | Chăm sóc chuồng Barn 2 & Khu cách ly |
-| **Horse Owner 1** | `owner@gmail.com` | Robert Sterling | `ACTIVE` | Chủ sở hữu Thunderbolt Swift, Pegasus Dream, Midnight Mirage |
-| **Horse Owner 2** | `owner2@gmail.com` | Phan Đức Long | `ACTIVE` | Chủ sở hữu Northern Dancer Legacy, Shadowfax Wonder |
-| **Pending User** | `pending.groom@gmail.com`| Trần Văn Nam | `PENDING_APPROVAL`| Tài khoản chờ duyệt để test chức năng Approve / Reject của Manager |
-| **Invited User** | `invited.vet@gmail.com` | Dr. Alexander Bell | `INVITED` | Bác sĩ được mời qua email, test tính năng Resend / Cancel Invite |
-| **Locked User** | `locked.user@gmail.com` | Đặng Tuấn Kiệt | `LOCKED` | Tài khoản bị khóa, test tính năng Mở khóa (Unlock) |
+| Vai trò (Role)     | Email                                | Họ và tên            | Trạng thái | Nghiệp vụ chính                                                         |
+| :----------------- | :----------------------------------- | :------------------- | :--------- | :---------------------------------------------------------------------- |
+| **Club Manager**   | `manager@gmail.com`                  | Trần Quang Minh      | `ACTIVE`   | Quản trị tài khoản, phân quyền, sơ đồ chuồng, xem audit log, lập sao kê |
+| **Head Trainer 1** | `trainer@gmail.com`                  | Nguyễn Văn Tuấn      | `ACTIVE`   | Lập giáo án huấn luyện, xếp lịch bài tập, ghi nhận kết quả thi đấu      |
+| **Head Trainer 2** | `trainer2@gmail.com`                 | Lê Hoàng Nam         | `ACTIVE`   | Phụ trách huấn luyện nhóm ngựa đua Barn 2 & Cự ly kinh điển             |
+| **Veterinarian**   | `vet@gmail.com`                      | BS. Phạm Minh Trí    | `ACTIVE`   | Khám lâm sàng, đặt/mở Khóa Y Tế, sơ đồ chấn thương 2D                   |
+| **Groom Hand 1**   | `groom@gmail.com`                    | Lê Văn Bình          | `ACTIVE`   | Chăm sóc chuồng Barn 1 (A01-A08), tiếp tế thức ăn & vật tư              |
+| **Groom Hand 2**   | `groom2@gmail.com`                   | Hoàng Văn Phúc       | `ACTIVE`   | Chăm sóc chuồng Barn 2 (B01-B08) & xử lý sự cố chuồng                   |
+| **Groom Hand 3**   | `groom3@gmail.com`                   | Đỗ Thị Mai           | `ACTIVE`   | Chăm sóc Khu Cách ly (C01) & Khu Lưu giữ nợ phí (Zone H)                |
+| **Horse Owner 1**  | `owner@gmail.com`                    | Phạm Gia Bảo         | `ACTIVE`   | Sở hữu Bạch Long Mã, Xích Thố, Kim Long, Vân Tiêu                       |
+| **Horse Owner 2**  | `owner2@gmail.com`                   | Đặng Hoàng Yến       | `ACTIVE`   | Sở hữu Thần Phong, Lão Tướng, Tuyết Ảnh, Lôi Chấn                       |
+| **Horse Owner 3**  | `owner3@gmail.com`                   | Vũ Quốc Hưng         | `ACTIVE`   | Chủ ngựa VIP sở hữu Hắc Báo, Hồng Kỳ                                    |
+| **Horse Owner 4**  | `owner4@gmail.com`                   | Trịnh Bích Ngọc      | `ACTIVE`   | Chủ ngựa có ngựa nợ phí: Dạ Nguyệt (Zone H), Thanh Loan                 |
+| **Locked User**    | `equiflow-expired-fixture@gmail.com` | Tài khoản thử nghiệm | `LOCKED`   | Kiểm thử xử lý tài khoản bị khóa                                        |
 
 ---
 
-## 4. Dữ liệu mẫu theo vòng đời
+## 4. Dữ liệu mẫu theo vòng đời (Lifecycle Seed 07/2026 – 12/2026)
 
-Seed tạo 12 ngựa, 20 ô chuồng và dữ liệu cho cả 37 model. Ngày tập, ngày đua, hạn trả và lịch chăm sóc được neo theo ngày chạy seed tại CLB (UTC+7).
-
-Dùng **một CSDL PostgreSQL cục bộ riêng** tên `equiflow_seed_demo` (CI dùng `racehorse_ci`). Tạo CSDL mới một lần trong PostgreSQL Docker đang chạy:
+Bộ dữ liệu mẫu phủ kín **6 tháng liên tục (07/2026 đến 12/2026)** với 12 chiến mã, 20 ô chuồng, 4 giải đấu hoàn thành và chuỗi 31 hóa đơn sao kê thực tế:
 
 ```powershell
-docker compose exec postgres createdb -U postgres equiflow_seed_demo
+# Chạy nạp dữ liệu mẫu
+npm run db:seed
 ```
 
-Trong cửa sổ PowerShell dùng để seed và chạy BE, đặt hai URL theo cấu hình Docker local:
-
-```powershell
-$env:DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:5432/equiflow_seed_demo?schema=public'
-$env:DIRECT_URL = $env:DATABASE_URL
-npx prisma generate
-npx prisma db push --skip-generate
-npx prisma db seed
-npx ts-node test/seed-lifecycle.check.ts
-npm run start:dev
-```
-
-`npm run db:seed` chạy cùng script. Có thể chạy lại để đưa lịch về ngày hiện tại; script xây lại các giao dịch mẫu trong một transaction, giữ tài khoản mẫu theo ID ổn định và dừng nếu khóa trùng dữ liệu khác. Không trỏ seed vào CSDL đang sử dụng hoặc Supabase. Nếu đang có bộ seed cũ, dùng CSDL demo mới để tránh trùng mã ngựa/chuồng; không cần xóa CSDL cũ.
-
-| Màn hình demo | Dữ liệu để kiểm tra |
-| --- | --- |
-| Dashboard HLV | Bạch Long Mã (08:00, cỏ) và Thần Phong (08:15, cỏ); Hắc Báo (09:30, cát), Dạ Nguyệt (14:00, bơi) và lịch 14 ngày tiếp theo. Sau giờ tập hôm nay, card lấy buổi còn lại hoặc buổi ngày mai. |
-| Phong độ và giải đấu | Hơn 35 buổi có kết quả cho từng ngựa Bạch Long Mã, Lão Tướng và Lôi Chấn; Lão Tướng đã giải nghệ với 3 lần nhất, 2 lần nhì. Cúp Mùa Đông diễn ra sau 20 ngày và đang mở đăng ký. |
-| Thú y | Xích Thố có bệnh án mở, khóa tập nặng và lịch tái khám sau 7 ngày. Tuyết Ảnh cách ly tại C01; Dạ Nguyệt đang phục hồi. |
-| Tài chính | 4 hóa đơn cho các tháng đã kết thúc: đã trả 14.500.000đ, quá hạn 6.000.000đ, đã phát hành 8.200.000đ và chưa phát hành. |
-| Groom và kho | Phân ca 7 ngày, việc cho ăn/vệ sinh hôm nay, 2 mặt hàng dưới ngưỡng tồn, phiếu chờ duyệt/đã duyệt/đã giao và sự cố B04. |
+| Màn hình demo            | Dữ liệu để kiểm tra                                                                                                                                                                                                                                                    |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dashboard HLV**        | Lịch tập ngày hôm nay và chuỗi lịch tập tuần; bài tập nền tảng và bứt tốc trải dài từ tháng 7 đến tháng 11; chỉ số ACWR tính toán chuẩn xác không bị đứt đoạn.                                                                                                         |
+| **Phong độ & Giải đấu**  | Các giải đua hoàn tất: Giải Đua Mùa Hè Rực Lửa (T7), Cúp Quốc Gia (T8), Cúp Cự Ly Kinh Điển, Giải Vô Địch Mùa Thu (T10); Cúp Mùa Đông (T11) mở đăng ký; Cúp Tân Niên (T12) sắp diễn ra.                                                                                |
+| **Hồ sơ Thú y**          | Xích Thố có bệnh án mở và Khóa y tế; các ca khám định kỳ tiêm vaccine tháng 7, nha khoa tháng 8; Tuyết Ảnh cách ly tại C01; Dạ Nguyệt hồi phục tại H01.                                                                                                                |
+| **Tài chính & Sao kê**   | **31 hóa đơn** phân bổ 6 tháng (2026-07 đến 2026-12) với 4 trạng thái: 19 Đã thanh toán (`PAID`), 3 Đã gửi (`SENT`), 4 Chưa gửi (`DRAFT`), và **5 Quá hạn (`OVERDUE`)** với tổng dư nợ **49.000.000 đ** (Dạ Nguyệt nợ T8, T9, T10 ở Zone H; Xích Thố nợ y tế T9, T10). |
+| **Chuồng trại & Vật tư** | Sơ đồ 4 phân khu: Barn 1 (A), Barn 2 (B), Cách ly (C), và Khu Lưu giữ nợ phí (Zone H) chứa chiến mã có công nợ quá hạn kéo dài.                                                                                                                                        |
 
 Tài khoản demo: `manager`, `trainer`, `trainer2`, `vet`, `groom`, `groom2`, `groom3`, `owner`, `owner2` (tất cả thêm `@gmail.com`). Mật khẩu demo: `EquiFlow@2026`. Các bản ghi OTP, reset, refresh phục vụ kiểm thử đều đã hết hạn hoặc bị thu hồi.
 
@@ -170,22 +166,22 @@ Tài khoản demo: `manager`, `trainer`, `trainer2`, `vet`, `groom`, `groom2`, `
 
 ## 5. Danh mục Lệnh Phát Triển & Kiểm Thử
 
-| Lệnh | Ý nghĩa |
-| :--- | :--- |
-| `npm run start:dev` | Khởi động server NestJS chế độ Hot-reload |
-| `npm run db:up` | Khởi chạy PostgreSQL container bằng Docker Compose |
-| `npm run db:down` | Dừng và tắt PostgreSQL container |
-| `npm run db:setup` | Đẩy bảng Prisma và nạp toàn bộ 100% dữ liệu mẫu |
-| `npm run db:seed` | Chỉ chạy lại script nạp dữ liệu mẫu |
-| `npm run db:studio` | Mở giao diện trực quan Prisma Studio tại port 5555 |
+| Lệnh                | Ý nghĩa                                                         |
+| :------------------ | :-------------------------------------------------------------- |
+| `npm run start:dev` | Khởi động server NestJS chế độ Hot-reload                       |
+| `npm run db:up`     | Khởi chạy PostgreSQL container bằng Docker Compose              |
+| `npm run db:down`   | Dừng và tắt PostgreSQL container                                |
+| `npm run db:setup`  | Đẩy bảng Prisma và nạp toàn bộ 100% dữ liệu mẫu                 |
+| `npm run db:seed`   | Chỉ chạy lại script nạp dữ liệu mẫu                             |
+| `npm run db:studio` | Mở giao diện trực quan Prisma Studio tại port 5555              |
 | `npm run typecheck` | Kiểm tra tính toàn vẹn kiểu dữ liệu TypeScript (`tsc --noEmit`) |
-| `npm run test:unit` | Chạy 100% Unit test suite bằng Jest (28 suites, 267 tests) |
-| `npm run build` | Biên dịch toàn bộ dự án NestJS ra thư mục `/dist` |
-| `npm run lint` | Chạy ESLint kiểm tra quy chuẩn mã nguồn |
+| `npm run test:unit` | Chạy 100% Unit test suite bằng Jest (28 suites, 267 tests)      |
+| `npm run build`     | Biên dịch toàn bộ dự án NestJS ra thư mục `/dist`               |
+| `npm run lint`      | Chạy ESLint kiểm tra quy chuẩn mã nguồn                         |
 
 ---
 
 ## 6. Tài liệu & OpenAPI Swagger
 
-* **Swagger UI Interactive Documentation:** `http://localhost:3000/api/docs`
-* **Health Check Probe:** `GET http://localhost:3000/api/health`
+- **Swagger UI Interactive Documentation:** `http://localhost:3000/api/docs`
+- **Health Check Probe:** `GET http://localhost:3000/api/health`

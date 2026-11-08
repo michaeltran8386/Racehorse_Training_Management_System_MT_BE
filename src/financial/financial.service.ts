@@ -339,7 +339,7 @@ export class FinancialService {
       await this.checkAndReleaseDebtSanctions(existing.horseId, existing.ownerId, user);
     }
 
-    // Nếu phát hành hóa đơn (SENT), gửi thông báo cho Chủ ngựa
+    // Nếu gửi hóa đơn (SENT), gửi thông báo cho Chủ ngựa
     if (status === InvoiceStatus.SENT && existing.ownerId) {
       await this.notifications.notifyUsers(
         [existing.ownerId],
@@ -347,7 +347,7 @@ export class FinancialService {
           type: 'INVOICE_SENT',
           category: 'ACCOUNT',
           title: 'Sao kê chi phí & Tiền thưởng tháng mới',
-          message: `Báo cáo tài chính kỳ ${existing.billingPeriod} cho ngựa ${existing.horse.name} đã được phát hành.`,
+          message: `Báo cáo tài chính kỳ ${existing.billingPeriod} cho ngựa ${existing.horse.name} đã được gửi.`,
           link: `/owner/financial-reports?highlight=${encodeURIComponent(id)}`,
           params: { billingPeriod: existing.billingPeriod, horseName: existing.horse.name },
         },
