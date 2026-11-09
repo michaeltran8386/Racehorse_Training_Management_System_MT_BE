@@ -11,6 +11,12 @@ export function str(value: unknown): string {
   return typeof value === 'string' ? value.trim() : value == null ? '' : String(value).trim();
 }
 
+// Dùng với @Transform(trimString) trong DTO: cắt khoảng trắng TRƯỚC khi kiểm độ dài, để ô chỉ toàn
+// dấu cách không lọt qua @Length rồi bị lưu thành chuỗi rỗng.
+export function trimString({ value }: { value: unknown }): unknown {
+  return typeof value === 'string' ? value.trim() : value;
+}
+
 // Mật khẩu: KHÔNG trim (khoảng trắng là một phần của mật khẩu).
 export function raw(value: unknown): string {
   return typeof value === 'string' ? value : '';

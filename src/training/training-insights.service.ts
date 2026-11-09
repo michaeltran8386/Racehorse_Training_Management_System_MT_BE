@@ -196,6 +196,7 @@ export class TrainingInsightsService {
             phases: true,
             status: true,
             updatedAt: true,
+            trainer: { select: { id: true, fullName: true } },
           },
           orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
         }),
@@ -290,6 +291,7 @@ export class TrainingInsightsService {
               planCode: plan.planCode,
               name: plan.phaseName,
               status: plan.status,
+              trainerName: plan.trainer?.fullName ?? null,
             }
           : null,
         currentPhase: phase

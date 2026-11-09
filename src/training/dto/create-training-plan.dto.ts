@@ -10,6 +10,8 @@ import {
   Length,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils/input';
 import { TrackSurface } from '@prisma/client';
 
 export class CreateTrainingPlanDto {
@@ -25,17 +27,20 @@ export class CreateTrainingPlanDto {
   @IsNotEmpty({ message: 'Phase name is required.' })
   @IsString()
   @Length(3, 150, { message: 'Tên giáo án phải từ 3 đến 150 ký tự.' })
+  @Transform(trimString)
   phaseName: string;
 
   @ApiProperty({ description: 'Mục tiêu giáo án (10-1000 ký tự)' })
   @IsString({ message: 'Vui lòng nhập mục tiêu.' })
   @Length(10, 1000, { message: 'Mục tiêu phải từ 10 đến 1000 ký tự.' })
+  @Transform(trimString)
   objective: string;
 
   @ApiPropertyOptional({ description: 'Ghi chú (≤ 1000 ký tự)' })
   @IsOptional()
   @IsString()
   @Length(0, 1000, { message: 'Ghi chú tối đa 1000 ký tự.' })
+  @Transform(trimString)
   notes?: string;
 
   @ApiPropertyOptional({ description: 'Target average speed in km/h', example: 42.5 })

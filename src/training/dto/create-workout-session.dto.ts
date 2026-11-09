@@ -16,6 +16,8 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils/input';
 import { INTENSITIES, WORKOUT_SURFACES, WORKOUT_TYPES } from '../training-rules';
 
 /** DL-2.01 Thêm buổi tập (HT). Luật nghiệp vụ (khóa y tế, 3 buổi/ngày...) kiểm ở service. */
@@ -69,6 +71,7 @@ export class CreateWorkoutSessionDto {
   @IsOptional()
   @IsString()
   @Length(2, 100, { message: 'Tên nài ngựa phải từ 2 đến 100 ký tự.' })
+  @Transform(trimString)
   jockeyName?: string;
 
   @ApiProperty({ description: 'Nhân viên chăm sóc (GROOM) phụ trách' })
@@ -80,6 +83,7 @@ export class CreateWorkoutSessionDto {
   @IsOptional()
   @IsString()
   @MaxLength(500, { message: 'Ghi chú tối đa 500 ký tự.' })
+  @Transform(trimString)
   trainerNotes?: string;
 
   @ApiPropertyOptional({

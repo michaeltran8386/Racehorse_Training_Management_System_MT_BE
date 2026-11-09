@@ -157,6 +157,17 @@ export class TrainingPlansService {
     }
   }
 
+  /** Giáo án chỉ được bắt đầu từ ngày mai (hôm nay tạo thì ngày mai mới áp dụng). */
+  private assertStartsFromTomorrow(startDate: Date) {
+    if (startDate < addDays(startOfClubDay(new Date()), 1)) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'START_DATE_TOO_EARLY',
+        'Ngày bắt đầu giáo án phải từ ngày mai trở đi.',
+      );
+    }
+  }
+
   private checkedPhases(raw: unknown, startDate: Date, endDate: Date): PlanPhase[] {
     const result = validatePhases(raw, clubDate(startDate), clubDate(endDate));
     if ('code' in result) {
@@ -183,6 +194,7 @@ export class TrainingPlansService {
         'Ngựa đang bị Khóa huấn luyện y tế. Không thể tạo giáo án mới cho đến khi Bác sĩ thú y gỡ khóa.',
       );
     }
+    await this.assertNoOtherTrainer(horse.id, horse.name, user.userId);
 
     if (
       dto.phaseName &&
@@ -204,13 +216,7 @@ export class TrainingPlansService {
 
     const startDate = new Date(dto.startDate);
     const endDate = new Date(dto.endDate);
-    if (startDate < addDays(startOfClubDay(new Date()), -7)) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'START_DATE_TOO_EARLY',
-        'Ngày bắt đầu không được sớm hơn 7 ngày trước.',
-      );
-    }
+    this.assertStartsFromTomorrow(startDate);
     this.assertPlanDates(startDate, endDate);
     const phases = this.checkedPhases(dto.phases, startDate, endDate);
 
@@ -294,12 +300,9 @@ export class TrainingPlansService {
     }
     const startDate = dto.startDate ? new Date(dto.startDate) : existing.startDate;
     const endDate = dto.endDate ? new Date(dto.endDate) : existing.endDate;
-    if (startDate < addDays(startOfClubDay(new Date()), -7)) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'START_DATE_TOO_EARLY',
-        'Ngày bắt đầu không được sớm hơn 7 ngày trước.',
-      );
+    // Chỉ kiểm khi đổi ngày bắt đầu: giáo án đã chạy vẫn phải sửa được ghi chú, giai đoạn...
+    if (clubDate(startDate) !== clubDate(existing.startDate)) {
+      this.assertStartsFromTomorrow(startDate);
     }
     this.assertPlanDates(startDate, endDate);
     const phases = this.checkedPhases(dto.phases ?? existing.phases, startDate, endDate);
@@ -519,8 +522,78 @@ export class TrainingPlansService {
         },
         user.userId,
       );
+      await this.notifyGroomsOnActivate(result.id, result.horse?.name ?? '', user);
     }
     return result;
+  }
+
+  /**
+   * Buổi tập của giáo án Nháp chưa báo groom; khi kích hoạt mới báo, mỗi groom 1 tin
+   * (số buổi được giao và ngày buổi đầu), giống thông báo khi xếp buổi trên giáo án đang áp dụng.
+   */
+  private async notifyGroomsOnActivate(
+    planId: string,
+    horseName: string,
+    user: CurrentUserPayload,
+  ) {
+    const rows = await this.prisma.workoutSession.findMany({
+      where: {
+        trainingPlanId: planId,
+        status: WorkoutStatus.SCHEDULED,
+        assignedStaffUserId: { not: null },
+      },
+      orderBy: { scheduledDate: 'asc' },
+      select: { assignedStaffUserId: true, scheduledDate: true },
+    });
+    const byGroom = new Map<string, { count: number; first: Date }>();
+    for (const r of rows) {
+      const id = r.assignedStaffUserId as string;
+      const cur = byGroom.get(id);
+      if (cur) cur.count++;
+      else byGroom.set(id, { count: 1, first: r.scheduledDate });
+    }
+    for (const [groomId, { count, first }] of byGroom) {
+      await this.notifications.notifyUsers(
+        [groomId],
+        {
+          type: 'WORKOUT_ASSIGNED',
+          category: 'TRAINING',
+          title: 'New workout assigned to you',
+          message: `${count} workout(s) for ${horseName}, first on ${clubDate(first)}.`,
+          params: { horse: horseName, count, date: clubDate(first) },
+          link: '/my-training',
+          senderName: user.fullName,
+        },
+        user.userId,
+      );
+    }
+  }
+
+  /**
+   * Mỗi ngựa một HLV phụ trách tại một thời điểm: ngựa đang có giáo án Nháp / Đang áp dụng của
+   * HLV khác thì không lập thêm (buổi nháp của người khác sẽ chiếm giờ ngựa mà HLV này không thấy).
+   * Cùng một HLV vẫn được chuẩn bị giáo án tiếp theo cho ngựa của mình.
+   */
+  private async assertNoOtherTrainer(horseId: string, horseName: string, userId: string) {
+    const other = await this.prisma.trainingPlan.findFirst({
+      where: {
+        horseId,
+        status: { in: [PlanStatus.DRAFT, PlanStatus.ACTIVE] },
+        trainerUserId: { not: userId },
+      },
+      orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
+      select: { id: true, planCode: true, trainer: { select: { fullName: true } } },
+    });
+    if (other) {
+      const trainer = other.trainer.fullName;
+      const planCode = other.planCode ?? '';
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_HAS_OTHER_TRAINER',
+        `${horseName} đang do HLV ${trainer} phụ trách (giáo án ${planCode}). Liên hệ HLV này hoặc Quản lý CLB.`,
+        { planId: other.id, planCode, trainer, horse: horseName },
+      );
+    }
   }
 
   /** Các dòng ✖ của DL-2.02 (chặn) và dòng ⚠ (cần xác nhận đã trao đổi với VET). */
@@ -648,16 +721,11 @@ export class TrainingPlansService {
         'Ngựa đang bị Khóa huấn luyện y tế. Không thể tạo giáo án mới cho đến khi Bác sĩ thú y gỡ khóa.',
       );
     }
+    await this.assertNoOtherTrainer(horse.id, horse.name, user.userId);
 
     const now = new Date();
-    const startDate = dto.startDate ? new Date(dto.startDate) : startOfClubDay(now);
-    if (startDate < startOfClubDay(now)) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'START_DATE_IN_PAST',
-        'Ngày bắt đầu không được trước ngày hiện tại.',
-      );
-    }
+    const startDate = dto.startDate ? new Date(dto.startDate) : addDays(startOfClubDay(now), 1);
+    this.assertStartsFromTomorrow(startDate);
     const shift = startDate.getTime() - source.startDate.getTime();
     const copyWorkouts = dto.copyWorkouts !== false;
 
