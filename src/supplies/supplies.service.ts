@@ -30,18 +30,8 @@ export class SuppliesService {
       if (cat === 'FEED') {
         where.category = { in: [SupplyCategory.FEED_HAY, SupplyCategory.FEED_GRAIN] };
       } else if (cat === 'MEDICINE') {
-        where.category = {
-          in: [
-            SupplyCategory.MEDICINE,
-            SupplyCategory.VACCINE,
-            SupplyCategory.DEWORMER,
-            SupplyCategory.SUPPLEMENT_VITAMIN,
-            SupplyCategory.SUPPLEMENT_MINERAL,
-            SupplyCategory.SUPPLEMENT_ELECTROLYTE,
-            SupplyCategory.SUPPLEMENT_GENERAL,
-          ],
-        };
-      } else if (cat === 'CARE') {
+        where.category = { in: [SupplyCategory.MEDICINE] };
+      } else if (cat === 'CARE' || cat === 'SUPPLEMENT') {
         where.category = {
           in: [
             SupplyCategory.SUPPLEMENT_VITAMIN,
@@ -50,8 +40,6 @@ export class SuppliesService {
             SupplyCategory.SUPPLEMENT_GENERAL,
           ],
         };
-      } else if (cat === 'EQUIPMENT') {
-        where.category = { in: [SupplyCategory.TOOL_EQUIPMENT, SupplyCategory.CLEANING_SUPPLY] };
       } else if (Object.values(SupplyCategory).includes(cat as SupplyCategory)) {
         where.category = cat as SupplyCategory;
       }

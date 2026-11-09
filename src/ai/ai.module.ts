@@ -5,6 +5,7 @@ import { IncidentsModule } from '../incidents/incidents.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { MedicalModule } from '../medical/medical.module';
 import { ShiftRostersModule } from '../shift-rosters/shift-rosters.module';
+import { TournamentsModule } from '../tournaments/tournaments.module';
 import { TrainingModule } from '../training/training.module';
 import { AiController } from './ai.controller';
 import { AiService } from './ai.service';
@@ -15,6 +16,7 @@ import { KnowledgeService } from './knowledge.service';
   imports: [
     HorsesModule,
     TrainingModule,
+    TournamentsModule,
     ShiftRostersModule,
     InventoryModule,
     FinancialModule,

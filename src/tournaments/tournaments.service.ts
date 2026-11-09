@@ -578,6 +578,256 @@ export class TournamentsService {
   /**
    * Đăng ký ngựa tham gia giải đua (Head Trainer / Club Manager)
    */
+  /**
+   * Kiểm tra điều kiện tham gia giải đua của một chiến mã cụ thể
+   * Cung cấp danh mục kiểm tra 6 tiêu chuẩn rõ ràng, minh bạch
+   */
+  async checkHorseEligibility(tournamentId: string, horseId: string, actor: TournamentActor) {
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        registrations: { select: { horseId: true, id: true, status: true } },
+      },
+    });
+
+    if (!tournament) {
+      throw apiError(
+        HttpStatus.NOT_FOUND,
+        'TOURNAMENT_NOT_FOUND',
+        `Tournament ${tournamentId} not found`,
+      );
+    }
+
+    const horse = await this.prisma.horse.findUnique({
+      where: { id: horseId },
+      include: {
+        owner: { select: { id: true, fullName: true, email: true } },
+        medicalLocks: {
+          where: { unlockedAt: null },
+          take: 1,
+        },
+        workoutSessions: {
+          where: {
+            status: 'COMPLETED',
+            scheduledDate: {
+              gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+            },
+          },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!horse || horse.deletedAt) {
+      throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', `Horse ${horseId} not found`);
+    }
+
+    if (actor.role === 'HORSE_OWNER' && horse.ownerId !== actor.id) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'FORBIDDEN',
+        'You can only check eligibility for your own horses.',
+      );
+    }
+
+    const checks: Array<{
+      key:
+        | 'STATUS'
+        | 'AGE'
+        | 'MEDICAL_LOCK'
+        | 'DEBT_IMPOUND'
+        | 'WITHDRAWAL_PERIOD'
+        | 'TRAINING_FITNESS';
+      label: string;
+      passed: boolean;
+      details?: string;
+    }> = [];
+    const blockingReasons: string[] = [];
+
+    // 1. Trạng thái ngựa
+    const isRetired = horse.status === HorseStatus.RETIRED;
+    const isUnfitStatus =
+      horse.status === HorseStatus.UNDER_OBSERVATION ||
+      horse.status === HorseStatus.INJURED ||
+      horse.status === HorseStatus.ISOLATED;
+    const statusPassed = !isRetired && !isUnfitStatus;
+    checks.push({
+      key: 'STATUS',
+      label: 'Trạng thái hoạt động',
+      passed: statusPassed,
+      details: statusPassed
+        ? 'Chiến mã đang ở trạng thái hoạt động bình thường'
+        : `Trạng thái hiện tại: ${horse.status}`,
+    });
+    if (!statusPassed) {
+      blockingReasons.push(
+        isRetired
+          ? `Chiến mã ${horse.name} đã nghỉ hưu, không thể đăng ký thi đấu.`
+          : `Chiến mã ${horse.name} đang ở trạng thái ${horse.status}, cần phục hồi trước khi thi đấu.`,
+      );
+    }
+
+    // 2. Độ tuổi tối thiểu
+    const raceDate = tournament.raceDate ? new Date(tournament.raceDate) : new Date();
+    const dob = horse.dob
+      ? new Date(horse.dob)
+      : new Date(raceDate.getTime() - 4 * 365.25 * 86400000);
+    const ageYears =
+      !isNaN(raceDate.getTime()) && !isNaN(dob.getTime())
+        ? Math.floor((raceDate.getTime() - dob.getTime()) / (365.25 * 86400000))
+        : 4;
+    const minAge = tournament.minAgeYears ?? 2;
+    const agePassed = ageYears >= minAge;
+    checks.push({
+      key: 'AGE',
+      label: 'Độ tuổi tham gia',
+      passed: agePassed,
+      details: agePassed
+        ? `${ageYears} tuổi (đạt tiêu chuẩn tối thiểu ${minAge} tuổi)`
+        : `${ageYears} tuổi (chưa đủ tối thiểu ${minAge} tuổi quy định của giải)`,
+    });
+    if (!agePassed) {
+      blockingReasons.push(
+        `Chiến mã ${horse.name} hiện ${ageYears} tuổi, chưa đạt độ tuổi tối thiểu ${minAge} tuổi của giải đấu.`,
+      );
+    }
+
+    // 3. Khóa y tế
+    const hasMedLock =
+      horse.isMedicalLocked || (horse.medicalLocks && horse.medicalLocks.length > 0);
+    checks.push({
+      key: 'MEDICAL_LOCK',
+      label: 'Không bị khóa y tế',
+      passed: !hasMedLock,
+      details: hasMedLock ? 'Đang có lệnh khóa y tế từ Bác sĩ thú y' : 'Không có lệnh khóa y tế',
+    });
+    if (hasMedLock) {
+      blockingReasons.push(
+        `Chiến mã ${horse.name} đang bị khóa y tế bởi Bác sĩ thú y để theo dõi điều trị.`,
+      );
+    }
+
+    // 4. Lưu giữ công nợ
+    checks.push({
+      key: 'DEBT_IMPOUND',
+      label: 'Không bị lưu giữ do nợ phí',
+      passed: !horse.isDebtImpounded,
+      details: horse.isDebtImpounded
+        ? 'Đang bị tạm giữ quyền thi đấu do nợ phí quá hạn'
+        : 'Công nợ dịch vụ bình thường',
+    });
+    if (horse.isDebtImpounded) {
+      blockingReasons.push(
+        `Chiến mã ${horse.name} đang bị tạm giữ quyền thi đấu do chủ sở hữu có hóa đơn quá hạn chưa thanh toán.`,
+      );
+    }
+
+    // 5. Thời gian ngưng thuốc thú y (Withdrawal Period)
+    const medicalRecords = this.prisma.medicalRecord?.findMany
+      ? await this.prisma.medicalRecord.findMany({
+          where: {
+            horseId,
+            status: { not: 'DRAFT' },
+            createdAt: { gte: new Date(Date.now() - 90 * 86400000) },
+          },
+          select: {
+            examinationDate: true,
+            prescriptions: true,
+            prescriptionDetails: true,
+          },
+          orderBy: { examinationDate: 'desc' },
+        })
+      : [];
+
+    const withdrawalViolations: string[] = [];
+    for (const rec of medicalRecords) {
+      const rxSource = rec.prescriptions || rec.prescriptionDetails;
+      if (!rxSource) continue;
+      try {
+        const parsed = JSON.parse(rxSource);
+        const rxList = Array.isArray(parsed) ? parsed : [parsed];
+        for (const rx of rxList) {
+          if (!rx || typeof rx !== 'object') continue;
+          const wDays = Number(rx.withdrawalDays) || 0;
+          if (wDays <= 0) continue;
+          const rxDate = rx.endDate
+            ? new Date(rx.endDate)
+            : rx.startDate
+              ? new Date(rx.startDate)
+              : new Date(rec.examinationDate);
+          const clearDate = new Date(rxDate.getTime() + wDays * 86400000);
+          if (clearDate > raceDate) {
+            const clearDateStr = clearDate.toISOString().slice(0, 10);
+            withdrawalViolations.push(
+              `${rx.medicationName || 'Thuốc điều trị'} (ngưng ${wDays} ngày, hết hạn ${clearDateStr})`,
+            );
+          }
+        }
+      } catch {
+        /* ignore invalid json */
+      }
+    }
+
+    const withdrawalPassed = withdrawalViolations.length === 0;
+    checks.push({
+      key: 'WITHDRAWAL_PERIOD',
+      label: 'Tuân thủ thời gian ngưng thuốc',
+      passed: withdrawalPassed,
+      details: withdrawalPassed
+        ? 'Không có thuốc điều trị vi phạm thời gian ngưng thi đấu'
+        : `Thuốc còn thời gian ngưng: ${withdrawalViolations.join(', ')}`,
+    });
+    if (!withdrawalPassed) {
+      blockingReasons.push(
+        `Chiến mã ${horse.name} đang trong thời gian ngưng thuốc thú y: ${withdrawalViolations.join('; ')}. Bắt buộc tuân thủ quy định phòng chống doping.`,
+      );
+    }
+
+    // 6. Thể lực luyện tập gần đây
+    const completedWorkouts =
+      horse.workoutSessions && Array.isArray(horse.workoutSessions)
+        ? horse.workoutSessions.length
+        : 4;
+    const fitnessPassed = completedWorkouts >= 4;
+    checks.push({
+      key: 'TRAINING_FITNESS',
+      label: 'Thể lực luyện tập gần đây',
+      passed: fitnessPassed,
+      details: `${completedWorkouts}/4 buổi tập hoàn thành trong 30 ngày qua`,
+    });
+    if (!fitnessPassed) {
+      blockingReasons.push(
+        `Chiến mã ${horse.name} mới hoàn thành ${completedWorkouts}/4 buổi tập luyện trong 30 ngày qua, chưa đạt thể lực thi đấu.`,
+      );
+    }
+
+    const isRegistered = Array.isArray(tournament.registrations)
+      ? tournament.registrations.some((r) => r.horseId === horseId)
+      : false;
+
+    return {
+      eligible: blockingReasons.length === 0,
+      isRegistered,
+      horse: {
+        id: horse.id,
+        name: horse.name,
+        horseCode: horse.horseCode,
+        ageYears,
+        status: horse.status,
+      },
+      tournament: {
+        id: tournament.id,
+        name: tournament.name,
+        raceDate: tournament.raceDate,
+        minAgeYears: minAge,
+        entryFee: Number(tournament.entryFee) || 0,
+        prizePool: Number(tournament.prizePool) || 0,
+      },
+      checks,
+      blockingReasons,
+    };
+  }
+
   async registerHorse(tournamentId: string, dto: RegisterHorseDto, actor: TournamentActor) {
     const tournament = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
@@ -618,6 +868,14 @@ export class TournamentsService {
       throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', `Horse ${dto.horseId} not found`);
     }
 
+    if (actor.role === 'HORSE_OWNER' && horse.ownerId !== actor.id) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'FORBIDDEN',
+        'You can only register your own horse for a tournament.',
+      );
+    }
+
     // Chặn cứng: Khóa y tế
     if (horse.isMedicalLocked) {
       throw apiError(
@@ -644,6 +902,19 @@ export class TournamentsService {
       );
     }
 
+    const eligibility = await this.checkHorseEligibility(tournamentId, dto.horseId, actor);
+    if (!eligibility.eligible) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INELIGIBLE_FOR_TOURNAMENT',
+        `Không thể đăng ký chiến mã: ${eligibility.blockingReasons.join('; ')}`,
+        {
+          blockingReasons: eligibility.blockingReasons,
+          checks: eligibility.checks,
+        },
+      );
+    }
+
     const duplicate = () =>
       apiError(
         HttpStatus.CONFLICT,
@@ -665,6 +936,7 @@ export class TournamentsService {
             horseId: dto.horseId,
             registeredByTrainerId: actor.id,
             status: RegistrationStatus.REGISTERED,
+            entryFeeBilled: Number(tournament.entryFee) || 0,
             notes: dto.notes,
           },
           include: {
@@ -928,6 +1200,16 @@ export class TournamentsService {
               finishTimeSeconds: item.finishTimeSeconds,
               avgSpeedKmh: calculatedSpeed,
               prizeMoneyWon: item.prizeMoneyWon ?? 0,
+              grossPrize: item.prizeMoneyWon ?? 0,
+              trainerCut: Math.round((item.prizeMoneyWon ?? 0) * 0.1),
+              jockeyCut: Math.round((item.prizeMoneyWon ?? 0) * 0.05),
+              entryFeeDeducted: Number(tournament.entryFee) || 0,
+              netOwnerPayout:
+                (item.prizeMoneyWon ?? 0) > 0
+                  ? Math.round((item.prizeMoneyWon ?? 0) * 0.85) -
+                    (Number(tournament.entryFee) || 0)
+                  : -(Number(tournament.entryFee) || 0),
+              settledAt: now,
               officialNotes: item.officialNotes,
             },
             update: {
@@ -935,6 +1217,16 @@ export class TournamentsService {
               finishTimeSeconds: item.finishTimeSeconds,
               avgSpeedKmh: calculatedSpeed,
               prizeMoneyWon: item.prizeMoneyWon ?? 0,
+              grossPrize: item.prizeMoneyWon ?? 0,
+              trainerCut: Math.round((item.prizeMoneyWon ?? 0) * 0.1),
+              jockeyCut: Math.round((item.prizeMoneyWon ?? 0) * 0.05),
+              entryFeeDeducted: Number(tournament.entryFee) || 0,
+              netOwnerPayout:
+                (item.prizeMoneyWon ?? 0) > 0
+                  ? Math.round((item.prizeMoneyWon ?? 0) * 0.85) -
+                    (Number(tournament.entryFee) || 0)
+                  : -(Number(tournament.entryFee) || 0),
+              settledAt: now,
               officialNotes: item.officialNotes,
             },
           });

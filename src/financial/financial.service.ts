@@ -339,7 +339,7 @@ export class FinancialService {
       await this.checkAndReleaseDebtSanctions(existing.horseId, existing.ownerId, user);
     }
 
-    // Nếu phát hành hóa đơn (SENT), gửi thông báo cho Chủ ngựa
+    // Nếu gửi hóa đơn (SENT), gửi thông báo cho Chủ ngựa
     if (status === InvoiceStatus.SENT && existing.ownerId) {
       await this.notifications.notifyUsers(
         [existing.ownerId],
@@ -347,7 +347,7 @@ export class FinancialService {
           type: 'INVOICE_SENT',
           category: 'ACCOUNT',
           title: 'Sao kê chi phí & Tiền thưởng tháng mới',
-          message: `Báo cáo tài chính kỳ ${existing.billingPeriod} cho ngựa ${existing.horse.name} đã được phát hành.`,
+          message: `Báo cáo tài chính kỳ ${existing.billingPeriod} cho ngựa ${existing.horse.name} đã được gửi.`,
           link: `/owner/financial-reports?highlight=${encodeURIComponent(id)}`,
           params: { billingPeriod: existing.billingPeriod, horseName: existing.horse.name },
         },
@@ -681,6 +681,110 @@ export class FinancialService {
       success: true,
       createdCount,
       billingPeriod,
+    };
+  }
+
+  /**
+   * Báo cáo sao kê công nợ 2 tầng cho Chủ ngựa (Executive Summary & Drill-down chi tiết)
+   * Tránh quá tải thông tin theo nguyên tắc Progressive Disclosure
+   */
+  async getOwnerStatementBreakdown(ownerId?: string, billingPeriod?: string) {
+    await this.sweepOverdue();
+    const where: any = {};
+    if (ownerId) where.ownerId = ownerId;
+    if (billingPeriod) where.billingPeriod = billingPeriod;
+
+    const invoices = await this.prisma.financialInvoice.findMany({
+      where,
+      include: {
+        horse: { select: { id: true, name: true, horseCode: true } },
+        owner: { select: { id: true, fullName: true, email: true } },
+      },
+      orderBy: { billingPeriod: 'desc' },
+    });
+
+    let totalBoarding = 0;
+    let totalMedical = 0;
+    let totalTraining = 0;
+    let totalPrizeCredit = 0;
+    let totalNet = 0;
+
+    for (const inv of invoices) {
+      totalBoarding += Number(inv.boardingFee);
+      totalMedical += Number(inv.medicalFee);
+      totalTraining += Number(inv.trainingFee);
+      totalPrizeCredit += Number(inv.prizeCredit);
+      totalNet += Number(inv.netAmount);
+    }
+
+    const totalExpense = totalBoarding + totalMedical + totalTraining;
+    const finalBalanceDue = totalNet;
+
+    const horseIds = Array.from(new Set(invoices.map((i) => i.horseId).filter(Boolean)));
+    const raceResults =
+      horseIds.length > 0
+        ? await this.prisma.tournamentResult.findMany({
+            where: {
+              registration: {
+                horseId: { in: horseIds },
+              },
+            },
+            include: {
+              registration: {
+                include: {
+                  tournament: { select: { id: true, name: true, raceDate: true, location: true } },
+                  horse: { select: { id: true, name: true, horseCode: true } },
+                },
+              },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 20,
+          })
+        : [];
+
+    const raceSettlements = raceResults.map((r: any) => ({
+      tournamentId: r.registration?.tournament?.id,
+      tournamentName: r.registration?.tournament?.name || 'Giải đua',
+      raceDate: r.registration?.tournament?.raceDate,
+      horseName: r.registration?.horse?.name || '-',
+      finalRank: r.finalRank,
+      grossPrize: Number(r.grossPrize || r.prizeMoneyWon || 0),
+      trainerCut: Number(r.trainerCut || 0),
+      jockeyCut: Number(r.jockeyCut || 0),
+      entryFeeDeducted: Number(r.entryFeeDeducted || 0),
+      netOwnerPayout: Number(r.netOwnerPayout || r.prizeMoneyWon || 0),
+      settledAt: r.settledAt || r.createdAt,
+    }));
+
+    return {
+      summary: {
+        billingPeriod: billingPeriod || 'ALL',
+        totalBoarding,
+        totalMedical,
+        totalTraining,
+        totalExpense,
+        totalRaceNet: totalPrizeCredit,
+        finalBalanceDue,
+        isSurplus: finalBalanceDue < 0,
+        surplusAmount: finalBalanceDue < 0 ? Math.abs(finalBalanceDue) : 0,
+        invoiceCount: invoices.length,
+      },
+      drilldown: {
+        invoices: invoices.map((inv) => ({
+          id: inv.id,
+          billingPeriod: inv.billingPeriod,
+          horseName: inv.horse?.name || '-',
+          boardingFee: Number(inv.boardingFee),
+          boardingDays: inv.boardingDays,
+          medicalFee: Number(inv.medicalFee),
+          trainingFee: Number(inv.trainingFee),
+          prizeCredit: Number(inv.prizeCredit),
+          netAmount: Number(inv.netAmount),
+          status: inv.status,
+          dueAt: inv.dueAt,
+        })),
+        raceSettlements,
+      },
     };
   }
 }

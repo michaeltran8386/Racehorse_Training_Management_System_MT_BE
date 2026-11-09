@@ -224,10 +224,6 @@ enum SupplyCategory {
   SUPPLEMENT_ELECTROLYTE
   SUPPLEMENT_GENERAL
   MEDICINE
-  VACCINE
-  DEWORMER
-  TOOL_EQUIPMENT
-  CLEANING_SUPPLY
 }
 
 enum SupplyUnit {
@@ -321,6 +317,7 @@ model User {
   restockRequestsCreated   RestockRequest[]         @relation("RestockRequestedBy")
   restockRequestsReviewed  RestockRequest[]         @relation("RestockReviewedBy")
   restockRequestsDelivered RestockRequest[]         @relation("RestockDeliveredBy")
+  ownerAiMessages          OwnerAiMessage[]
 
   @@index([email])
   @@index([role])
@@ -739,6 +736,7 @@ model InjuryLog {
   @@index([medicalRecordId])
 }
 
+
 model MedicalLock {
   id                   String         @id @default(uuid())
   lockCode             String?        @unique // e.g. KH-000001
@@ -767,6 +765,7 @@ model MedicalLock {
   @@index([horseId, isLocked])
   @@index([medicalRecordId])
 }
+
 
 model PreventiveTypeCatalog {
   id                String         @id @default(uuid())
@@ -883,12 +882,17 @@ model DailyGroomingLog {
 
 model Tournament {
   id                   String           @id @default(uuid())
+  code                 String?          @unique
   name                 String
   raceDate             DateTime
   location             String
   distanceMeters       Int
   trackType            TrackSurface     @default(TURF)
+  entryFee             Decimal          @default(0) @db.Decimal(12, 2)
   prizePool            Decimal          @default(0) @db.Decimal(12, 2)
+  trackCondition       String?          @default("GOOD")
+  maxFieldSize         Int              @default(12)
+  minAgeYears          Int              @default(2)
   registrationDeadline DateTime
   status               TournamentStatus @default(UPCOMING)
   createdAt            DateTime         @default(now())
@@ -909,6 +913,7 @@ model TournamentRegistration {
   registeredByTrainerId String
   registeredByTrainer   User               @relation("TrainerRegistrations", fields: [registeredByTrainerId], references: [id], onDelete: Restrict)
   status                RegistrationStatus @default(REGISTERED)
+  entryFeeBilled        Decimal            @default(0) @db.Decimal(12, 2)
   registrationDate      DateTime           @default(now())
   notes                 String?
   createdAt             DateTime           @default(now())
@@ -929,6 +934,12 @@ model TournamentResult {
   finishTimeSeconds Float
   avgSpeedKmh       Float
   prizeMoneyWon     Decimal                @default(0) @db.Decimal(12, 2)
+  grossPrize        Decimal                @default(0) @db.Decimal(12, 2)
+  trainerCut        Decimal                @default(0) @db.Decimal(12, 2)
+  jockeyCut         Decimal                @default(0) @db.Decimal(12, 2)
+  entryFeeDeducted  Decimal                @default(0) @db.Decimal(12, 2)
+  netOwnerPayout    Decimal                @default(0) @db.Decimal(12, 2)
+  settledAt         DateTime?
   officialNotes     String?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
@@ -1209,4 +1220,21 @@ model SimulatorSession {
 
   @@index([status, updatedAt])
   @@index([medicalRecordId])
+}
+
+// -------------------------------------------------------------
+// HORSE OWNER AI CONCIERGE (FLOW 6: SCOPED TO ROLE OWNER)
+// -------------------------------------------------------------
+
+model OwnerAiMessage {
+  id        String   @id @default(uuid())
+  ownerId   String
+  sender    String   // USER | AI
+  content   String
+  cardType  String?  // HORSE_CARD | RACE_CARD | SETTLEMENT_CARD | BILLING_CARD
+  cardData  Json?
+  createdAt DateTime @default(now())
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, createdAt])
 }
