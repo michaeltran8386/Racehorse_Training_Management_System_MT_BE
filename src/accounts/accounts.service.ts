@@ -65,14 +65,6 @@ export class AccountsService {
     if (fullNameError(fullName) || !EMAIL_RE.test(email) || !ROLES.includes(role)) {
       throw apiError(HttpStatus.BAD_REQUEST, 'VALIDATION', 'Invalid input');
     }
-    // Horse Owner tự đăng ký ở trang Sign Up, không được mời.
-    if (role === Role.HORSE_OWNER) {
-      throw apiError(
-        HttpStatus.BAD_REQUEST,
-        'VALIDATION',
-        'Horse Owners request their own account',
-      );
-    }
     if (await this.prisma.user.findUnique({ where: { email } })) {
       throw apiError(HttpStatus.CONFLICT, 'EMAIL_TAKEN', 'Email taken');
     }

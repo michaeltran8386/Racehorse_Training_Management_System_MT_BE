@@ -792,6 +792,30 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       expect(result[1].id).toBe('groom-1');
       expect(result[1].hasShift).toBe(true);
     });
+
+    it('filters out busy grooms and grooms outside their shift when time is specified', async () => {
+      const gMorning = { id: 'groom-morning', fullName: 'Morning Guy', email: 'morning@club.vn' };
+      const gEvening = { id: 'groom-evening', fullName: 'Evening Guy', email: 'evening@club.vn' };
+      const gFree = { id: 'groom-free', fullName: 'Free Guy', email: 'free@club.vn' };
+      prisma.user.findMany.mockResolvedValue([gMorning, gEvening, gFree]);
+      (prisma as any).stallAllocation = { findFirst: jest.fn().mockResolvedValue(null) };
+      (prisma as any).shiftRoster = {
+        findMany: jest.fn().mockResolvedValue([
+          { groomUserId: 'groom-morning', shift: { name: 'Ca Sáng', startTime: '05:00', endTime: '13:00', isOvernight: false } },
+          { groomUserId: 'groom-evening', shift: { name: 'Ca Tối', startTime: '14:00', endTime: '22:00', isOvernight: false } },
+        ]),
+      };
+      (prisma as any).workoutSession = {
+        findMany: jest.fn().mockResolvedValue([]),
+      };
+
+      // Buổi tập lúc 06:30 sáng -> Morning Guy và Free Guy rảnh; Evening Guy bị lọc vì ca tối
+      const morningRes = await workouts.findGrooms('horse-1', '2026-11-15', '06:30');
+      const morningIds = morningRes.map((g) => g.id);
+      expect(morningIds).toContain('groom-morning');
+      expect(morningIds).toContain('groom-free');
+      expect(morningIds).not.toContain('groom-evening');
+    });
   });
 
   describe('restoreWorkout (DL-2.07)', () => {

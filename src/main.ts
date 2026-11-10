@@ -22,7 +22,18 @@ async function bootstrap() {
   const simulatorUrl = configService.get<string>('SIMULATOR_URL', 'http://localhost:5175');
 
   // Security Middleware
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: [`'self'`],
+          styleSrc: [`'self'`, `'unsafe-inline'`],
+          imgSrc: [`'self'`, 'data:', 'validator.swagger.io'],
+          scriptSrc: [`'self'`, `https: 'unsafe-inline'`],
+        },
+      },
+    }),
+  );
 
   const isProduction = process.env.NODE_ENV === 'production';
   const corsOrigins = [frontendUrl, simulatorUrl];
@@ -82,6 +93,8 @@ async function bootstrap() {
     }),
   );
 
+  const serverUrl = configService.get<string>('SERVER_URL', `http://localhost:${port}`);
+
   // Swagger OpenAPI Documentation
   const swaggerConfig = new DocumentBuilder()
     .setTitle('TMEC - Racehorse Training & Stable Management API')
@@ -89,6 +102,7 @@ async function bootstrap() {
       'RESTful API Contract for TMEC Racehorse Management System supporting 5 roles: Club Manager, Head Trainer, Veterinarian, Groom, and Horse Owner.',
     )
     .setVersion('1.0.0')
+    .addServer(serverUrl, 'Current Environment')
     .addBearerAuth(
       {
         type: 'http',
@@ -103,20 +117,33 @@ async function bootstrap() {
     .addTag('Health & System', 'System health checks, database probes and metrics')
     .addTag('Authentication', 'Login, registration, password reset and invitation APIs')
     .addTag('Horses', 'Horse identification, profile and ownership management')
-    .addTag('Stalls & Facility', 'Barn layout, stalls, and groom allocation')
-    .addTag('Training & Workouts', 'Phased training plans and daily workouts')
-    .addTag('Veterinary & Medical', 'Medical records, 2D injuries and Medical Lock enforcement')
-    .addTag('Tournaments', 'Race registrations and official results')
-    .addTag('Financials', 'Owner invoicing and prize distribution')
-    .addTag('AI Services', 'AI training recommendation and assistant queries')
+    .addTag('Horse catalogs', 'Breeds, colors, markers and horse reference catalog')
+    .addTag('Stalls', 'Barn layout, stalls, and groom allocation')
+    .addTag('Training', 'Phased training plans and daily workouts')
+    .addTag('Medical', 'Medical records, 2D injuries and Medical Lock enforcement')
+    .addTag('Nutrition & Meal Rations', 'Feed plans, supplements, and dietary management')
+    .addTag('Daily Care Tasks & Checklist', 'Daily groom duties, checklist completion and logs')
+    .addTag('Incident Reports & Health Observations', 'Health alerts, abnormal behaviors and incident escalation')
+    .addTag('Shift rosters', 'Staff scheduling and shift roster assignments')
+    .addTag('Shifts', 'Shift definitions, clock-in and clock-out logs')
+    .addTag('Supplies', 'Stable consumables, feed stock and order fulfillment')
+    .addTag('Inventory', 'Barn and supplies inventory management')
+    .addTag('Tournaments & Racing (Flow 5)', 'Race registrations, fixtures and official results')
+    .addTag('Financial Ledger & Invoices (Flow 5: F5-05 & F5-06)', 'Owner billing, invoicing and prize distribution')
+    .addTag('AI Assistant', 'AI training recommendations and query assistant')
+    .addTag('Notifications', 'System notifications, broadcast messages and reminders')
     .addTag('Audit Logs', 'Immutable governance audit trails')
+    .addTag('Simulator Realtime & Sessions', 'Simulator connection, telemetry and debug controls')
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document, {
-    customSiteTitle: 'TMEC API Documentation',
+    customSiteTitle: 'TMEC - EquiFlow API Documentation',
     swaggerOptions: {
       persistAuthorization: true,
+      filter: true,
+      docExpansion: 'none',
+      displayRequestDuration: true,
     },
   });
 

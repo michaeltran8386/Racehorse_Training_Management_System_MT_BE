@@ -196,7 +196,7 @@ describe('AccountsService', () => {
     expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'CANNOT_DELETE_USED' }));
   });
 
-  it('should invite staff as INVITED and mail an invite code, but never a Horse Owner', async () => {
+  it('should invite staff and Horse Owner as INVITED and mail an invite code', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
     mockPrisma.user.create.mockImplementation(({ data }) =>
       Promise.resolve({ id: 'tung', ...data }),
@@ -211,10 +211,14 @@ describe('AccountsService', () => {
     expect(user.invitedBy).toBe('Đỗ Quốc Việt');
     expect(mockOtp.issue).toHaveBeenCalledWith('tung.ngo@gmail.com', OtpPurpose.INVITE, true);
 
-    const error = await fail(
-      service.invite(actor, { fullName: 'X', email: 'x@gmail.com', role: 'HORSE_OWNER' }),
-    );
-    expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+    const owner = await service.invite(actor, {
+      fullName: 'Trần Văn Chủ',
+      email: 'chu.ngua@gmail.com',
+      role: 'HORSE_OWNER',
+    });
+    expect(owner.status).toBe(UserStatus.INVITED);
+    expect(owner.role).toBe('HORSE_OWNER');
+    expect(mockOtp.issue).toHaveBeenCalledWith('chu.ngua@gmail.com', OtpPurpose.INVITE, true);
   });
 
   it('should count granted and revoked switches when saving permissions', async () => {
