@@ -287,7 +287,7 @@ describe('FinancialService', () => {
     it('should update invoice status via changeStatus', async () => {
       prisma.financialInvoice.findUnique.mockResolvedValue({
         id: 'inv-1',
-        status: InvoiceStatus.DRAFT,
+        status: InvoiceStatus.SENT,
         horse: { name: 'Thunder' },
       });
 

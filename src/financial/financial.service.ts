@@ -140,6 +140,31 @@ export class FinancialService {
         'Only completed months can be billed.',
       );
     }
+    let resolvedOwnerId = dto.ownerId;
+    if (typeof this.prisma?.horse?.findUnique === 'function') {
+      const horse = await this.prisma.horse.findUnique({
+        where: { id: dto.horseId },
+        select: { id: true, ownerId: true, name: true, status: true },
+      });
+      if (horse) {
+        resolvedOwnerId = horse.ownerId || dto.ownerId;
+        if (!resolvedOwnerId) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'HORSE_HAS_NO_OWNER',
+            `Horse ${horse.name} does not have an assigned owner to bill.`,
+          );
+        }
+        if (dto.ownerId && horse.ownerId && dto.ownerId !== horse.ownerId) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'OWNER_MISMATCH',
+            `The specified ownerId ${dto.ownerId} does not match the horse's owner ${horse.ownerId}.`,
+          );
+        }
+      }
+    }
+
     const allocations = await this.prisma.stallAllocation.findMany({
       where: {
         horseId: dto.horseId,
@@ -157,7 +182,7 @@ export class FinancialService {
     const invoice = await this.prisma.financialInvoice.create({
       data: {
         horseId: dto.horseId,
-        ownerId: dto.ownerId,
+        ownerId: resolvedOwnerId,
         billingPeriod: dto.billingPeriod,
         boardingDays: calculated.boardingDays,
         boardingMonthlyRate: BOARDING_MONTHLY_RATE,
@@ -307,6 +332,25 @@ export class FinancialService {
         'INVOICE_ALREADY_PAID',
         'Paid invoices cannot be modified.',
       );
+    }
+
+    const ALLOWED_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
+      [InvoiceStatus.DRAFT]: [InvoiceStatus.SENT, InvoiceStatus.CANCELLED],
+      [InvoiceStatus.SENT]: [InvoiceStatus.PAID, InvoiceStatus.OVERDUE, InvoiceStatus.CANCELLED],
+      [InvoiceStatus.OVERDUE]: [InvoiceStatus.PAID, InvoiceStatus.CANCELLED],
+      [InvoiceStatus.PAID]: [],
+      [InvoiceStatus.CANCELLED]: [],
+    };
+
+    if (existing.status !== status) {
+      const allowedNext = ALLOWED_TRANSITIONS[existing.status] || [];
+      if (!allowedNext.includes(status)) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_INVOICE_STATUS_TRANSITION',
+          `Cannot transition invoice from ${existing.status} to ${status}. Allowed next states: ${allowedNext.join(', ') || 'none'}.`,
+        );
+      }
     }
     const updated = await this.prisma.financialInvoice.update({
       where: { id },
