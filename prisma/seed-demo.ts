@@ -11,6 +11,7 @@ import * as bcrypt from 'bcryptjs';
 import { BOARDING_MONTHLY_RATE, calculateBoardingFee } from '../src/financial/boarding-fee';
 import { planDailyTasks } from '../src/daily-tasks/daily-schedule';
 import { clubDate } from '../src/training/training-rules';
+import { yymm } from '../src/common/utils/input';
 
 const now = new Date();
 const DAY = 86400000;
@@ -18,6 +19,7 @@ const clubDay = (offset: number) => clubDate(new Date(now.getTime() + offset * D
 const pad = (n: number, length = 2) => String(n).padStart(length, '0');
 const clubDateTime = (day: number, hour: number, minute = 0) =>
   new Date(`${clubDay(day)}T${pad(hour)}:${pad(minute)}:00+07:00`);
+const dayMonth = (day: number) => `${clubDay(day).slice(8, 10)}/${clubDay(day).slice(5, 7)}`;
 const dateOnly = (day: number) => new Date(`${clubDay(day)}T00:00:00Z`);
 const stamp = (day: number) => {
   const at = day === 0 ? now : clubDateTime(day, 7);
@@ -56,18 +58,22 @@ const plan = (key: string) => id(`plan/${key}`);
 const med = (key: string) => id(`medical/${key}`);
 
 const horses = [
-  ['Bạch Long Mã', 'Colt', 'Bay Dark', 495, 'ACTIVE', 'A01', 'owner', 'trainer', -90, 5],
+  ['Bạch Long Mã', 'Stallion', 'Bay Dark', 495, 'ACTIVE', 'A01', 'owner', 'trainer', -90, 5],
   ['Xích Thố', 'Stallion', 'Chestnut', 510, 'INJURED', 'A02', 'owner', 'trainer', -86, 6],
-  ['Hắc Báo', 'Filly', 'Black', 490, 'IN_TRAINING', 'A03', 'owner', 'trainer', -90, 4],
+  ['Hắc Báo', 'Mare', 'Black', 490, 'IN_TRAINING', 'A03', 'owner', 'trainer', -90, 4],
   ['Thần Phong', 'Gelding', 'Bay', 480, 'ACTIVE', 'A04', 'owner2', 'trainer2', -90, 5],
   ['Lão Tướng', 'Gelding', 'Grey', 520, 'RETIRED', 'B01', 'owner2', 'trainer2', -90, 18],
   ['Tuyết Ảnh', 'Mare', 'Grey', 475, 'ISOLATED', 'C01', 'owner2', 'trainer2', 0, 6],
   ['Kim Long', 'Stallion', 'Palomino', 505, 'RESTING', 'B02', 'owner', 'trainer', -72, 7],
-  ['Vân Tiêu', 'Colt', 'Roan', 470, 'IN_TRAINING', 'B03', 'owner', 'trainer', -35, 3],
+  ['Vân Tiêu', 'Stallion', 'Roan', 470, 'IN_TRAINING', 'B03', 'owner', 'trainer', -35, 3],
   ['Dạ Nguyệt', 'Mare', 'Bay', 485, 'UNDER_OBSERVATION', 'A05', 'owner2', 'trainer2', -82, 6],
   ['Lôi Chấn', 'Stallion', 'Black', 515, 'ACTIVE', 'A06', 'owner2', 'trainer2', -90, 5],
-  ['Hồng Kỳ', 'Colt', 'Chestnut', 490, 'ACTIVE', 'A07', 'owner', 'trainer', -76, 4],
-  ['Thanh Loan', 'Filly', 'Bay Dark', 480, 'ACTIVE', 'A08', 'owner2', 'trainer2', -74, 4],
+  ['Hồng Kỳ', 'Stallion', 'Chestnut', 490, 'ACTIVE', 'A07', 'owner', 'trainer', -76, 4],
+  ['Thanh Loan', 'Mare', 'Bay Dark', 480, 'ACTIVE', 'A08', 'owner2', 'trainer2', -74, 4],
+  // DEMO F2: ngựa mới về, chưa có giáo án -> HLV Tuấn lập giáo án đầu tiên trong buổi demo.
+  ['Phi Vân', 'Mare', 'Chestnut', 470, 'ACTIVE', 'B05', 'owner', 'trainer', -10, 3],
+  // DEMO F1: ngựa đã có dữ liệu chăm sóc, y tế -> không xóa được, Khánh demo "Ngừng quản lý · Đã bán".
+  ['Hoàng Phong', 'Gelding', 'Bay', 500, 'ACTIVE', 'B06', 'owner2', 'trainer2', -60, 9],
 ] as const;
 const trainerOf = (n: number) => user(horses[n - 1][7]);
 const groomOf = (key: string) =>
@@ -154,12 +160,68 @@ async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
       lockedAt: clubDateTime(-2, 9),
       ...stamp(-90),
     },
+    // ---- Kịch bản demo F0 (Minh). Email cố ý là địa chỉ không có thật: duyệt / từ chối sẽ gửi mail.
+    // F0-A: chủ ngựa tự đăng ký, đã xác minh email, chờ Quản lý duyệt -> demo "Duyệt".
+    {
+      id: user('applicant'),
+      email: 'demo.equiflow.thuha@gmail.com',
+      fullName: 'Nguyễn Thu Hà',
+      role: 'HORSE_OWNER',
+      status: 'PENDING_APPROVAL',
+      passwordHash,
+      phoneNumber: '0912345678',
+      requestCode: `REQ-${yymm(now)}-001`,
+      requestedAt: clubDateTime(-1, 20, 15),
+      ...stamp(-1),
+    },
+    // F0-E: yêu cầu thứ hai -> demo "Từ chối" phải có lý do.
+    {
+      id: user('applicant2'),
+      email: 'demo.equiflow.minhkhoi@gmail.com',
+      fullName: 'Trần Minh Khôi',
+      role: 'HORSE_OWNER',
+      status: 'PENDING_APPROVAL',
+      passwordHash,
+      requestCode: `REQ-${yymm(now)}-002`,
+      requestedAt: clubDateTime(0, 6, 40),
+      ...stamp(0),
+    },
+    // F0-E: nhân viên bị Quản lý khóa kèm lý do -> đăng nhập thấy màn "Tài khoản đã bị khóa".
+    {
+      id: user('groom4'),
+      email: 'groom4@gmail.com',
+      fullName: 'Vũ Văn Hải',
+      role: 'GROOM',
+      status: 'LOCKED',
+      passwordHash,
+      lockedAt: clubDateTime(-3, 17),
+      statusReason: 'Tạm khóa trong thời gian nghỉ phép dài ngày, mở lại khi đi làm.',
+      statusChangedAt: clubDateTime(-3, 17),
+      statusChangedBy: 'Trần Quang Minh',
+      ...stamp(-90),
+    },
+    // Nhân viên được mời nhưng chưa nhận lời mời (chưa đặt mật khẩu) -> danh sách có trạng thái "Đã mời".
+    {
+      id: user('vet2'),
+      email: 'demo.equiflow.thanhtam@gmail.com',
+      fullName: 'BS. Lý Thanh Tâm',
+      role: 'VETERINARIAN',
+      status: 'INVITED',
+      invitedBy: 'Trần Quang Minh',
+      ...stamp(-1),
+    },
   ];
   // Keep seeded account IDs in place so unrelated sessions and audit references survive.
   for (const { id: userId, ...data } of users) {
     if (!userId) throw new Error('Seed account must have a stable ID.');
     await tx.user.upsert({ where: { id: userId }, create: { id: userId, ...data }, update: data });
   }
+  // Mã yêu cầu REQ-YYMM-001/002 đã dùng ở trên: đăng ký mới trong buổi demo nhận mã 003 trở đi.
+  await tx.counter.upsert({
+    where: { name: 'request_code' },
+    create: { name: 'request_code', value: 2 },
+    update: { value: 2 },
+  });
   const zones = [
     { code: 'A', name: 'Barn 1 · Đua', rows: 2, cols: 4, sortOrder: 1 },
     { code: 'B', name: 'Barn 2 · Huấn luyện & nghỉ', rows: 2, cols: 4, sortOrder: 2 },
@@ -169,7 +231,8 @@ async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
   await tx.stallZone.createMany({
     data: zones.map((z) => ({ id: zone(z.code), ...z, ...stamp(-90) })),
   });
-  const occupied = new Set<string>(horses.map((h) => h[5]));
+  // Ngựa Ngừng quản lý đã trả ô (BR-STL-07): ô cũ của Lão Tướng để trống.
+  const occupied = new Set<string>(horses.filter((h) => h[4] !== 'RETIRED').map((h) => h[5]));
   await tx.stall.createMany({
     data: zones.flatMap((z) =>
       Array.from({ length: z.rows * z.cols }, (_, i) => {
@@ -239,6 +302,8 @@ async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
       stallId: stall(h[5]),
       assignedGroomUserId: groomOf(h[5]),
       ...allocation(i + 1),
+      // Ngựa đã Ngừng quản lý: phân bổ cũ đã kết thúc lúc ngừng quản lý (còn trong lịch sử).
+      ...(h[4] === 'RETIRED' ? { isActive: false, endDate: clubDateTime(-1, 9) } : {}),
       createdAt: allocation(i + 1).startDate,
       updatedAt: now,
     })),
@@ -462,7 +527,52 @@ async function seedTraining(tx: Prisma.TransactionClient) {
     );
   }
 
+  // DEMO F2: 12 ngày vừa qua của các giáo án đang áp dụng đã có buổi hoàn thành (tiến độ thật).
+  const pastRotation = [1, 3, 4, 8, 9, 10, 11, 12];
+  for (let d = -12; d <= -1; d++) {
+    const n = pastRotation[(d + 12) % pastRotation.length];
+    const type = n === 9 ? 'SWIM' : n === 10 ? 'BREEZE' : n === 8 ? 'TROT' : 'CANTER';
+    const surface = n === 9 ? 'NONE' : n === 3 || n === 8 ? 'DIRT' : 'TURF';
+    const distance = n === 9 ? 300 : 1200;
+    completed.push(
+      scheduled(`past/${d}/main`, activeKey(n), n, d, 6, 30, type, surface, distance, {
+        ...(n === 9 ? { targetDurationSeconds: 1200, medicalOverride: true } : {}),
+        ...(n === 10 ? { targetSpeedKmh: 62, jockeyName: 'Trần Đình Trọng' } : {}),
+        ...result(n, d, distance, surface, n === 9 ? 6 : 40 + Math.abs(d % 6), 120 + Math.abs(d % 20)),
+        ...(n === 9 ? { actualTimeSeconds: null, averageSpeedKmh: null, topSpeedKmh: null } : {}),
+        resultRecordedAt: clubDateTime(d, 8),
+        updatedAt: clubDateTime(d, 8),
+      }),
+    );
+  }
+  // DEMO F2 (ngoại lệ "Bỏ lỡ"): buổi chiều hôm qua của Bạch Long Mã chưa ghi kết quả -> lần quét
+  // 00:05 sáng nay đã chuyển Bỏ lỡ, báo HLV Tuấn + Quản lý (xem notices); HLV còn ghi bù trong 7 ngày.
+  const missed = [-1].map((d) =>
+    scheduled(`missed/bach/${d}`, activeKey(1), 1, d, 15, 30, 'CANTER', 'TURF', 1400, {
+      status: 'MISSED',
+      updatedAt: clubDateTime(d + 1, 0, 5),
+    }),
+  );
+  // DEMO F2 -> F3: buổi chiều hôm qua của Hắc Báo, HLV ghi kết quả có dấu hiệu khập khiễng
+  // -> Bác sĩ đã được báo, chưa ghi nhận (Dũng mở "Cảnh báo sau buổi tập" ở đầu đoạn F3).
+  completed.push(
+    scheduled('alert/bao', activeKey(3), 3, -1, 16, 0, 'CANTER', 'DIRT', 1200, {
+      ...result(3, -1, 1200, 'DIRT', 41, 158),
+      performanceScore: 5,
+      completionLevel: 'PARTIAL',
+      trainerNotes: 'Giảm tốc ở vòng cuối, bước chân trước trái không đều.',
+      abnormalSigns: true,
+      abnormalSignTypes: ['LAMENESS'],
+      abnormalNotes: 'Hơi khập khiễng chân trước trái sau khi hạ nhiệt, cần bác sĩ kiểm tra.',
+      resultRecordedAt: clubDateTime(-1, 17),
+      updatedAt: clubDateTime(-1, 17),
+    }),
+  );
   const today = [
+    // DEMO F2 (happy case "Ghi kết quả"): buổi sáng sớm nay đã qua giờ bắt đầu, chờ HLV ghi kết quả.
+    scheduled('today/early', activeKey(11), 11, 0, 5, 30, 'CANTER', 'TURF', 1200, {
+      targetSpeedKmh: 45,
+    }),
     scheduled('today/bach', activeKey(1), 1, 0, 8, 0, 'TRIAL', 'TURF', 1400, {
       targetSpeedKmh: 62,
       jockeyName: 'Nguyễn Văn An',
@@ -527,7 +637,9 @@ async function seedTraining(tx: Prisma.TransactionClient) {
     scheduled('demo/day-full-2', activeKey(8), 8, 3, 10, 0, 'TROT', 'DIRT', 1000),
     scheduled('demo/day-full-3', activeKey(8), 8, 3, 15, 0, 'WALK', 'DIRT', 800),
   ];
-  await tx.workoutSession.createMany({ data: [...completed, ...today, ...future, ...demo] });
+  await tx.workoutSession.createMany({
+    data: [...completed, ...missed, ...today, ...future, ...demo],
+  });
   await tx.counter.upsert({
     where: { name: 'horse_code' },
     create: { name: 'horse_code', value: horses.length },
@@ -1000,7 +1112,7 @@ async function seedStableCare(tx: Prisma.TransactionClient) {
 
   const tasks: Prisma.DailyCareTaskCreateManyInput[] = [-1, 0, 1].flatMap((day) =>
     planDailyTasks(
-      care.filter((_, i) => horses[i][8] <= day),
+      care.filter((_, i) => horses[i][8] <= day && horses[i][4] !== 'RETIRED'),
       roster,
     ).map((task, i) => {
       const due = new Date(`${clubDay(day)}T${task.scheduledTime}:00+07:00`);
@@ -1186,9 +1298,9 @@ async function seedRacingAndInvoices(tx: Prisma.TransactionClient) {
       day: 20,
       distance: 1600,
       status: 'OPEN_REGISTRATION',
+      // DEMO F5: Thần Phong chưa đủ 4 buổi hoàn thành trong 30 ngày nên không có trong danh sách.
       places: [
         [1, 0, 0],
-        [4, 0, 0],
         [10, 0, 0],
       ],
     },
@@ -1297,6 +1409,27 @@ async function seedRacingAndInvoices(tx: Prisma.TransactionClient) {
   });
 }
 
+async function seedDebtSanctions(tx: Prisma.TransactionClient) {
+  // DEMO F5: hóa đơn Hắc Báo quá hạn từ 3 ngày trước -> lần quét quá hạn đã lưu giữ ngựa và
+  // đánh dấu nợ xấu cho chủ (giống FinancialService.sweepOverdue). Thanh toán xong thì tự gỡ.
+  await tx.horse.update({
+    where: { id: horse(3) },
+    data: {
+      isDebtImpounded: true,
+      debtImpoundedAt: clubDateTime(-3, 9),
+      debtImpoundReason: 'Quá hạn thanh toán chi phí nuôi dưỡng / lưu chuồng.',
+    },
+  });
+  await tx.user.update({
+    where: { id: user('owner') },
+    data: {
+      isBadDebtFlagged: true,
+      badDebtFlaggedAt: clubDateTime(-3, 9),
+      badDebtReason: 'Có hóa đơn dịch vụ lưu chuồng quá hạn thanh toán.',
+    },
+  });
+}
+
 async function seedActivityAndSupport(tx: Prisma.TransactionClient) {
   // Nonfunctional auth history: expired/revoked fixtures linked to a locked account only.
   await tx.googleIdentity.create({ data: { subject: googleSubject, userId: user('expired') } });
@@ -1389,6 +1522,44 @@ async function seedActivityAndSupport(tx: Prisma.TransactionClient) {
       'Có sự cố chuồng trại mới',
       'Cửa chuồng STALL-B04 bị kẹt chốt.',
       '/incidents',
+      0,
+    ],
+    [
+      'manager',
+      'ACCOUNT',
+      'ACCOUNT_SIGNUP_REQUEST',
+      'Yêu cầu đăng ký tài khoản mới',
+      `Nguyễn Thu Hà (Chủ ngựa) đang chờ duyệt (REQ-${yymm(now)}-001).`,
+      '/accounts',
+      -1,
+    ],
+    // DEMO F2 -> F3: HLV ghi kết quả có dấu hiệu bất thường (cùng câu chữ với workouts.service).
+    [
+      'vet',
+      'TRAINING',
+      'WORKOUT_ABNORMAL',
+      'Abnormal signs after a workout',
+      'Hắc Báo: LAMENESS. Please review.',
+      '/alerts',
+      -1,
+    ],
+    // DEMO F2: thông báo của lần quét Bỏ lỡ lúc 00:05 sáng nay (cùng câu chữ với training-common).
+    [
+      'trainer',
+      'TRAINING',
+      'WORKOUT_MISSED',
+      'Missed workouts',
+      `1 workout(s) missed: Bạch Long Mã ${dayMonth(-1)} 15:30. Record late results by ${dayMonth(6)}.`,
+      `/training/plans/${plan(activeKey(1))}?status=OVERDUE`,
+      0,
+    ],
+    [
+      'manager',
+      'TRAINING',
+      'WORKOUT_MISSED_SUMMARY',
+      'Missed workouts summary',
+      '1 workout(s) missed by trainer: Nguyễn Văn Tuấn: 1.',
+      `/training/calendar?status=MISSED&date=${clubDay(-1)}`,
       0,
     ],
     [
@@ -1567,6 +1738,7 @@ async function main() {
         await seedMedical(tx);
         await seedStableCare(tx);
         await seedRacingAndInvoices(tx);
+        await seedDebtSanctions(tx);
         await seedActivityAndSupport(tx);
       },
       { isolationLevel: 'Serializable', timeout: 60000 },
