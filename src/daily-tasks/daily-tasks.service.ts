@@ -49,52 +49,52 @@ export class DailyTasksService {
     // Lấy danh sách ngựa đang quản lý (không bị xóa mềm và chưa ngừng quản lý)
     const horses =
       (await this.prisma.horse.findMany({
-      where: {
-        deletedAt: null,
-        status: { not: HorseStatus.RETIRED },
-        ...(horseIdFilter ? { id: horseIdFilter } : {}),
-        ...(zoneIdFilter
-          ? {
-              stallAllocations: {
-                some: {
-                  isActive: true,
-                  stall: { zoneId: zoneIdFilter },
+        where: {
+          deletedAt: null,
+          status: { not: HorseStatus.RETIRED },
+          ...(horseIdFilter ? { id: horseIdFilter } : {}),
+          ...(zoneIdFilter
+            ? {
+                stallAllocations: {
+                  some: {
+                    isActive: true,
+                    stall: { zoneId: zoneIdFilter },
+                  },
                 },
+              }
+            : {}),
+        },
+        include: {
+          stallAllocations: {
+            where: { isActive: true },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              stall: {
+                include: { zoneRef: true },
               },
-            }
-          : {}),
-      },
-      include: {
-        stallAllocations: {
-          where: { isActive: true },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            stall: {
-              include: { zoneRef: true },
+            },
+            take: 1,
+          },
+          medicalLocks: {
+            where: { isLocked: true },
+            take: 1,
+          },
+          nutritionPlans: {
+            where: { status: 'APPROVED' },
+            orderBy: { updatedAt: 'desc' },
+            take: 1,
+          },
+          medicalRecords: {
+            where: { status: 'OPEN' },
+            select: {
+              id: true,
+              prescriptions: true,
+              prescriptionDetails: true,
+              treatmentPhases: true,
             },
           },
-          take: 1,
         },
-        medicalLocks: {
-          where: { isLocked: true },
-          take: 1,
-        },
-        nutritionPlans: {
-          where: { status: 'APPROVED' },
-          orderBy: { updatedAt: 'desc' },
-          take: 1,
-        },
-        medicalRecords: {
-          where: { status: 'OPEN' },
-          select: {
-            id: true,
-            prescriptions: true,
-            prescriptionDetails: true,
-            treatmentPhases: true,
-          },
-        },
-      },
-    })) || [];
+      })) || [];
 
     // Bảng phân ca trong ngày: mỗi việc giao cho Groom trực ca chứa giờ đó, việc của một Groom xếp nối tiếp (không trùng giờ)
     const shiftRosters =
