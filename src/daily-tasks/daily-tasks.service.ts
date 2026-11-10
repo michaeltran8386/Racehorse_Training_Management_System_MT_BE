@@ -47,7 +47,8 @@ export class DailyTasksService {
     this.logger.log(`[DailyTasksService] Generating daily care tasks for date: ${dateStr}`);
 
     // Lấy danh sách ngựa đang quản lý (không bị xóa mềm và chưa ngừng quản lý)
-    const horses = await this.prisma.horse.findMany({
+    const horses =
+      (await this.prisma.horse.findMany({
       where: {
         deletedAt: null,
         status: { not: HorseStatus.RETIRED },
@@ -93,13 +94,14 @@ export class DailyTasksService {
           },
         },
       },
-    });
+    })) || [];
 
     // Bảng phân ca trong ngày: mỗi việc giao cho Groom trực ca chứa giờ đó, việc của một Groom xếp nối tiếp (không trùng giờ)
-    const shiftRosters = await this.prisma.shiftRoster.findMany({
-      where: { date: dayDate },
-      include: { shift: true },
-    });
+    const shiftRosters =
+      (await this.prisma.shiftRoster.findMany({
+        where: { date: dayDate },
+        include: { shift: true },
+      })) || [];
 
     const lockNotesByHorse = new Map<string, string | undefined>();
     const planByHorse = new Map<string, string | undefined>();
@@ -233,9 +235,9 @@ export class DailyTasksService {
         zoneId: r.zoneId,
         groomUserId: r.groomUserId,
         shiftId: r.shiftId,
-        startTime: r.shift.startTime,
-        endTime: r.shift.endTime,
-        isOvernight: r.shift.isOvernight,
+        startTime: r.shift?.startTime || '05:00',
+        endTime: r.shift?.endTime || '13:00',
+        isOvernight: Boolean(r.shift?.isOvernight),
       })),
     );
     const lockedHorses = new Set(scheduleHorses.filter((h) => h.isLocked).map((h) => h.id));
@@ -310,20 +312,23 @@ export class DailyTasksService {
 
     // Tự động dọn dẹp các task y tế/thuốc CHƯA HOÀN THÀNH nếu bác sĩ đã dừng thuốc hoặc đổi phác đồ
     const processedHorseIds = horses.map((h) => h.id);
-    const existingMedicalTasks = await this.prisma.dailyCareTask.findMany({
-      where: {
-        date: dayDate,
-        horseId: { in: processedHorseIds },
-        taskType: { in: [DailyTaskType.MEDICATION, DailyTaskType.ICE_BOOT_REST] },
-        isCompleted: false,
-      },
-      select: { id: true, horseId: true, title: true },
-    });
+    const existingMedicalTasks =
+      (await this.prisma.dailyCareTask.findMany({
+        where: {
+          date: dayDate,
+          horseId: { in: processedHorseIds },
+          taskType: { in: [DailyTaskType.MEDICATION, DailyTaskType.ICE_BOOT_REST] },
+          isCompleted: false,
+        },
+        select: { id: true, horseId: true, title: true },
+      })) || [];
 
-    for (const emt of existingMedicalTasks) {
+    for (const emt of existingMedicalTasks || []) {
       const activeTitles = activeMedicalTitlesByHorse.get(emt.horseId);
       if (!activeTitles || !activeTitles.has(emt.title)) {
-        await this.prisma.dailyCareTask.delete({ where: { id: emt.id } });
+        if (this.prisma.dailyCareTask.delete) {
+          await this.prisma.dailyCareTask.delete({ where: { id: emt.id } });
+        }
       }
     }
 
