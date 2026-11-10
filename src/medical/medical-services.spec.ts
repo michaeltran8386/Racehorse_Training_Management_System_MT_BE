@@ -297,7 +297,10 @@ describe('Medical services', () => {
 
   describe('updateMedicalRecord', () => {
     it('rejects editing a record that has already been closed', async () => {
-      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({ id: 'rec-1', status: 'CLOSED' });
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-1',
+        status: 'CLOSED',
+      });
 
       const error = await records
         .updateMedicalRecord('rec-1', mockVetUser, { symptoms: 'Sốt cao' })
