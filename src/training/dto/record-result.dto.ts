@@ -10,6 +10,8 @@ import {
   Max,
   Min,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils/input';
 import {
   ABNORMAL_SIGNS,
   COMPLETION_LEVELS,
@@ -47,15 +49,15 @@ export class RecordWorkoutResultDto {
   @ApiPropertyOptional({ description: 'Nhịp tim tối đa (bpm)' })
   @IsOptional()
   @IsInt()
-  @Min(20, { message: 'Nhịp tim tối đa phải từ 20 đến 260 bpm.' })
-  @Max(260, { message: 'Nhịp tim tối đa phải từ 20 đến 260 bpm.' })
+  @Min(60, { message: 'Nhịp tim tối đa phải từ 60 đến 260 bpm.' })
+  @Max(260, { message: 'Nhịp tim tối đa phải từ 60 đến 260 bpm.' })
   heartRatePeak?: number;
 
   @ApiPropertyOptional({ description: 'Nhịp tim sau 10 phút nghỉ (bpm)' })
   @IsOptional()
   @IsInt()
-  @Min(20, { message: 'Nhịp tim sau 10 phút phải từ 20 đến 200 bpm.' })
-  @Max(200, { message: 'Nhịp tim sau 10 phút phải từ 20 đến 200 bpm.' })
+  @Min(25, { message: 'Nhịp tim sau 10 phút phải từ 25 đến 200 bpm.' })
+  @Max(200, { message: 'Nhịp tim sau 10 phút phải từ 25 đến 200 bpm.' })
   heartRateRecovery?: number;
 
   @ApiPropertyOptional({ description: 'Tốc độ cao nhất (km/h)' })
@@ -78,6 +80,7 @@ export class RecordWorkoutResultDto {
   @ApiProperty({ description: 'Nhận xét chuyên môn (2-2000)' })
   @IsString({ message: 'Vui lòng nhập nhận xét.' })
   @Length(2, 2000, { message: 'Nhận xét phải từ 2 đến 2000 ký tự.' })
+  @Transform(trimString)
   trainerNotes: string;
 
   @ApiPropertyOptional({ enum: ABNORMAL_SIGNS, isArray: true, description: 'Dấu hiệu bất thường' })
@@ -90,5 +93,6 @@ export class RecordWorkoutResultDto {
   @IsOptional()
   @IsString()
   @Length(2, 500, { message: 'Vui lòng mô tả dấu hiệu bất thường (2-500 ký tự).' })
+  @Transform(trimString)
   abnormalNotes?: string;
 }

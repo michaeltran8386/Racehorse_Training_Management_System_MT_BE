@@ -32,6 +32,7 @@
     "test:migrations:unit": "node scripts/verify-migration-chain.spec.cjs",
     "db:seed": "ts-node prisma/seed.ts",
     "db:seed:manual-qa": "ts-node prisma/seed-manual-qa.ts",
+    "db:seed:demo": "ts-node prisma/seed-demo.ts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:setup": "npx prisma db push && npm run db:seed",

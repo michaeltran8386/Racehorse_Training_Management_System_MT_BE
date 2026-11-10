@@ -17,6 +17,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 export type AccountAction = 'approve' | 'decline' | 'lock' | 'unlock' | 'deactivate' | 'reactivate';
 
 const REASON_MAX = 300;
+const REASON_MIN = 10;
+const REASON_REQUIRED: AccountAction[] = ['decline', 'lock', 'deactivate'];
 
 // Chỉ xóa hẳn được tài khoản CHƯA TỪNG hoạt động; tài khoản đã dùng thì vô hiệu hóa để giữ lịch sử.
 const DELETABLE: UserStatus[] = [UserStatus.INVITED, UserStatus.PENDING_EMAIL, UserStatus.REJECTED];
@@ -168,6 +170,15 @@ export class AccountsService {
         HttpStatus.BAD_REQUEST,
         'VALIDATION',
         `Reason must be at most ${REASON_MAX} characters.`,
+        { field: 'reason' },
+      );
+    }
+    // Từ chối / khóa / vô hiệu hóa phải có lý do: người bị ảnh hưởng thấy lý do khi đăng nhập, nhật ký có căn cứ.
+    if (REASON_REQUIRED.includes(action) && reason.length < REASON_MIN) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION',
+        `Reason must be ${REASON_MIN} to ${REASON_MAX} characters.`,
         { field: 'reason' },
       );
     }

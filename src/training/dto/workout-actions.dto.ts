@@ -8,6 +8,8 @@ import {
   IsString,
   Length,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { trimString } from '../../common/utils/input';
 
 export const CANCEL_WORKOUT_REASONS = [
   'WEATHER',
@@ -27,6 +29,7 @@ export class CancelWorkoutDto {
   @IsOptional()
   @IsString()
   @Length(10, 500, { message: 'Ghi chú phải từ 10 đến 500 ký tự.' })
+  @Transform(trimString)
   note?: string;
 }
 
@@ -48,12 +51,14 @@ export class ChangePlanStatusDto {
   @IsOptional()
   @IsString()
   @Length(10, 500, { message: 'Lý do phải từ 10 đến 500 ký tự.' })
+  @Transform(trimString)
   reason?: string;
 
   @ApiPropertyOptional({ description: 'Nhận xét tổng kết (10-2000, bắt buộc khi COMPLETED)' })
   @IsOptional()
   @IsString()
   @Length(10, 2000, { message: 'Nhận xét phải từ 10 đến 2000 ký tự.' })
+  @Transform(trimString)
   summary?: string;
 
   @ApiPropertyOptional({ description: 'Kích hoạt: chuyển ngựa Nghỉ ngơi sang Đang tập luyện' })
@@ -78,6 +83,7 @@ export class ClonePlanDto {
   @IsOptional()
   @IsString()
   @Length(3, 150, { message: 'Tên giáo án phải từ 3 đến 150 ký tự.' })
+  @Transform(trimString)
   name?: string;
 
   @ApiPropertyOptional({ description: 'Ngày bắt đầu mới (≥ hôm nay, mặc định hôm nay)' })
@@ -96,5 +102,6 @@ export class AcknowledgeAlertDto {
   @ApiProperty({ description: 'Nhận xét của bác sĩ thú y (2-1000)' })
   @IsString()
   @Length(2, 1000, { message: 'Nhận xét phải từ 2 đến 1000 ký tự.' })
+  @Transform(trimString)
   vetNotes: string;
 }

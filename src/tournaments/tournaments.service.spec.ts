@@ -267,8 +267,8 @@ describe('TournamentsService', () => {
         id: 't-1',
         name: 'Cup',
         status: TournamentStatus.UPCOMING,
-        registrationDeadline: new Date('2026-11-10'),
-        raceDate: new Date('2026-11-20'),
+        registrationDeadline: new Date(Date.now() + 7 * 86400000),
+        raceDate: new Date(Date.now() + 14 * 86400000),
       });
       prisma.tournament.update.mockResolvedValue({
         id: 't-1',
@@ -326,8 +326,8 @@ describe('TournamentsService', () => {
       prisma.tournament.findUnique.mockResolvedValueOnce({
         id: 't-1',
         status: TournamentStatus.UPCOMING,
-        registrationDeadline: new Date('2026-11-10'),
-        raceDate: new Date('2026-11-20'),
+        registrationDeadline: new Date(Date.now() + 7 * 86400000),
+        raceDate: new Date(Date.now() + 14 * 86400000),
       });
       await expect(
         service.changeStatus(
@@ -340,8 +340,8 @@ describe('TournamentsService', () => {
       prisma.tournament.findUnique.mockResolvedValueOnce({
         id: 't-2',
         status: TournamentStatus.CANCELLED,
-        registrationDeadline: new Date('2026-11-10'),
-        raceDate: new Date('2026-11-20'),
+        registrationDeadline: new Date(Date.now() + 7 * 86400000),
+        raceDate: new Date(Date.now() + 14 * 86400000),
       });
       await expect(
         service.changeStatus(
@@ -354,8 +354,8 @@ describe('TournamentsService', () => {
       prisma.tournament.findUnique.mockResolvedValueOnce({
         id: 't-3',
         status: TournamentStatus.OPEN_REGISTRATION,
-        registrationDeadline: new Date('2026-11-10'),
-        raceDate: new Date('2026-11-20'),
+        registrationDeadline: new Date(Date.now() + 7 * 86400000),
+        raceDate: new Date(Date.now() + 14 * 86400000),
       });
       await expect(
         service.changeStatus(
@@ -412,8 +412,8 @@ describe('TournamentsService', () => {
         id: 't-1',
         name: 'Cup',
         status: TournamentStatus.CLOSED_REGISTRATION,
-        registrationDeadline: new Date('2026-11-10'),
-        raceDate: new Date('2026-11-20'),
+        registrationDeadline: new Date(Date.now() + 7 * 86400000),
+        raceDate: new Date(Date.now() + 14 * 86400000),
       });
       await expect(
         service.changeStatus(
@@ -432,8 +432,8 @@ describe('TournamentsService', () => {
         id: 't-1',
         name: 'Cup',
         status: TournamentStatus.CANCELLED,
-        registrationDeadline: new Date('2026-11-10'),
-        raceDate: new Date('2026-11-20'),
+        registrationDeadline: new Date(Date.now() + 7 * 86400000),
+        raceDate: new Date(Date.now() + 14 * 86400000),
       });
       await expect(
         service.changeStatus(

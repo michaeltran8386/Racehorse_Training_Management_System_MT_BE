@@ -22,6 +22,7 @@ import {
   workoutLoad,
 } from './training-rules';
 import { notificationsMock } from '../notifications/notifications.testing';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /** Mã lỗi (code) của lời hứa bị từ chối. */
 async function codeOf(p: Promise<unknown>): Promise<string> {
@@ -40,6 +41,7 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
   let insights: TrainingInsightsService;
   let prisma: any;
   let audit: any;
+  let notifications: any;
 
   const trainer: CurrentUserPayload = {
     userId: 'trainer-1',
@@ -148,6 +150,7 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
     plans = module.get(TrainingPlansService);
     workouts = module.get(WorkoutsService);
     insights = module.get(TrainingInsightsService);
+    notifications = module.get(NotificationsService);
   });
 
   describe('training-rules', () => {
@@ -219,10 +222,35 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       phaseName: 'Base phase',
       objective: 'Build the aerobic base before speed work',
       trackSurface: TrackSurface.TURF,
-      startDate: clubDate(today),
+      startDate: clubDate(addDays(today, 1)),
       endDate: clubDate(addDays(today, 30)),
-      phases: [{ ...phase, id: undefined, startDate: clubDate(today) }],
+      phases: [{ ...phase, id: undefined, startDate: clubDate(addDays(today, 1)) }],
     };
+
+    it('refuses a horse that another trainer already has a draft or active plan for', async () => {
+      prisma.horse.findUnique.mockResolvedValue(healthyHorse);
+      prisma.trainingPlan.findFirst.mockResolvedValue({
+        id: 'plan-9',
+        planCode: 'GA-000012',
+        trainer: { fullName: 'Lê Hoàng Nam' },
+      });
+      const error = await plans.createPlan(dto, trainer).catch((e) => e);
+      expect(error.getResponse().code).toBe('HORSE_HAS_OTHER_TRAINER');
+      expect(error.getResponse().data).toMatchObject({
+        trainer: 'Lê Hoàng Nam',
+        planCode: 'GA-000012',
+      });
+      expect(prisma.trainingPlan.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            horseId: 'horse-1',
+            status: { in: [PlanStatus.DRAFT, PlanStatus.ACTIVE] },
+            trainerUserId: { not: 'trainer-1' },
+          },
+        }),
+      );
+      expect(prisma.trainingPlan.create).not.toHaveBeenCalled();
+    });
 
     it('gives the plan a GA- code from the counter', async () => {
       prisma.horse.findUnique.mockResolvedValue(healthyHorse);
@@ -233,16 +261,32 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       );
     });
 
-    it('rejects a start date more than 7 days ago and plans longer than 52 weeks', async () => {
+    it('only accepts a start date from tomorrow and rejects plans longer than 52 weeks', async () => {
       prisma.horse.findUnique.mockResolvedValue(healthyHorse);
-      expect(
-        await codeOf(
-          plans.createPlan({ ...dto, startDate: clubDate(addDays(today, -10)) }, trainer),
-        ),
-      ).toBe('START_DATE_TOO_EARLY');
+      expect(await codeOf(plans.createPlan({ ...dto, startDate: clubDate(today) }, trainer))).toBe(
+        'START_DATE_TOO_EARLY',
+      );
       expect(
         await codeOf(plans.createPlan({ ...dto, endDate: clubDate(addDays(today, 400)) }, trainer)),
       ).toBe('PLAN_TOO_LONG');
+    });
+
+    it('lets the trainer edit a running plan that started long ago without changing its start date', async () => {
+      const oldPlan = {
+        ...draftPlan,
+        status: PlanStatus.ACTIVE,
+        startDate: addDays(today, -20),
+        endDate: addDays(today, 30),
+        phases: [{ ...phase, startDate: clubDate(addDays(today, -20)) }],
+      };
+      prisma.trainingPlan.findUnique.mockResolvedValue(oldPlan);
+      prisma.trainingPlan.update.mockResolvedValue(oldPlan);
+      await expect(
+        plans.updatePlan('plan-1', { notes: 'Updated note only' }, trainer),
+      ).resolves.toBeDefined();
+      expect(
+        await codeOf(plans.updatePlan('plan-1', { startDate: clubDate(today) }, trainer)),
+      ).toBe('START_DATE_TOO_EARLY');
     });
 
     it('rejects plans shorter than 1 week (7 days)', async () => {
@@ -345,6 +389,28 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
         data: { status: HorseStatus.IN_TRAINING },
       });
     });
+
+    it('tells each groom about their workouts only when the plan is activated', async () => {
+      prisma.workoutSession.findMany.mockResolvedValueOnce([
+        { assignedStaffUserId: 'groom-1', scheduledDate: tomorrow0630 },
+        { assignedStaffUserId: 'groom-1', scheduledDate: addDays(tomorrow0630, 2) },
+        { assignedStaffUserId: 'groom-2', scheduledDate: addDays(tomorrow0630, 1) },
+      ]);
+      await plans.changePlanStatus('plan-1', { status: 'ACTIVE' }, trainer);
+      expect(notifications.notifyUsers).toHaveBeenCalledWith(
+        ['groom-1'],
+        expect.objectContaining({
+          type: 'WORKOUT_ASSIGNED',
+          params: expect.objectContaining({ count: 2, date: clubDate(tomorrow0630) }),
+        }),
+        'trainer-1',
+      );
+      expect(notifications.notifyUsers).toHaveBeenCalledWith(
+        ['groom-2'],
+        expect.objectContaining({ params: expect.objectContaining({ count: 1 }) }),
+        'trainer-1',
+      );
+    });
   });
 
   describe('changePlanStatus - cancel / complete', () => {
@@ -390,6 +456,27 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
     beforeEach(() => {
       prisma.trainingPlan.findUnique.mockResolvedValue(draftPlan);
       prisma.horse.findUnique.mockResolvedValue(healthyHorse);
+    });
+
+    it('rejects a session longer than 10 000 m in total and a jockey name with digits', async () => {
+      expect(
+        await codeOf(
+          workouts.createWorkout(
+            'plan-1',
+            { ...workoutDto, distanceMeters: 2000, repetitions: 6 },
+            trainer,
+          ),
+        ),
+      ).toBe('SESSION_DISTANCE_TOO_LONG');
+      expect(
+        await codeOf(
+          workouts.createWorkout(
+            'plan-1',
+            { ...workoutDto, workoutType: 'BREEZE', targetSpeedKmh: 55, jockeyName: '12345' },
+            trainer,
+          ),
+        ),
+      ).toBe('INVALID_JOCKEY_NAME');
     });
 
     it('blocks a heavy workout while locked, but allows a light walk', async () => {
@@ -471,19 +558,32 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
     it('rejects a trial on the same surface within 15 minutes', async () => {
       prisma.workoutSession.findFirst.mockImplementation(async (args: any) => {
         if (args?.where?.workoutType === 'TRIAL') {
-          return { id: 'w-x', horse: { name: 'Bolt' } };
+          return {
+            id: 'w-x',
+            scheduledDate: new Date('2026-11-07T03:00:00.000Z'), // 10:00 giờ CLB
+            horse: { name: 'Bolt' },
+            trainingPlan: { trainer: { fullName: 'Lê Hoàng Nam' } },
+          };
         }
         return null;
       });
-      expect(
-        await codeOf(
-          workouts.createWorkout(
-            'plan-1',
-            { ...workoutDto, workoutType: 'TRIAL', targetSpeedKmh: 60, jockeyName: 'An' },
-            trainer,
-          ),
-        ),
-      ).toBe('TRIAL_SLOT_TAKEN');
+      const error = await workouts
+        .createWorkout(
+          'plan-1',
+          { ...workoutDto, workoutType: 'TRIAL', targetSpeedKmh: 60, jockeyName: 'An' },
+          trainer,
+        )
+        .catch((e) => e);
+      expect(error.getResponse().code).toBe('TRIAL_SLOT_TAKEN');
+      // Nói rõ buổi kia lúc mấy giờ, của HLV nào và khung giờ còn chọn được (cách ≥ 15 phút).
+      expect(error.getResponse().data).toMatchObject({
+        horse: 'Bolt',
+        time: '10:00',
+        trainer: 'Lê Hoàng Nam',
+        before: '09:45',
+        after: '10:15',
+      });
+      expect(error.getResponse().message).toContain('Mặt sân Cỏ');
     });
 
     it('needs VET confirmation for a heavy workout when the horse is in a medical status', async () => {
@@ -553,6 +653,7 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
             id: 'w-other',
             scheduledDate: new Date('2026-11-07T08:30:00.000Z'),
             horse: { name: 'Red Velvet' },
+            trainingPlan: { trainer: { fullName: 'Lê Hoàng Nam' } },
           };
         }
         return null;
@@ -567,8 +668,52 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
         .createWorkout('plan-1', { ...workoutDto, acknowledgeWarnings: true }, trainer)
         .catch((e) => e);
       expect(error.getResponse().code).toBe('GROOM_TIME_CONFLICT');
-      expect(error.getResponse().data).toMatchObject({ groom: 'John', horse: 'Red Velvet' });
+      // 08:30 UTC = 15:30 giờ CLB; 2 buổi của 1 groom phải cách nhau ≥ 30 phút.
+      expect(error.getResponse().data).toMatchObject({
+        groom: 'John',
+        horse: 'Red Velvet',
+        time: '15:30',
+        date: '07/11/2026',
+        trainer: 'Lê Hoàng Nam',
+        before: '15:00',
+        after: '16:00',
+      });
+      expect(error.getResponse().message).toContain('(HLV Lê Hoàng Nam)');
       expect(prisma.workoutSession.create).not.toHaveBeenCalled();
+    });
+
+    it('tells which workout, trainer and free window when the horse already trains at that time', async () => {
+      prisma.workoutSession.findFirst.mockImplementation(async (args: any) => {
+        if (args?.where?.horseId && args?.where?.scheduledDate?.gte) {
+          return {
+            id: 'w-same-horse',
+            scheduledDate: new Date('2026-11-07T00:30:00.000Z'), // 07:30 giờ CLB
+            trainingPlan: { trainer: { fullName: 'Nguyễn Văn Tuấn' } },
+          };
+        }
+        return null;
+      });
+      const error = await workouts.createWorkout('plan-1', workoutDto, trainer).catch((e) => e);
+      expect(error.getResponse().code).toBe('HORSE_WORKOUT_TIME_CONFLICT');
+      expect(error.getResponse().data).toMatchObject({
+        time: '07:30',
+        trainer: 'Nguyễn Văn Tuấn',
+        before: '07:00',
+        after: '08:00',
+      });
+    });
+
+    it('does not notify the groom while the plan is still a draft, but does once it is active', async () => {
+      await workouts.createWorkout('plan-1', workoutDto, trainer);
+      expect(notifications.notifyUsers).not.toHaveBeenCalled();
+
+      prisma.trainingPlan.findUnique.mockResolvedValue({ ...draftPlan, status: PlanStatus.ACTIVE });
+      await workouts.createWorkout('plan-1', workoutDto, trainer);
+      expect(notifications.notifyUsers).toHaveBeenCalledWith(
+        ['groom-1'],
+        expect.objectContaining({ type: 'WORKOUT_ASSIGNED' }),
+        'trainer-1',
+      );
     });
 
     it('weekly repeat creates the matching days and reports skipped ones', async () => {
@@ -661,6 +806,23 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       abnormalSigns: false,
       trainingPlan: { ...draftPlan, status: PlanStatus.ACTIVE },
     };
+
+    it('rejects an unrealistic average speed and a top speed below the average', async () => {
+      prisma.workoutSession.findUnique.mockResolvedValue(started);
+      expect(
+        await codeOf(
+          workouts.recordResult(
+            'w-1',
+            { ...result, actualDistanceMeters: 10000, actualTimeSeconds: 5 },
+            trainer,
+          ),
+        ),
+      ).toBe('IMPLAUSIBLE_SPEED');
+      // 1200 m / 80 s = 54 km/h trung bình
+      expect(
+        await codeOf(workouts.recordResult('w-1', { ...result, topSpeedKmh: 40 }, trainer)),
+      ).toBe('TOP_SPEED_BELOW_AVERAGE');
+    });
 
     it('only after the workout has started', async () => {
       prisma.workoutSession.findUnique.mockResolvedValue({
@@ -791,11 +953,91 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       );
     });
 
-    it('marks overdue scheduled workouts as MISSED', async () => {
+    it('marks scheduled workouts of non-draft plans as MISSED once their day has ended', async () => {
+      await common.sweepOverdue();
+      // Buổi của giáo án Nháp chưa phải lịch thật nên không bị tính Bỏ lỡ.
+      expect(prisma.workoutSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            status: WorkoutStatus.SCHEDULED,
+            scheduledDate: { lt: today },
+            trainingPlan: { status: { not: PlanStatus.DRAFT } },
+          },
+        }),
+      );
+      // Không có buổi nào quá hạn -> không cập nhật, không báo.
+      expect(notifications.notifyUsers).not.toHaveBeenCalled();
+      expect(notifications.notifyRoles).not.toHaveBeenCalled();
+    });
+
+    it('notifies each trainer about their missed workouts and the Club Manager with a summary', async () => {
+      const missed = (id: string, trainerId: string, trainerName: string, planId: string) => ({
+        id,
+        scheduledDate: new Date('2026-11-10T02:00:00.000Z'), // 10/11 09:00 giờ CLB
+        horse: { name: 'Bạch Long Mã' },
+        trainingPlan: { id: planId, trainer: { id: trainerId, fullName: trainerName } },
+      });
+      prisma.workoutSession.findMany.mockResolvedValueOnce([
+        missed('w-1', 'trainer-1', 'Nguyễn Văn Tuấn', 'plan-1'),
+        missed('w-2', 'trainer-1', 'Nguyễn Văn Tuấn', 'plan-1'),
+        missed('w-3', 'trainer-2', 'Lê Hoàng Nam', 'plan-9'),
+      ]);
+      prisma.workoutSession.updateMany.mockResolvedValueOnce({ count: 3 });
+
+      await common.sweepOverdue();
+
+      expect(prisma.workoutSession.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ['w-1', 'w-2', 'w-3'] }, status: WorkoutStatus.SCHEDULED },
+        data: { status: WorkoutStatus.MISSED },
+      });
+      expect(notifications.notifyUsers).toHaveBeenCalledWith(
+        ['trainer-1'],
+        expect.objectContaining({
+          type: 'WORKOUT_MISSED',
+          message:
+            '2 workout(s) missed: Bạch Long Mã 10/11 09:00, Bạch Long Mã 10/11 09:00. Record late results by 17/11.',
+          link: '/training/plans/plan-1?status=OVERDUE',
+          dedupeKey: 'WORKOUT_MISSED:w-1',
+        }),
+      );
+      expect(notifications.notifyUsers).toHaveBeenCalledWith(
+        ['trainer-2'],
+        expect.objectContaining({ type: 'WORKOUT_MISSED', dedupeKey: 'WORKOUT_MISSED:w-3' }),
+      );
+      expect(notifications.notifyRoles).toHaveBeenCalledWith(
+        ['CLUB_MANAGER'],
+        expect.objectContaining({
+          type: 'WORKOUT_MISSED_SUMMARY',
+          message: '3 workout(s) missed by trainer: Nguyễn Văn Tuấn: 2, Lê Hoàng Nam: 1.',
+          link: '/training/calendar?status=MISSED&date=2026-11-10',
+        }),
+      );
+    });
+
+    it('does not notify again when another sweep already marked the workouts', async () => {
+      prisma.workoutSession.findMany.mockResolvedValueOnce([
+        {
+          id: 'w-1',
+          scheduledDate: new Date('2026-11-10T02:00:00.000Z'),
+          horse: { name: 'Bạch Long Mã' },
+          trainingPlan: { id: 'plan-1', trainer: { id: 'trainer-1', fullName: 'Tuấn' } },
+        },
+      ]);
+      prisma.workoutSession.updateMany.mockResolvedValueOnce({ count: 0 });
+      await common.sweepOverdue();
+      expect(notifications.notifyUsers).not.toHaveBeenCalled();
+      expect(notifications.notifyRoles).not.toHaveBeenCalled();
+    });
+
+    it('auto-completing a plan keeps MISSED workouts so they can still be recorded late', async () => {
+      prisma.trainingPlan.findMany.mockResolvedValue([{ id: 'plan-1' }]);
       await common.sweepOverdue();
       expect(prisma.workoutSession.updateMany).toHaveBeenCalledWith({
-        where: { status: WorkoutStatus.SCHEDULED, scheduledDate: { lt: addDays(today, -1) } },
-        data: { status: WorkoutStatus.MISSED },
+        where: {
+          trainingPlanId: 'plan-1',
+          status: { in: [WorkoutStatus.SCHEDULED, WorkoutStatus.BLOCKED] },
+        },
+        data: { status: WorkoutStatus.CANCELLED, statusReason: 'Giáo án đã kết thúc' },
       });
     });
 
@@ -891,6 +1133,7 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       });
       // 4 tuần trước: mỗi tuần 2 km × 2 = 4 điểm; 7 ngày gần nhất: 10 km × 2 = 20 điểm
       prisma.workoutSession.findMany
+        .mockResolvedValueOnce([]) // lần quét Bỏ lỡ đầu getOverview
         .mockResolvedValueOnce([done(30, 2), done(23, 2), done(16, 2), done(9, 2), done(2, 10)])
         .mockResolvedValueOnce([]);
       const res = await insights.getOverview();
@@ -1077,6 +1320,32 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
             }),
           }),
         );
+      });
+
+      it('shows a groom only workouts of plans that are no longer drafts', async () => {
+        const groomUser: CurrentUserPayload = {
+          userId: 'groom-1',
+          email: 'groom@gmail.com',
+          fullName: 'Lê Văn Bình',
+          role: UserRole.GROOM,
+        };
+        await workouts.findAllWorkouts({}, groomUser);
+        expect(prisma.workoutSession.findMany).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              assignedStaffUserId: 'groom-1',
+              trainingPlan: { status: { not: PlanStatus.DRAFT } },
+            }),
+          }),
+        );
+
+        prisma.workoutSession.findUnique.mockResolvedValue({
+          ...workoutA,
+          assignedStaffUserId: 'groom-1',
+          performanceScore: null,
+          trainingPlan: { status: PlanStatus.DRAFT, trainerUserId: 'trainer-a' },
+        });
+        expect(await codeOf(workouts.findWorkoutById('w-a', groomUser))).toBe('WORKOUT_NOT_FOUND');
       });
 
       it('does not scope findAllWorkouts by trainingPlan.trainerUserId for CLUB_MANAGER or VETERINARIAN', async () => {

@@ -136,15 +136,30 @@ describe('AccountsService', () => {
 
   it('should not let a manager lock their own account', async () => {
     withTarget(manager);
-    const error = await fail(service.changeStatus(actor, 'viet', 'lock', {}));
+    const error = await fail(
+      service.changeStatus(actor, 'viet', 'lock', { reason: 'Testing self lock' }),
+    );
     expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'CANNOT_LOCK_SELF' }));
+  });
+
+  it('should require a 10-300 character reason to decline, lock or deactivate', async () => {
+    withTarget({ ...manager, id: 'binh', role: Role.GROOM });
+    for (const action of ['decline', 'lock', 'deactivate'] as const) {
+      const error = await fail(service.changeStatus(actor, 'binh', action, { reason: '   ' }));
+      expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({ code: 'VALIDATION', data: { field: 'reason' } }),
+      );
+    }
   });
 
   it('should keep at least one active Club Manager', async () => {
     withTarget({ ...manager, id: 'minh', fullName: 'Mai Quang Minh' });
     mockPrisma.user.count.mockResolvedValue(1);
 
-    const error = await fail(service.changeStatus(actor, 'minh', 'deactivate', {}));
+    const error = await fail(
+      service.changeStatus(actor, 'minh', 'deactivate', { reason: 'Contract has ended' }),
+    );
     expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'LAST_MANAGER' }));
   });
 

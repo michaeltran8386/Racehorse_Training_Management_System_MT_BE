@@ -91,7 +91,11 @@ describe('Flow 2 training HTTP contract (mock database, real JWT/guards)', () =>
       .get('/api/training/workouts')
       .auth(token(), { type: 'bearer' })
       .expect(200);
-    expect(prisma.workoutSession.findMany.mock.calls[0][0].where.assignedStaffUserId).toBe('actor');
+    // Lần đọc cuối là danh sách (trước đó là lần quét Bỏ lỡ). Groom chỉ thấy buổi được giao,
+    // và không thấy buổi của giáo án còn Nháp.
+    const listWhere = prisma.workoutSession.findMany.mock.calls.at(-1)[0].where;
+    expect(listWhere.assignedStaffUserId).toBe('actor');
+    expect(listWhere.trainingPlan).toEqual({ status: { not: 'DRAFT' } });
   });
 
   it('trial runs are not visible to a Horse Owner', async () => {

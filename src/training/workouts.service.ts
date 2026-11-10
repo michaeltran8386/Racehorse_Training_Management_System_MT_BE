@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { HorseStatus, PlanStatus, Prisma, Role, UserStatus, WorkoutStatus } from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
+import { fullNameError } from '../common/utils/name';
 import { UserRole } from '../common/enums/role.enum';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { CreateWorkoutSessionDto, RepeatWorkoutDto } from './dto/create-workout-session.dto';
@@ -16,6 +17,8 @@ import {
   effectiveSurface,
   isHeavy,
   LATE_RESULT_DAYS,
+  MAX_AVERAGE_SPEED_KMH,
+  MAX_SESSION_DISTANCE_METERS,
   MAX_WORKOUTS_PER_DAY,
   NO_TIME_TYPES,
   PENDING_WORKOUT_STATUSES,
@@ -43,6 +46,41 @@ import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TrainingCommonService } from './training-common.service';
 
+/** HLV phụ trách giáo án của buổi tập đang chiếm giờ (để câu báo trùng nói rõ là của ai). */
+const TRAINER_OF_WORKOUT = {
+  trainingPlan: { select: { trainer: { select: { fullName: true } } } },
+} as const;
+
+const SURFACE_LABEL: Record<string, string> = {
+  TURF: 'Cỏ',
+  DIRT: 'Cát',
+  SYNTHETIC: 'Nhân tạo',
+};
+
+function hhmm(d: Date): string {
+  const { hour, minute } = clubTime(d);
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+/**
+ * Thông tin cho câu báo trùng giờ: buổi kia lúc mấy giờ, của HLV nào, và khung giờ còn chọn được
+ * (luật hiện tại: 2 buổi phải cách nhau ít nhất `gapMinutes` phút).
+ */
+function conflictInfo(
+  other: Date,
+  gapMinutes: number,
+  row: { trainingPlan: { trainer: { fullName: string } } | null },
+) {
+  const [y, m, d] = clubDate(other).split('-');
+  return {
+    time: hhmm(other),
+    date: `${d}/${m}/${y}`,
+    trainer: row.trainingPlan?.trainer.fullName ?? '—',
+    before: hhmm(new Date(other.getTime() - gapMinutes * 60 * 1000)),
+    after: hhmm(new Date(other.getTime() + gapMinutes * 60 * 1000)),
+  };
+}
+
 /** P2-07, P2-08: buổi tập — xếp lịch, lặp hằng tuần, ghi kết quả, hủy / khôi phục, lịch của groom (FR-2.05, FR-2.09 → FR-2.13, FR-2.17, FR-2.20). */
 @Injectable()
 export class WorkoutsService {
@@ -53,15 +91,19 @@ export class WorkoutsService {
     private readonly common: TrainingCommonService,
   ) {}
 
-  /** Báo groom được giao buổi tập (FR-2.12, blueprint FR-006). */
+  /**
+   * Báo groom được giao buổi tập (FR-2.12, blueprint FR-006).
+   * Giáo án còn Nháp thì chưa báo: groom nhận thông báo khi HT kích hoạt giáo án.
+   */
   private async notifyGroomAssigned(
     groomId: string | null | undefined,
     horseId: string,
     count: number,
     firstDate: Date,
     user: CurrentUserPayload,
+    planStatus?: PlanStatus,
   ) {
-    if (!groomId || count === 0) return;
+    if (!groomId || count === 0 || planStatus === PlanStatus.DRAFT) return;
     const horse = await this.prisma.horse.findUnique({
       where: { id: horseId },
       select: { name: true },
@@ -192,6 +234,20 @@ export class WorkoutsService {
         throw apiError(HttpStatus.BAD_REQUEST, 'JOCKEY_REQUIRED', 'Vui lòng nhập tên nài ngựa.');
       }
     }
+    if (w.jockeyName && fullNameError(w.jockeyName)) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVALID_JOCKEY_NAME',
+        'Tên nài ngựa chỉ được gồm chữ cái và khoảng trắng.',
+      );
+    }
+    if (w.distanceMeters * w.repetitions > MAX_SESSION_DISTANCE_METERS) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'SESSION_DISTANCE_TOO_LONG',
+        'Tổng cự ly (cự ly mỗi hiệp × số hiệp) không được vượt quá 10 000 m.',
+      );
+    }
     const groom = await tx.user.findUnique({ where: { id: w.assignedStaffUserId } });
     if (!groom || groom.role !== Role.GROOM || groom.status !== UserStatus.ACTIVE) {
       throw apiError(
@@ -214,14 +270,15 @@ export class WorkoutsService {
           lte: new Date(w.scheduledDate.getTime() + 29 * 60 * 1000),
         },
       },
-      select: { id: true },
+      select: { id: true, scheduledDate: true, ...TRAINER_OF_WORKOUT },
     });
     if (timeOverlap) {
+      const c = conflictInfo(timeOverlap.scheduledDate, 30, timeOverlap);
       throw apiError(
         HttpStatus.CONFLICT,
         'HORSE_WORKOUT_TIME_CONFLICT',
-        'Ngựa đã có buổi tập khác trong khung giờ này.',
-        { workoutId: timeOverlap.id },
+        `Ngựa đã có buổi tập khác lúc ${c.time} ngày ${c.date} (HLV ${c.trainer}). Chọn giờ bắt đầu từ ${c.before} trở về trước, hoặc từ ${c.after} trở đi.`,
+        { workoutId: timeOverlap.id, ...c },
       );
     }
 
@@ -238,14 +295,21 @@ export class WorkoutsService {
             lt: new Date(w.scheduledDate.getTime() + slot),
           },
         },
-        include: { horse: { select: { name: true } } },
+        select: {
+          id: true,
+          scheduledDate: true,
+          horse: { select: { name: true } },
+          ...TRAINER_OF_WORKOUT,
+        },
       });
       if (clash) {
+        const c = conflictInfo(clash.scheduledDate, TRIAL_SLOT_MINUTES, clash);
+        const surface = SURFACE_LABEL[w.trackSurface] ?? w.trackSurface;
         throw apiError(
           HttpStatus.CONFLICT,
           'TRIAL_SLOT_TAKEN',
-          `Mặt sân ${w.trackSurface} đã có lượt chạy thử của ${clash.horse.name} trong khung 15 phút này.`,
-          { workoutId: clash.id },
+          `Mặt sân ${surface} đã có lượt chạy thử của ${clash.horse.name} lúc ${c.time} ngày ${c.date} (HLV ${c.trainer}). Chọn giờ bắt đầu từ ${c.before} trở về trước, hoặc từ ${c.after} trở đi.`,
+          { workoutId: clash.id, horse: clash.horse.name, surface: w.trackSurface, ...c },
         );
       }
     }
@@ -333,17 +397,20 @@ export class WorkoutsService {
           lt: new Date(w.scheduledDate.getTime() + overlap),
         },
       },
-      select: { id: true, scheduledDate: true, horse: { select: { name: true } } },
+      select: {
+        id: true,
+        scheduledDate: true,
+        horse: { select: { name: true } },
+        ...TRAINER_OF_WORKOUT,
+      },
     });
     if (busy) {
-      const t = clubTime(busy.scheduledDate);
-      const time = `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`;
-      const date = clubDate(busy.scheduledDate);
+      const c = conflictInfo(busy.scheduledDate, GROOM_OVERLAP_MINUTES, busy);
       throw apiError(
         HttpStatus.CONFLICT,
         'GROOM_TIME_CONFLICT',
-        `Nhân viên ${groom.fullName} đã được giao buổi tập của ${busy.horse.name} lúc ${time} ngày ${date}. Chọn người chăm sóc khác hoặc lệch giờ ít nhất ${GROOM_OVERLAP_MINUTES} phút.`,
-        { workoutId: busy.id, groom: groom.fullName, horse: busy.horse.name, time, date },
+        `Nhân viên ${groom.fullName} đã được giao buổi tập của ${busy.horse.name} lúc ${c.time} ngày ${c.date} (HLV ${c.trainer}). Chọn người chăm sóc khác, hoặc chọn giờ bắt đầu từ ${c.before} trở về trước hoặc từ ${c.after} trở đi.`,
+        { workoutId: busy.id, groom: groom.fullName, horse: busy.horse.name, ...c },
       );
     }
 
@@ -402,8 +469,10 @@ export class WorkoutsService {
 
   /** DL-2.01 Thêm buổi tập vào giáo án Nháp / Đang áp dụng (HT). */
   async createWorkout(planId: string, dto: CreateWorkoutSessionDto, user: CurrentUserPayload) {
+    let planStatus: PlanStatus | undefined;
     const session = await this.prisma.$transaction(async (tx) => {
       const plan = await tx.trainingPlan.findUnique({ where: { id: planId } });
+      planStatus = plan?.status;
       if (!plan) {
         throw apiError(HttpStatus.NOT_FOUND, 'PLAN_NOT_FOUND', 'Training plan not found.');
       }
@@ -438,6 +507,7 @@ export class WorkoutsService {
       1,
       session.scheduledDate,
       user,
+      planStatus,
     );
     return session;
   }
@@ -539,15 +609,17 @@ export class WorkoutsService {
         skipped,
         warnings: allWarnings,
         horseId: plan.horseId,
+        planStatus: plan.status,
       };
     });
-    const { horseId, ...response } = result;
+    const { horseId, planStatus, ...response } = result;
     await this.notifyGroomAssigned(
       dto.assignedStaffUserId,
       horseId,
       result.created,
       new Date(dto.scheduledDate),
       user,
+      planStatus,
     );
     return response;
   }
@@ -555,6 +627,7 @@ export class WorkoutsService {
   /** Sửa buổi tập Đã lên lịch chưa tới giờ (BTN-2.20): gộp với dữ liệu cũ rồi kiểm lại DL-2.01. */
   async updateWorkout(workoutId: string, dto: UpdateWorkoutSessionDto, user: CurrentUserPayload) {
     let previousGroomId: string | null = null;
+    let planStatus: PlanStatus | undefined;
     const updated = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.workoutSession.findUnique({
         where: { id: workoutId },
@@ -574,6 +647,7 @@ export class WorkoutsService {
         );
       }
       previousGroomId = existing.assignedStaffUserId;
+      planStatus = existing.trainingPlan.status;
       if (existing.status !== WorkoutStatus.SCHEDULED || existing.scheduledDate <= new Date()) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
@@ -645,6 +719,7 @@ export class WorkoutsService {
         1,
         updated.scheduledDate,
         user,
+        planStatus,
       );
     }
     return updated;
@@ -736,6 +811,21 @@ export class WorkoutsService {
       const averageSpeedKmh = dto.actualTimeSeconds
         ? Math.round((dto.actualDistanceMeters / dto.actualTimeSeconds) * 3.6 * 10) / 10
         : null;
+      // Kỷ lục ngựa đua ≈ 70 km/h: tốc độ tính ra vượt 75 km/h là cự ly hoặc thời gian bị nhập sai.
+      if (averageSpeedKmh != null && averageSpeedKmh > MAX_AVERAGE_SPEED_KMH) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'IMPLAUSIBLE_SPEED',
+          `Tốc độ trung bình tính ra ${averageSpeedKmh} km/h là không thực tế. Kiểm tra lại cự ly và thời gian chạy.`,
+        );
+      }
+      if (averageSpeedKmh != null && dto.topSpeedKmh != null && dto.topSpeedKmh < averageSpeedKmh) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'TOP_SPEED_BELOW_AVERAGE',
+          `Tốc độ cao nhất không được nhỏ hơn tốc độ trung bình (${averageSpeedKmh} km/h).`,
+        );
+      }
       const abnormal = signs.length > 0;
 
       const updated = await tx.workoutSession.update({
@@ -968,7 +1058,9 @@ export class WorkoutsService {
     if (user.role === UserRole.HORSE_OWNER) {
       where.horse = { deletedAt: null, ownerId: user.userId };
     } else if (user.role === UserRole.GROOM) {
+      // Giáo án còn Nháp chưa phải lịch thật: groom chỉ thấy khi HT đã kích hoạt.
       where.assignedStaffUserId = user.userId;
+      where.trainingPlan = { status: { not: PlanStatus.DRAFT } };
     } else if (user.role === UserRole.HEAD_TRAINER) {
       where.trainingPlan = { trainerUserId: user.userId };
     }
@@ -994,7 +1086,9 @@ export class WorkoutsService {
     const outOfScope =
       !workout ||
       (user.role === UserRole.HORSE_OWNER && workout.horse.ownerId !== user.userId) ||
-      (user.role === UserRole.GROOM && workout.assignedStaffUserId !== user.userId) ||
+      (user.role === UserRole.GROOM &&
+        (workout.assignedStaffUserId !== user.userId ||
+          workout.trainingPlan?.status === PlanStatus.DRAFT)) ||
       (user.role === UserRole.HEAD_TRAINER &&
         (workout.trainingPlan as any)?.trainerUserId !== user.userId);
     if (outOfScope) {
