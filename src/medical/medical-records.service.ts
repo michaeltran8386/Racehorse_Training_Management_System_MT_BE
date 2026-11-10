@@ -72,6 +72,22 @@ export class MedicalRecordsService {
       );
     }
 
+    // Kiểm tra quy tắc nghiệp vụ: Mỗi chiến mã chỉ có tối đa 1 bệnh án mở tại một thời điểm
+    const existingOpenRecord = await this.prisma.medicalRecord.findFirst({
+      where: {
+        horseId: dto.horseId,
+        status: 'OPEN',
+      },
+      select: { id: true, recordNumber: true },
+    });
+    if (existingOpenRecord) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_HAS_OPEN_RECORD',
+        `Chiến mã này đang có bệnh án ở trạng thái mở (${existingOpenRecord.recordNumber || existingOpenRecord.id}). Không thể tạo thêm bệnh án khi bệnh án cũ chưa kết thúc điều trị.`,
+      );
+    }
+
     let examDate = new Date();
     if (dto.examinationDate) {
       examDate = new Date(dto.examinationDate);
@@ -437,12 +453,13 @@ export class MedicalRecordsService {
     if (!record) {
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
     }
-    // Chỉ bản nháp được sửa (FE chỉ hiện nút Sửa với nháp); bệnh án chính thức đổi qua phác đồ / đơn thuốc / tái khám.
-    if (record.status !== 'DRAFT') {
+    // Cho phép chỉnh sửa khi bệnh án ở trạng thái nháp (DRAFT) hoặc đang mở điều trị (OPEN).
+    // Bệnh án đã đóng / kết thúc (CLOSED) không được phép chỉnh sửa.
+    if (record.status === 'CLOSED') {
       throw apiError(
         HttpStatus.BAD_REQUEST,
-        'RECORD_NOT_DRAFT',
-        'Only a draft medical record can be edited.',
+        'RECORD_CLOSED',
+        'Cannot edit a medical record that has already been closed.',
       );
     }
 
@@ -485,6 +502,30 @@ export class MedicalRecordsService {
         injuries: true,
       },
     });
+
+    if (record.status === 'OPEN' && dataToUpdate.recommendedHorseStatus) {
+      const horse = await this.prisma.horse.findUnique({
+        where: { id: record.horseId },
+        select: { id: true, name: true, status: true },
+      });
+      if (
+        horse &&
+        horse.status !== dataToUpdate.recommendedHorseStatus &&
+        horse.status !== HorseStatus.RETIRED
+      ) {
+        await this.prisma.horse.update({
+          where: { id: record.horseId },
+          data: { status: dataToUpdate.recommendedHorseStatus },
+        });
+
+        await this.audit.record(
+          { id: actor.userId, name: actor.fullName },
+          'HORSE_STATUS_CHANGED',
+          `Changed status of horse ${horse.name} from ${horse.status} to ${dataToUpdate.recommendedHorseStatus}. Reason: Cập nhật từ bệnh án #${record.recordNumber || record.id}`,
+          record.horseId,
+        );
+      }
+    }
 
     await this.audit.record(
       { id: actor.userId, name: actor.fullName },
@@ -550,6 +591,23 @@ export class MedicalRecordsService {
         HttpStatus.BAD_REQUEST,
         'RECORD_ALREADY_FINALIZED',
         'This medical record is already official.',
+      );
+    }
+
+    // Kiểm tra: Không thể chốt bản nháp nếu ngựa đã có một bệnh án khác đang mở
+    const existingOpenRecord = await this.prisma.medicalRecord.findFirst({
+      where: {
+        horseId: record.horseId,
+        status: 'OPEN',
+        id: { not: record.id },
+      },
+      select: { id: true, recordNumber: true },
+    });
+    if (existingOpenRecord) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_HAS_OPEN_RECORD',
+        `Chiến mã này đang có bệnh án khác ở trạng thái mở (${existingOpenRecord.recordNumber || existingOpenRecord.id}). Không thể chốt bệnh án này.`,
       );
     }
 
@@ -721,6 +779,23 @@ export class MedicalRecordsService {
         HttpStatus.BAD_REQUEST,
         'RECORD_NOT_CLOSED',
         'Only a closed medical record can be reopened.',
+      );
+    }
+
+    // Kiểm tra: Không thể mở lại bệnh án nếu ngựa đang có một bệnh án khác ở trạng thái OPEN
+    const existingOpenRecord = await this.prisma.medicalRecord.findFirst({
+      where: {
+        horseId: record.horseId,
+        status: 'OPEN',
+        id: { not: record.id },
+      },
+      select: { id: true, recordNumber: true },
+    });
+    if (existingOpenRecord) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_HAS_OPEN_RECORD',
+        `Chiến mã này đang có một bệnh án khác ở trạng thái mở (${existingOpenRecord.recordNumber || existingOpenRecord.id}). Không thể mở lại bệnh án này.`,
       );
     }
 
