@@ -2,7 +2,13 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
-import { Role, HorseStatus, WorkoutStatus, RegistrationStatus, TournamentStatus } from '@prisma/client';
+import {
+  Role,
+  HorseStatus,
+  WorkoutStatus,
+  RegistrationStatus,
+  TournamentStatus,
+} from '@prisma/client';
 import { assertStatusTransition } from '../horses/horse-rules';
 import { HEAVY_WORKOUT_WHERE } from '../training/training-rules';
 import {

@@ -526,9 +526,13 @@ export class DailyTasksService {
     if (task.date) {
       const todayStr = new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const taskDate = task.date instanceof Date ? task.date : new Date(task.date);
-      const taskDateStr = new Date(taskDate.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const taskDateStr = new Date(taskDate.getTime() + 7 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
       if (taskDateStr > todayStr) {
-        throw new BadRequestException('Không thể hoàn thành trước công việc của các ngày trong tương lai.');
+        throw new BadRequestException(
+          'Không thể hoàn thành trước công việc của các ngày trong tương lai.',
+        );
       }
     }
 
@@ -581,11 +585,7 @@ export class DailyTasksService {
 
     // Trừ kho tự động CHỈ DÀNH CHO việc cho ăn (FEEDING) từ kho thức ăn khu chuồng.
     // Việc uống thuốc (MEDICATION) dùng thuốc theo đơn của bác sĩ thú y, không trừ kho thức ăn khu chuồng.
-    if (
-      task.taskType === DailyTaskType.FEEDING &&
-      task.stallZoneId &&
-      task.itemsSnapshotJson
-    ) {
+    if (task.taskType === DailyTaskType.FEEDING && task.stallZoneId && task.itemsSnapshotJson) {
       await this.inventoryService.deductStockForFeeding(
         task.stallZoneId,
         task.itemsSnapshotJson as any,
@@ -672,11 +672,7 @@ export class DailyTasksService {
     );
 
     // Hoàn lại kho thức ăn nếu hoàn tác việc cho ăn (FEEDING)
-    if (
-      task.taskType === DailyTaskType.FEEDING &&
-      task.stallZoneId &&
-      task.itemsSnapshotJson
-    ) {
+    if (task.taskType === DailyTaskType.FEEDING && task.stallZoneId && task.itemsSnapshotJson) {
       await this.inventoryService.restoreStockForFeeding(
         task.stallZoneId,
         task.itemsSnapshotJson as any,

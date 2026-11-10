@@ -112,7 +112,10 @@ export class HealthOverviewService {
           if (currentPhase?.allowedActivity) {
             allowedActivity = currentPhase.allowedActivity;
           }
-          if (Array.isArray(currentPhase?.careInstructions) && currentPhase.careInstructions.length > 0) {
+          if (
+            Array.isArray(currentPhase?.careInstructions) &&
+            currentPhase.careInstructions.length > 0
+          ) {
             careInstructions = currentPhase.careInstructions.map((c: any) =>
               typeof c === 'string' ? { activity: c, frequency: 'Hằng ngày' } : c,
             );
@@ -123,7 +126,7 @@ export class HealthOverviewService {
       }
     }
 
-    let activeMedications: any[] = [];
+    const activeMedications: any[] = [];
     const openRecords = records.filter((r) => r.status === 'OPEN');
     for (const rec of openRecords) {
       const rxSource = rec.prescriptions || rec.prescriptionDetails;

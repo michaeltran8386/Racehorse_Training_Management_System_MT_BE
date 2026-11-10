@@ -1128,7 +1128,15 @@ export class WorkoutsService {
   async findGrooms(
     horseId?: string,
     dateStr?: string,
-  ): Promise<Array<{ id: string; fullName: string; email: string; isAssignedToHorse?: boolean; hasShift?: boolean }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      fullName: string;
+      email: string;
+      isAssignedToHorse?: boolean;
+      hasShift?: boolean;
+    }>
+  > {
     const grooms = await this.prisma.user.findMany({
       where: { role: Role.GROOM, status: UserStatus.ACTIVE },
       select: { id: true, fullName: true, email: true },

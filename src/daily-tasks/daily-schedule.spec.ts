@@ -33,8 +33,7 @@ describe('planDailyTasks', () => {
     zoneId: i < 4 ? 'A' : 'B',
     stallCode: `S${i}`,
     isLocked: i === 0,
-    careInstructions:
-      i === 0 ? [{ activity: 'Ngâm chân nước đá', frequencyPerDay: 2 }] : undefined,
+    careInstructions: i === 0 ? [{ activity: 'Ngâm chân nước đá', frequencyPerDay: 2 }] : undefined,
   }));
   const tasks = planDailyTasks(horses, rosters);
 

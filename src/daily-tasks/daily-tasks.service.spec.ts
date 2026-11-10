@@ -115,9 +115,7 @@ describe('DailyTasksService', () => {
               {
                 startDate: '2026-10-10',
                 endDate: '2026-10-25',
-                careInstructions: [
-                  { activity: 'Ngâm chân nước đá phục hồi', frequencyPerDay: 2 },
-                ],
+                careInstructions: [{ activity: 'Ngâm chân nước đá phục hồi', frequencyPerDay: 2 }],
               },
             ]),
           },

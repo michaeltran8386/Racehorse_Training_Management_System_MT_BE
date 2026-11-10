@@ -1,6 +1,15 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NotificationCategory, OtpPurpose, PlanStatus, Prisma, Role, User, UserStatus, WorkoutStatus } from '@prisma/client';
+import {
+  NotificationCategory,
+  OtpPurpose,
+  PlanStatus,
+  Prisma,
+  Role,
+  User,
+  UserStatus,
+  WorkoutStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AuditActor, AuditService } from '../audit/audit.service';

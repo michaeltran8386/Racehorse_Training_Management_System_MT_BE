@@ -1,5 +1,11 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { NotificationCategory, NutritionPlanStatus, Prisma, Role, HorseStatus } from '@prisma/client';
+import {
+  NotificationCategory,
+  NutritionPlanStatus,
+  Prisma,
+  Role,
+  HorseStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';

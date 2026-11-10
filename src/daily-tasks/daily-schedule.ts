@@ -170,11 +170,7 @@ function templatesFor(horse: ScheduleHorse): Template[] {
     for (const inst of horse.careInstructions) {
       const freq = Math.min(3, Math.max(1, Number(inst.frequencyPerDay) || 1));
       const times =
-        freq === 1
-          ? ['09:30']
-          : freq === 2
-            ? ['09:30', '15:00']
-            : ['09:30', '13:30', '17:00'];
+        freq === 1 ? ['09:30'] : freq === 2 ? ['09:30', '15:00'] : ['09:30', '13:30', '17:00'];
 
       times.forEach((time, idx) => {
         const suffix = times.length > 1 ? ` (Lần ${idx + 1})` : '';
@@ -204,8 +200,7 @@ function templatesFor(horse: ScheduleHorse): Template[] {
 
   // Dắt đi dạo nhẹ nhàng - chỉ khi ngựa không bị chỉ định nghỉ ngơi nghiêm ngặt tại ô chuồng
   const isStrictStallRest =
-    horse.isLocked ||
-    /stall rest|nghỉ tại ô|strict/i.test(horse.allowedActivityLevel || '');
+    horse.isLocked || /stall rest|nghỉ tại ô|strict/i.test(horse.allowedActivityLevel || '');
 
   if (!isStrictStallRest) {
     list.push({
@@ -223,15 +218,12 @@ function templatesFor(horse: ScheduleHorse): Template[] {
       const rawFreq = Number(med.frequencyPerDay) || 1;
       const freq = Math.min(3, Math.max(1, rawFreq)); // Tối đa 3 lần/ngày theo yêu cầu
       const times =
-        freq === 1
-          ? ['08:00']
-          : freq === 2
-            ? ['08:00', '18:00']
-            : ['08:00', '13:00', '19:00'];
+        freq === 1 ? ['08:00'] : freq === 2 ? ['08:00', '18:00'] : ['08:00', '13:00', '19:00'];
 
       times.forEach((time, idx) => {
         const suffix = times.length > 1 ? ` (Lần ${idx + 1})` : '';
-        const parsedDosage = typeof med.dosage === 'number' ? med.dosage : parseFloat(String(med.dosage)) || 1;
+        const parsedDosage =
+          typeof med.dosage === 'number' ? med.dosage : parseFloat(String(med.dosage)) || 1;
         list.push({
           taskType: DailyTaskType.MEDICATION,
           title: `Cho uống thuốc: ${med.name}${suffix}`,

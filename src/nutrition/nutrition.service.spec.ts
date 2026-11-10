@@ -314,10 +314,7 @@ describe('NutritionService', () => {
       });
 
       await expect(
-        service.create(
-          { horseId: 'horse-retired', meals: [] },
-          mockTrainerUser,
-        ),
+        service.create({ horseId: 'horse-retired', meals: [] }, mockTrainerUser),
       ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
     });
 
