@@ -165,9 +165,16 @@ export class WorkoutsService {
         'Ngựa đang bị lưu giữ do nợ phí. Chỉ được phép đi bộ / vận động nhẹ (WALK), không được xếp bài tập nặng.',
       );
     }
-    // 2. Ngựa ngừng quản lý.
+    // 2. Ngựa ngừng quản lý hoặc cách ly.
     if (horse.status === HorseStatus.RETIRED) {
       throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
+    }
+    if (horse.status === HorseStatus.ISOLATED) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'HORSE_ISOLATED',
+        'Ngựa đang ở trạng thái Cách ly kiểm dịch, không được xếp lịch tập luyện ra sân chung.',
+      );
     }
 
     // Kiểm tra ô nhập phụ thuộc nhau (DTO không tự kiểm được).
@@ -383,6 +390,21 @@ export class WorkoutsService {
       if (other) {
         warnings.push(
           `Ngựa có bài tập nặng khác lúc ${clubDate(other.scheduledDate)}, cách chưa đủ 48 giờ.`,
+        );
+      }
+    }
+    // Cảnh báo ca trực của người chăm sóc (STT 34: cảnh báo nếu groom không có ca trực trong ngày)
+    if (tx.shiftRoster?.findMany) {
+      const dayStart = startOfClubDay(w.scheduledDate);
+      const rosters = await tx.shiftRoster.findMany({
+        where: {
+          groomUserId: w.assignedStaffUserId,
+          date: { gte: dayStart, lt: addDays(dayStart, 1) },
+        },
+      });
+      if (rosters.length === 0) {
+        warnings.push(
+          `Nhân viên ${groom.fullName} không có ca trực trong ngày ${clubDate(w.scheduledDate)}.`,
         );
       }
     }
@@ -1103,11 +1125,62 @@ export class WorkoutsService {
   }
 
   /** Nhân viên chăm sóc đang hoạt động, để HT chọn khi xếp buổi tập. */
-  async findGrooms() {
-    return this.prisma.user.findMany({
+  async findGrooms(
+    horseId?: string,
+    dateStr?: string,
+  ): Promise<
+    Array<{
+      id: string;
+      fullName: string;
+      email: string;
+      isAssignedToHorse?: boolean;
+      hasShift?: boolean;
+    }>
+  > {
+    const grooms = await this.prisma.user.findMany({
       where: { role: Role.GROOM, status: UserStatus.ACTIVE },
       select: { id: true, fullName: true, email: true },
       orderBy: { fullName: 'asc' },
     });
+
+    if (!horseId && !dateStr) {
+      return grooms;
+    }
+
+    let assignedGroomId: string | null = null;
+    if (horseId && this.prisma.stallAllocation?.findFirst) {
+      const alloc = await this.prisma.stallAllocation.findFirst({
+        where: { horseId, isActive: true },
+        select: { assignedGroomUserId: true },
+      });
+      assignedGroomId = alloc?.assignedGroomUserId ?? null;
+    }
+
+    let groomsWithShift: Set<string> | null = null;
+    if (dateStr && this.prisma.shiftRoster?.findMany) {
+      const d = new Date(dateStr);
+      const dayStart = startOfClubDay(isNaN(d.getTime()) ? new Date() : d);
+      const rosters = await this.prisma.shiftRoster.findMany({
+        where: {
+          date: { gte: dayStart, lt: addDays(dayStart, 1) },
+        },
+        select: { groomUserId: true },
+      });
+      groomsWithShift = new Set(rosters.map((r) => r.groomUserId));
+    }
+
+    return grooms
+      .map((g) => ({
+        ...g,
+        isAssignedToHorse: assignedGroomId ? g.id === assignedGroomId : undefined,
+        hasShift: groomsWithShift ? groomsWithShift.has(g.id) : undefined,
+      }))
+      .sort((a, b) => {
+        if (a.isAssignedToHorse && !b.isAssignedToHorse) return -1;
+        if (!a.isAssignedToHorse && b.isAssignedToHorse) return 1;
+        if (a.hasShift && !b.hasShift) return -1;
+        if (!a.hasShift && b.hasShift) return 1;
+        return a.fullName.localeCompare(b.fullName);
+      });
   }
 }

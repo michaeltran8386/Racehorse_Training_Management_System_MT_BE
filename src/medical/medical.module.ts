@@ -10,9 +10,10 @@ import { PreventiveScheduler } from './preventive.scheduler';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { SimulatorModule } from '../simulator/simulator.module';
+import { DailyTasksModule } from '../daily-tasks/daily-tasks.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, SimulatorModule],
+  imports: [PrismaModule, AuditModule, SimulatorModule, DailyTasksModule],
   controllers: [MedicalController],
   providers: [
     MedicalAccessService,

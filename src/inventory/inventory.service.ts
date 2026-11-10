@@ -761,25 +761,39 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       if (!supplyId) continue;
 
       try {
-        await this.prisma.stockBalance.upsert({
+        const balance = await this.prisma.stockBalance.findUnique({
           where: {
             zoneId_supplyId: {
               zoneId,
               supplyId,
             },
           },
-          create: {
-            zoneId,
-            supplyId,
-            quantity: new Prisma.Decimal(-amount),
-            minThreshold: new Prisma.Decimal(10),
-          },
-          update: {
-            quantity: { decrement: new Prisma.Decimal(amount) },
-          },
         });
+
+        const currentQty = balance ? Number(balance.quantity) : 0;
+        const newQty = Math.max(0, currentQty - amount);
+
+        if (balance) {
+          await this.prisma.stockBalance.update({
+            where: {
+              zoneId_supplyId: {
+                zoneId,
+                supplyId,
+              },
+            },
+            data: {
+              quantity: new Prisma.Decimal(newQty),
+            },
+          });
+        }
+
+        if (currentQty < amount) {
+          this.logger.warn(
+            `[InventoryService] Thiếu hàng khi trừ kho khu ${zoneId}, vật tư ${supplyId}: Yêu cầu ${amount}, tồn kho hiện có ${currentQty}. Đã trừ về 0.`,
+          );
+        }
       } catch (err) {
-        console.error(`Failed to deduct stock for zone ${zoneId}, supply ${supplyId}:`, err);
+        this.logger.error(`Failed to deduct stock for zone ${zoneId}, supply ${supplyId}:`, err);
       }
     }
   }

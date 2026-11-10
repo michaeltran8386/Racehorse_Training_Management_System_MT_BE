@@ -1153,6 +1153,14 @@ export class TournamentsService {
             `Cannot record result for registration ${item.registrationId} with status ${reg.status}. Results may only be recorded for active registrations.`,
           );
         }
+
+        if (reg.horse?.isMedicalLocked) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'HORSE_MEDICAL_LOCKED',
+            `Cannot record result for horse ${reg.horse.name}: Horse is currently under Veterinary Medical Lock.`,
+          );
+        }
       }
 
       const activeRegs = tournament.registrations.filter(

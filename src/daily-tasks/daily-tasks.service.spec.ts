@@ -16,14 +16,15 @@ describe('DailyTasksService', () => {
 
   beforeEach(async () => {
     prisma = {
-      horse: { findMany: jest.fn(), findUnique: jest.fn() },
+      horse: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
       shiftRoster: { findMany: jest.fn().mockResolvedValue([]) },
       dailyCareTask: {
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        delete: jest.fn().mockResolvedValue({}),
         count: jest.fn(),
       },
     };
@@ -100,7 +101,7 @@ describe('DailyTasksService', () => {
       );
     });
 
-    it('switches heavy tasks to ICE_BOOT_REST when horse is medical locked', async () => {
+    it('generates ICE_BOOT_REST tasks when specified in treatment phase care instructions', async () => {
       const mockLockedHorse = {
         id: 'horse-locked',
         name: 'Thunder',
@@ -109,6 +110,17 @@ describe('DailyTasksService', () => {
         stallAllocations: [],
         medicalLocks: [{ isLocked: true, lockReason: 'Vết thương cổ chân trái' }],
         nutritionPlans: [],
+        medicalRecords: [
+          {
+            treatmentPhases: JSON.stringify([
+              {
+                startDate: '2026-10-10',
+                endDate: '2026-10-25',
+                careInstructions: [{ activity: 'Ngâm chân nước đá phục hồi', frequencyPerDay: 2 }],
+              },
+            ]),
+          },
+        ],
       };
 
       prisma.horse.findMany.mockResolvedValue([mockLockedHorse]);

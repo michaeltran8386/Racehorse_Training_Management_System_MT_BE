@@ -1,5 +1,5 @@
 import { HttpStatus } from '@nestjs/common';
-import { NutritionPlanStatus, Role } from '@prisma/client';
+import { NutritionPlanStatus, Role, HorseStatus } from '@prisma/client';
 import { NutritionService } from './nutrition.service';
 import { UserRole } from '../common/enums/role.enum';
 
@@ -8,6 +8,13 @@ describe('NutritionService', () => {
   let prismaMock: any;
   let auditMock: any;
   let notificationsMock: any;
+
+  const mockManagerUser = {
+    userId: 'user-cm-1',
+    email: 'manager@equiflow.com',
+    fullName: 'Club Manager',
+    role: UserRole.CLUB_MANAGER,
+  };
 
   const mockTrainerUser = {
     userId: 'user-ht-1',
@@ -297,6 +304,32 @@ describe('NutritionService', () => {
       await expect(
         service.review('plan-1', { action: 'APPROVE' }, mockTrainerUser),
       ).rejects.toMatchObject({ status: HttpStatus.FORBIDDEN });
+    });
+
+    it('rejects creating nutrition plan for RETIRED horse', async () => {
+      prismaMock.horse.findUnique.mockResolvedValue({
+        id: 'horse-retired',
+        name: 'Retired Horse',
+        status: HorseStatus.RETIRED,
+      });
+
+      await expect(
+        service.create({ horseId: 'horse-retired', meals: [] }, mockTrainerUser),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+    });
+
+    it('rejects self-approval when reviewer is the creator of the plan', async () => {
+      prismaMock.nutritionPlan.findUnique.mockResolvedValue({
+        id: 'plan-self',
+        horseId: 'horse-1',
+        createdById: mockManagerUser.userId,
+        status: NutritionPlanStatus.PENDING_APPROVAL,
+        horse: { name: 'Thunderbolt' },
+      });
+
+      await expect(
+        service.review('plan-self', { action: 'APPROVE' }, mockManagerUser),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
     });
 
     it('allows Groom to view plans in findOne', async () => {

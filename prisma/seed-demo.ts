@@ -200,15 +200,16 @@ async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
       statusChangedBy: 'Trần Quang Minh',
       ...stamp(-90),
     },
-    // Nhân viên được mời nhưng chưa nhận lời mời (chưa đặt mật khẩu) -> danh sách có trạng thái "Đã mời".
+    // Bác sĩ thú y thứ 2 — đang hoạt động (vet2@gmail.com / EquiFlow@2006)
     {
       id: user('vet2'),
-      email: 'demo.equiflow.thanhtam@gmail.com',
+      email: 'vet2@gmail.com',
       fullName: 'BS. Lý Thanh Tâm',
       role: 'VETERINARIAN',
-      status: 'INVITED',
-      invitedBy: 'Trần Quang Minh',
-      ...stamp(-1),
+      status: 'ACTIVE',
+      passwordHash: await bcrypt.hash('EquiFlow@2006', 10),
+      phoneNumber: '+84901234599',
+      ...stamp(-90),
     },
   ];
   // Keep seeded account IDs in place so unrelated sessions and audit references survive.

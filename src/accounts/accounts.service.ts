@@ -1,6 +1,15 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { NotificationCategory, OtpPurpose, Prisma, Role, User, UserStatus } from '@prisma/client';
+import {
+  NotificationCategory,
+  OtpPurpose,
+  PlanStatus,
+  Prisma,
+  Role,
+  User,
+  UserStatus,
+  WorkoutStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { AuditActor, AuditService } from '../audit/audit.service';
@@ -206,6 +215,7 @@ export class AccountsService {
             );
           }
           await this.assertCanRemove(actor, target, 'CANNOT_LOCK_SELF');
+          await this.assertNoPendingAssignments(tx, target, dto.confirmedActiveAssignments);
           data = { status: UserStatus.LOCKED, lockedAt: new Date(), statusReason: reason || null };
           break;
         case 'unlock':
@@ -223,6 +233,7 @@ export class AccountsService {
             );
           }
           await this.assertCanRemove(actor, target, 'CANNOT_CHANGE_SELF');
+          await this.assertNoPendingAssignments(tx, target, dto.confirmedActiveAssignments);
           data = { status: UserStatus.INACTIVE, lockedAt: null, statusReason: reason || null };
           break;
         case 'reactivate':
@@ -400,5 +411,114 @@ export class AccountsService {
     const user = await tx.user.findUnique({ where: { id } });
     if (!user) throw apiError(HttpStatus.NOT_FOUND, 'NOT_FOUND', 'Account not found');
     return user;
+  }
+
+  private async assertNoPendingAssignments(
+    tx: Prisma.TransactionClient,
+    target: User,
+    confirmed?: boolean,
+  ): Promise<void> {
+    if (confirmed) return;
+
+    const today = new Date(new Date().toDateString());
+    const [activeStalls, upcomingWorkouts, upcomingShifts, activePlans] = await Promise.all([
+      (tx as any).stallAllocation?.count
+        ? (tx as any).stallAllocation.count({
+            where: { assignedGroomUserId: target.id, isActive: true },
+          })
+        : 0,
+      (tx as any).workoutSession?.count
+        ? (tx as any).workoutSession.count({
+            where: {
+              assignedStaffUserId: target.id,
+              scheduledDate: { gte: new Date() },
+              status: WorkoutStatus.SCHEDULED,
+            },
+          })
+        : 0,
+      (tx as any).shiftRoster?.count
+        ? (tx as any).shiftRoster.count({
+            where: { groomUserId: target.id, date: { gte: today } },
+          })
+        : 0,
+      (tx as any).trainingPlan?.count
+        ? (tx as any).trainingPlan.count({
+            where: { trainerUserId: target.id, status: PlanStatus.ACTIVE },
+          })
+        : 0,
+    ]);
+
+    const total = activeStalls + upcomingWorkouts + upcomingShifts + activePlans;
+    if (total > 0) {
+      const parts: string[] = [];
+      if (activeStalls > 0) parts.push(`${activeStalls} ô chuồng đang phụ trách`);
+      if (upcomingWorkouts > 0) parts.push(`${upcomingWorkouts} buổi tập sắp tới`);
+      if (upcomingShifts > 0) parts.push(`${upcomingShifts} ca trực sắp tới`);
+      if (activePlans > 0) parts.push(`${activePlans} giáo án đang kích hoạt`);
+
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'USER_HAS_ACTIVE_ASSIGNMENTS',
+        `Nhân viên ${target.fullName} đang có: ${parts.join(', ')}. Vui lòng kiểm tra chuyển giao công việc hoặc xác nhận để tiếp tục.`,
+        {
+          activeAssignments: {
+            activeStalls,
+            upcomingWorkouts,
+            upcomingShifts,
+            activePlans,
+          },
+        },
+      );
+    }
+  }
+
+  async getActiveAssignments(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw apiError(HttpStatus.NOT_FOUND, 'NOT_FOUND', 'User not found');
+
+    const today = new Date(new Date().toDateString());
+    const [stalls, workouts, shifts, plans] = await Promise.all([
+      this.prisma.stallAllocation
+        ? this.prisma.stallAllocation.findMany({
+            where: { assignedGroomUserId: userId, isActive: true },
+            include: {
+              horse: { select: { id: true, name: true, horseCode: true } },
+              stall: { select: { id: true, code: true, zone: true } },
+            },
+          })
+        : [],
+      this.prisma.workoutSession
+        ? this.prisma.workoutSession.findMany({
+            where: {
+              assignedStaffUserId: userId,
+              scheduledDate: { gte: new Date() },
+              status: WorkoutStatus.SCHEDULED,
+            },
+            include: { horse: { select: { id: true, name: true } } },
+          })
+        : [],
+      this.prisma.shiftRoster
+        ? this.prisma.shiftRoster.findMany({
+            where: { groomUserId: userId, date: { gte: today } },
+            include: { shift: true, zone: true },
+          })
+        : [],
+      this.prisma.trainingPlan
+        ? this.prisma.trainingPlan.findMany({
+            where: { trainerUserId: userId, status: PlanStatus.ACTIVE },
+            include: { horse: { select: { id: true, name: true } } },
+          })
+        : [],
+    ]);
+
+    return {
+      userId,
+      hasAssignments:
+        stalls.length > 0 || workouts.length > 0 || shifts.length > 0 || plans.length > 0,
+      stalls,
+      workouts,
+      shifts,
+      plans,
+    };
   }
 }
