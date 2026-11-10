@@ -123,13 +123,19 @@ async function bootstrap() {
     .addTag('Medical', 'Medical records, 2D injuries and Medical Lock enforcement')
     .addTag('Nutrition & Meal Rations', 'Feed plans, supplements, and dietary management')
     .addTag('Daily Care Tasks & Checklist', 'Daily groom duties, checklist completion and logs')
-    .addTag('Incident Reports & Health Observations', 'Health alerts, abnormal behaviors and incident escalation')
+    .addTag(
+      'Incident Reports & Health Observations',
+      'Health alerts, abnormal behaviors and incident escalation',
+    )
     .addTag('Shift rosters', 'Staff scheduling and shift roster assignments')
     .addTag('Shifts', 'Shift definitions, clock-in and clock-out logs')
     .addTag('Supplies', 'Stable consumables, feed stock and order fulfillment')
     .addTag('Inventory', 'Barn and supplies inventory management')
     .addTag('Tournaments & Racing (Flow 5)', 'Race registrations, fixtures and official results')
-    .addTag('Financial Ledger & Invoices (Flow 5: F5-05 & F5-06)', 'Owner billing, invoicing and prize distribution')
+    .addTag(
+      'Financial Ledger & Invoices (Flow 5: F5-05 & F5-06)',
+      'Owner billing, invoicing and prize distribution',
+    )
     .addTag('AI Assistant', 'AI training recommendations and query assistant')
     .addTag('Notifications', 'System notifications, broadcast messages and reminders')
     .addTag('Audit Logs', 'Immutable governance audit trails')

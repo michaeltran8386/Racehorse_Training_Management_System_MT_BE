@@ -801,8 +801,14 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       (prisma as any).stallAllocation = { findFirst: jest.fn().mockResolvedValue(null) };
       (prisma as any).shiftRoster = {
         findMany: jest.fn().mockResolvedValue([
-          { groomUserId: 'groom-morning', shift: { name: 'Ca Sáng', startTime: '05:00', endTime: '13:00', isOvernight: false } },
-          { groomUserId: 'groom-evening', shift: { name: 'Ca Tối', startTime: '14:00', endTime: '22:00', isOvernight: false } },
+          {
+            groomUserId: 'groom-morning',
+            shift: { name: 'Ca Sáng', startTime: '05:00', endTime: '13:00', isOvernight: false },
+          },
+          {
+            groomUserId: 'groom-evening',
+            shift: { name: 'Ca Tối', startTime: '14:00', endTime: '22:00', isOvernight: false },
+          },
         ]),
       };
       (prisma as any).workoutSession = {

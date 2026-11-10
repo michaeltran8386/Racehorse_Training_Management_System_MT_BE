@@ -1160,7 +1160,10 @@ export class WorkoutsService {
     }
 
     let groomsWithShift: Set<string> | null = null;
-    const shiftMap = new Map<string, Array<{ startTime: string; endTime: string; isOvernight: boolean; name: string }>>();
+    const shiftMap = new Map<
+      string,
+      Array<{ startTime: string; endTime: string; isOvernight: boolean; name: string }>
+    >();
 
     if (dateStr && this.prisma.shiftRoster?.findMany) {
       const d = new Date(dateStr);
@@ -1191,14 +1194,20 @@ export class WorkoutsService {
     if (dateStr) {
       if (timeStr) {
         const dateOnly = dateStr.slice(0, 10);
-        targetDateTime = new Date(`${dateOnly}T${timeStr.length === 5 ? timeStr + ':00' : timeStr}+07:00`);
+        targetDateTime = new Date(
+          `${dateOnly}T${timeStr.length === 5 ? timeStr + ':00' : timeStr}+07:00`,
+        );
       } else if (dateStr.includes('T')) {
         targetDateTime = new Date(dateStr);
       }
     }
 
     const busyGroomIds = new Set<string>();
-    if (targetDateTime && !isNaN(targetDateTime.getTime()) && this.prisma.workoutSession?.findMany) {
+    if (
+      targetDateTime &&
+      !isNaN(targetDateTime.getTime()) &&
+      this.prisma.workoutSession?.findMany
+    ) {
       // 1. Tìm các groom bị trùng buổi tập khác trong khoảng ±30 phút
       const overlap = GROOM_OVERLAP_MINUTES * 60 * 1000;
       const workouts = await this.prisma.workoutSession.findMany({
@@ -1271,9 +1280,10 @@ export class WorkoutsService {
     });
 
     // Nếu có truyền giờ cụ thể (timeStr hoặc dateStr ISO): CHỈ LẤY NHỮNG GROOM RẢNH
-    const result = targetDateTime && !isNaN(targetDateTime.getTime())
-      ? mapped.filter((g) => g.isAvailable)
-      : mapped;
+    const result =
+      targetDateTime && !isNaN(targetDateTime.getTime())
+        ? mapped.filter((g) => g.isAvailable)
+        : mapped;
 
     return result.sort((a, b) => {
       if (a.isAssignedToHorse && !b.isAssignedToHorse) return -1;
