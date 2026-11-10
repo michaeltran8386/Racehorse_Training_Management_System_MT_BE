@@ -5,14 +5,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DailyTaskType, Prisma, Role } from '@prisma/client';
+import { DailyTaskType, Prisma, Role, HorseStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CompleteDailyTaskDto, QueryDailyTasksDto } from './dto/daily-task.dto';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { InventoryService } from '../inventory/inventory.service';
-import { planDailyTasks, ScheduleHorse } from './daily-schedule';
+import { planDailyTasks, ScheduleHorse, ScheduleCareInstruction } from './daily-schedule';
 
 const UNDO_WINDOW_MS = 15 * 60 * 1000; // 15 phút (900.000 ms)
 
@@ -35,6 +35,7 @@ export class DailyTasksService {
   async generateDailyTasksForDate(
     targetDate = new Date(),
     zoneIdFilter?: string,
+    horseIdFilter?: string,
   ): Promise<{
     date: string;
     totalGenerated: number;
@@ -45,10 +46,12 @@ export class DailyTasksService {
 
     this.logger.log(`[DailyTasksService] Generating daily care tasks for date: ${dateStr}`);
 
-    // Lấy danh sách ngựa đang quản lý (không bị xóa mềm)
+    // Lấy danh sách ngựa đang quản lý (không bị xóa mềm và chưa ngừng quản lý)
     const horses = await this.prisma.horse.findMany({
       where: {
         deletedAt: null,
+        status: { not: HorseStatus.RETIRED },
+        ...(horseIdFilter ? { id: horseIdFilter } : {}),
         ...(zoneIdFilter
           ? {
               stallAllocations: {
@@ -86,6 +89,7 @@ export class DailyTasksService {
             id: true,
             prescriptions: true,
             prescriptionDetails: true,
+            treatmentPhases: true,
           },
         },
       },
@@ -120,9 +124,67 @@ export class DailyTasksService {
         route?: string;
         notes?: string;
         supplyId?: string;
+        frequencyPerDay?: number;
       }> = [];
 
+      const activeCareInstructions: ScheduleCareInstruction[] = [];
+      let allowedActivityLevel: string | undefined;
+
       for (const rec of (horse as any).medicalRecords || []) {
+        // 1. Chỉ dẫn chăm sóc y tế từ phác đồ điều trị của Vet
+        if (rec.treatmentPhases) {
+          try {
+            const phases = JSON.parse(rec.treatmentPhases);
+            if (Array.isArray(phases)) {
+              for (const phase of phases) {
+                const start = phase.startDate ? String(phase.startDate).slice(0, 10) : '';
+                const end = phase.endDate ? String(phase.endDate).slice(0, 10) : '';
+                if ((!start || dateStr >= start) && (!end || dateStr <= end)) {
+                  if (phase.allowedActivity || phase.allowedActivityLevel) {
+                    allowedActivityLevel = phase.allowedActivity || phase.allowedActivityLevel;
+                  }
+                  const instructions = Array.isArray(phase.careInstructions)
+                    ? phase.careInstructions
+                    : [];
+                  for (const inst of instructions) {
+                    let activity = '';
+                    let freq = 1;
+                    let notes = '';
+                    if (typeof inst === 'string') {
+                      const match = inst.match(
+                        /^(.*?)(?:\s*\((?:(\d+)\s*(?:lần|times?)[^)]*|[^)]*)\))?$/i,
+                      );
+                      activity = match ? match[1].trim() : inst.trim();
+                      if (match && match[2]) {
+                        freq = Math.min(3, Math.max(1, parseInt(match[2], 10)));
+                      }
+                    } else if (inst && typeof inst === 'object') {
+                      activity = String(inst.activity || '').trim();
+                      const parsedFreq = Number(inst.frequencyPerDay ?? inst.frequency);
+                      freq =
+                        !isNaN(parsedFreq) && parsedFreq > 0
+                          ? Math.min(3, Math.max(1, Math.floor(parsedFreq)))
+                          : 1;
+                      notes = inst.notes || '';
+                    }
+                    if (activity) {
+                      activeCareInstructions.push({
+                        activity,
+                        frequencyPerDay: freq,
+                        notes,
+                        phaseName: phase.phaseName,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } catch {
+            // ignore malformed JSON
+          }
+        }
+
+        // 2. Đơn thuốc thú y
         const raw = rec.prescriptions || rec.prescriptionDetails;
         if (!raw) continue;
         try {
@@ -140,6 +202,9 @@ export class DailyTasksService {
                   route: rx.route || rx.administrationRoute,
                   notes: rx.notes,
                   supplyId: rx.supplyId,
+                  frequencyPerDay: rx.frequencyPerDay
+                    ? Math.min(3, Math.max(1, Number(rx.frequencyPerDay)))
+                    : 1,
                 });
               }
             }
@@ -156,8 +221,10 @@ export class DailyTasksService {
         stallCode: stall?.code,
         allocationGroomId: horse.stallAllocations[0]?.assignedGroomUserId || undefined,
         isLocked,
+        allowedActivityLevel,
         mealsJson: horse.nutritionPlans[0]?.mealsJson,
         medications: activeMeds,
+        careInstructions: activeCareInstructions,
       };
     });
     const planned = planDailyTasks(
@@ -174,6 +241,16 @@ export class DailyTasksService {
     const lockedHorses = new Set(scheduleHorses.filter((h) => h.isLocked).map((h) => h.id));
 
     let totalGenerated = 0;
+
+    const activeMedicalTitlesByHorse = new Map<string, Set<string>>();
+    for (const t of planned) {
+      if (t.taskType === DailyTaskType.MEDICATION || t.taskType === DailyTaskType.ICE_BOOT_REST) {
+        if (!activeMedicalTitlesByHorse.has(t.horseId)) {
+          activeMedicalTitlesByHorse.set(t.horseId, new Set());
+        }
+        activeMedicalTitlesByHorse.get(t.horseId)!.add(t.title);
+      }
+    }
 
     // Upsert từng task để bảo đảm Idempotent (nhận diện theo ngựa + loại + tiêu đề, vì giờ có thể dời khi đàn thay đổi)
     for (const t of planned) {
@@ -211,7 +288,9 @@ export class DailyTasksService {
         (existing.stallZoneId !== t.zoneId ||
           existing.stallId !== t.stallId ||
           existing.scheduledTime !== t.scheduledTime ||
-          (t.assignedGroomUserId && existing.assignedGroomUserId !== t.assignedGroomUserId))
+          existing.description !== t.description ||
+          (t.assignedGroomUserId && existing.assignedGroomUserId !== t.assignedGroomUserId) ||
+          existing.isMedicalLocked !== isLocked)
       ) {
         await this.prisma.dailyCareTask.update({
           where: { id: existing.id },
@@ -219,6 +298,7 @@ export class DailyTasksService {
             stallZoneId: t.zoneId,
             stallId: t.stallId,
             scheduledTime: t.scheduledTime,
+            description: t.description,
             shiftId: t.shiftId ?? existing.shiftId,
             assignedGroomUserId: t.assignedGroomUserId || existing.assignedGroomUserId,
             isMedicalLocked: isLocked,
@@ -228,8 +308,27 @@ export class DailyTasksService {
       }
     }
 
+    // Tự động dọn dẹp các task y tế/thuốc CHƯA HOÀN THÀNH nếu bác sĩ đã dừng thuốc hoặc đổi phác đồ
+    const processedHorseIds = horses.map((h) => h.id);
+    const existingMedicalTasks = await this.prisma.dailyCareTask.findMany({
+      where: {
+        date: dayDate,
+        horseId: { in: processedHorseIds },
+        taskType: { in: [DailyTaskType.MEDICATION, DailyTaskType.ICE_BOOT_REST] },
+        isCompleted: false,
+      },
+      select: { id: true, horseId: true, title: true },
+    });
+
+    for (const emt of existingMedicalTasks) {
+      const activeTitles = activeMedicalTitlesByHorse.get(emt.horseId);
+      if (!activeTitles || !activeTitles.has(emt.title)) {
+        await this.prisma.dailyCareTask.delete({ where: { id: emt.id } });
+      }
+    }
+
     this.logger.log(
-      `[DailyTasksService] Generated ${totalGenerated} tasks for ${horses.length} horses on ${dateStr}`,
+      `[DailyTasksService] Generated/Synced ${totalGenerated} new tasks for ${horses.length} horses on ${dateStr}`,
     );
 
     return {
@@ -240,57 +339,45 @@ export class DailyTasksService {
   }
 
   /**
+   * Đồng bộ động các công việc y tế (thuốc và phác đồ điều trị) cho ngựa theo khoảng ngày.
+   * Tự động gọi khi Bác sĩ thú y thêm/sửa phác đồ điều trị hoặc kê/dừng đơn thuốc.
+   */
+  async syncMedicalTasksForHorse(
+    horseId: string,
+    fromDateStr?: string,
+    toDateStr?: string,
+  ): Promise<void> {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const startStr = fromDateStr && fromDateStr > todayStr ? fromDateStr : todayStr;
+    const startDate = new Date(`${startStr}T00:00:00.000Z`);
+
+    const maxDays = 14;
+    const endDate = toDateStr
+      ? new Date(`${toDateStr}T00:00:00.000Z`)
+      : new Date(startDate.getTime() + maxDays * 86400000);
+
+    const cur = new Date(startDate);
+    while (cur <= endDate && cur.getTime() <= startDate.getTime() + maxDays * 86400000) {
+      const curDate = new Date(cur);
+      const existingCount = await this.prisma.dailyCareTask.count({
+        where: { date: curDate },
+      });
+      if (existingCount > 0) {
+        await this.generateDailyTasksForDate(curDate, undefined, horseId);
+      }
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+  }
+
+  /**
    * SC-4.04: Lấy danh sách checklist công việc theo ngày, khu chuồng, ca trực và quyền xem
    */
   async findAll(query: QueryDailyTasksDto, currentUser: CurrentUserPayload) {
     const dateStr = query.date || new Date().toISOString().slice(0, 10);
     const dayDate = new Date(`${dateStr}T00:00:00.000Z`);
 
-    // Tự động sinh công việc nếu ngày đó chưa có task nào (on-demand self-healing)
-    const existingCount = await this.prisma.dailyCareTask.count({
-      where: { date: dayDate },
-    });
-    if (existingCount === 0) {
-      await this.generateDailyTasksForDate(dayDate, query.zoneId);
-    } else {
-      // Tự động đồng bộ zone/stall của các task chưa hoàn thành theo phân bổ chuồng mới nhất của ngựa
-      const horsesWithStall = await this.prisma.horse.findMany({
-        where: { deletedAt: null },
-        select: {
-          id: true,
-          stallAllocations: {
-            where: { isActive: true },
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-            select: {
-              assignedGroomUserId: true,
-              stall: { select: { id: true, zoneId: true } },
-            },
-          },
-        },
-      });
-
-      for (const h of horsesWithStall || []) {
-        const activeAlloc = h.stallAllocations[0];
-        if (activeAlloc?.stall) {
-          await this.prisma.dailyCareTask.updateMany({
-            where: {
-              date: dayDate,
-              horseId: h.id,
-              isCompleted: false,
-              OR: [
-                { stallZoneId: { not: activeAlloc.stall.zoneId } },
-                { stallId: { not: activeAlloc.stall.id } },
-              ],
-            },
-            data: {
-              stallZoneId: activeAlloc.stall.zoneId,
-              stallId: activeAlloc.stall.id,
-            },
-          });
-        }
-      }
-    }
+    // Luôn đảm bảo Idempotent: sinh công việc nếu chưa có, hoặc đồng bộ lại các task y tế/chuồng mới nhất
+    await this.generateDailyTasksForDate(dayDate, query.zoneId);
 
     const where: any = {
       date: dayDate,
@@ -430,7 +517,21 @@ export class DailyTasksService {
       return task; // Đã xong rồi, trả về idempotent
     }
 
+    if (task.horse?.status === HorseStatus.RETIRED) {
+      throw new BadRequestException('Không thể hoàn thành việc cho ngựa đã ngừng quản lý.');
+    }
+
     const now = new Date();
+
+    if (task.date) {
+      const todayStr = new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const taskDate = task.date instanceof Date ? task.date : new Date(task.date);
+      const taskDateStr = new Date(taskDate.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (taskDateStr > todayStr) {
+        throw new BadRequestException('Không thể hoàn thành trước công việc của các ngày trong tương lai.');
+      }
+    }
+
     const undoUntil = new Date(now.getTime() + UNDO_WINDOW_MS);
 
     // Chỉ request đổi được isCompleted false -> true mới trừ kho (RULE-CONC-01): hai lần bấm đồng thời không trừ đôi.
@@ -478,9 +579,10 @@ export class DailyTasksService {
       },
     );
 
-    // Trừ kho tự động nếu là việc cho ăn (FEEDING) hoặc cho uống thuốc (MEDICATION)
+    // Trừ kho tự động CHỈ DÀNH CHO việc cho ăn (FEEDING) từ kho thức ăn khu chuồng.
+    // Việc uống thuốc (MEDICATION) dùng thuốc theo đơn của bác sĩ thú y, không trừ kho thức ăn khu chuồng.
     if (
-      (task.taskType === DailyTaskType.FEEDING || task.taskType === DailyTaskType.MEDICATION) &&
+      task.taskType === DailyTaskType.FEEDING &&
       task.stallZoneId &&
       task.itemsSnapshotJson
     ) {
@@ -569,9 +671,9 @@ export class DailyTasksService {
       },
     );
 
-    // Hoàn lại kho vật tư nếu hoàn tác việc cho ăn (FEEDING) hoặc cho uống thuốc (MEDICATION)
+    // Hoàn lại kho thức ăn nếu hoàn tác việc cho ăn (FEEDING)
     if (
-      (task.taskType === DailyTaskType.FEEDING || task.taskType === DailyTaskType.MEDICATION) &&
+      task.taskType === DailyTaskType.FEEDING &&
       task.stallZoneId &&
       task.itemsSnapshotJson
     ) {

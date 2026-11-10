@@ -33,6 +33,8 @@ describe('planDailyTasks', () => {
     zoneId: i < 4 ? 'A' : 'B',
     stallCode: `S${i}`,
     isLocked: i === 0,
+    careInstructions:
+      i === 0 ? [{ activity: 'Ngâm chân nước đá', frequencyPerDay: 2 }] : undefined,
   }));
   const tasks = planDailyTasks(horses, rosters);
 
@@ -56,10 +58,10 @@ describe('planDailyTasks', () => {
     expect(afternoon.every((t) => t.assignedGroomUserId === 'g2' && t.shiftId === 'P')).toBe(true);
   });
 
-  it('gives a locked horse ice-boot rest instead of grooming and walking', () => {
+  it('gives a locked horse ice-boot rest from careInstructions and skips walking', () => {
     const types = tasks.filter((t) => t.horseId === 'h0').map((t) => t.taskType);
     expect(types).toContain('ICE_BOOT_REST');
-    expect(types).not.toContain('GROOMING');
+    expect(types).toContain('GROOMING');
     expect(types).not.toContain('WALKING');
   });
 });

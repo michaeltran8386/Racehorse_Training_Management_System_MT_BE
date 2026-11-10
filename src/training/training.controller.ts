@@ -175,8 +175,11 @@ export class TrainingController {
   @Get('grooms')
   @Roles(UserRole.HEAD_TRAINER)
   @ApiOperation({ summary: 'Nhân viên chăm sóc đang hoạt động để phân công buổi tập - HT' })
-  async findGrooms() {
-    return this.workouts.findGrooms();
+  async findGrooms(
+    @Query('horseId') horseId?: string,
+    @Query('date') date?: string,
+  ) {
+    return this.workouts.findGrooms(horseId, date);
   }
 
   @Post('plans/:id/workouts')

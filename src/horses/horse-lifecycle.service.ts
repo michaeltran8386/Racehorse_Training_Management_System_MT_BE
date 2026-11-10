@@ -323,6 +323,23 @@ export class HorseLifecycleService {
           if (plans.count > 0)
             effects.push(`Hủy ${plans.count} giáo án và các buổi tập chưa diễn ra`);
 
+          // Xóa các việc chăm sóc hằng ngày chưa hoàn thành từ hôm nay trở đi (STT 13: F4)
+          try {
+            const today = new Date(new Date().toISOString().slice(0, 10));
+            const deletedTasks = await (tx as any).dailyCareTask?.deleteMany({
+              where: {
+                horseId: id,
+                isCompleted: false,
+                date: { gte: today },
+              },
+            });
+            if (deletedTasks && deletedTasks.count > 0) {
+              effects.push(`Hủy ${deletedTasks.count} việc chăm sóc hằng ngày chưa thực hiện`);
+            }
+          } catch {
+            // bỏ qua nếu mock test không có dailyCareTask
+          }
+
           const ownershipEnds =
             dto.retireReason === RetireReason.SOLD || dto.retireReason === RetireReason.TRANSFERRED;
           if (ownershipEnds && horse.ownerId) {

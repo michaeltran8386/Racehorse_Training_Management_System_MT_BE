@@ -614,6 +614,14 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
         'INVALID_GROOM',
       );
     });
+
+    it('rejects workout creation when horse is in ISOLATED status (STT 14)', async () => {
+      prisma.trainingPlan.findUnique.mockResolvedValue(draftPlan);
+      prisma.horse.findUnique.mockResolvedValue({ ...healthyHorse, status: HorseStatus.ISOLATED });
+      expect(await codeOf(workouts.createWorkout('plan-1', workoutDto, trainer))).toBe(
+        'HORSE_ISOLATED',
+      );
+    });
   });
 
   describe('phases, warnings and weekly repeat (DL-2.01)', () => {
@@ -749,6 +757,40 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
           ),
         ),
       ).toBe('TOO_MANY_REPEATS');
+    });
+
+    it('warns when the assigned groom has no shift roster on the workout date (STT 34)', async () => {
+      prisma.trainingPlan.findUnique.mockResolvedValue(draftPlan);
+      prisma.horse.findUnique.mockResolvedValue(healthyHorse);
+      prisma.workoutSession.findMany.mockResolvedValue([]);
+      (prisma as any).shiftRoster = {
+        findMany: jest.fn().mockResolvedValue([]),
+      };
+
+      const error = await workouts.createWorkout('plan-1', workoutDto, trainer).catch((e) => e);
+      expect(error.getResponse().code).toBe('WARNINGS_NEED_CONFIRMATION');
+      expect(error.getResponse().data.warnings[0]).toContain('không có ca trực trong ngày');
+    });
+  });
+
+  describe('findGrooms (STT 34)', () => {
+    it('returns all active grooms and prioritizes assigned groom and shifts when horseId and date are provided', async () => {
+      const g1 = { id: 'groom-1', fullName: 'Alice', email: 'alice@club.vn' };
+      const g2 = { id: 'groom-2', fullName: 'Bob', email: 'bob@club.vn' };
+      prisma.user.findMany.mockResolvedValue([g1, g2]);
+      (prisma as any).stallAllocation = {
+        findFirst: jest.fn().mockResolvedValue({ assignedGroomUserId: 'groom-2' }),
+      };
+      (prisma as any).shiftRoster = {
+        findMany: jest.fn().mockResolvedValue([{ groomUserId: 'groom-1' }]),
+      };
+
+      const result = await workouts.findGrooms('horse-1', '2026-11-15');
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('groom-2');
+      expect(result[0].isAssignedToHorse).toBe(true);
+      expect(result[1].id).toBe('groom-1');
+      expect(result[1].hasShift).toBe(true);
     });
   });
 

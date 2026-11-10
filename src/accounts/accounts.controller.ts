@@ -126,6 +126,12 @@ export class AccountsController {
     return { ...result, account: toPublicUser(result.account) };
   }
 
+  @Get(':id/active-assignments')
+  @ApiOperation({ summary: 'Kiểm tra các công việc/ô chuồng/ca trực nhân viên đang giữ' })
+  getActiveAssignments(@Param('id') id: string) {
+    return this.accounts.getActiveAssignments(id);
+  }
+
   @Put(':id/permissions')
   @ApiOperation({ summary: 'Bật/tắt công tắc quyền của một tài khoản' })
   async updatePermissions(

@@ -70,7 +70,7 @@ export class HealthOverviewService {
           horseId: rawActiveLock.horseId,
           appliedMedicalStatus: rawActiveLock.appliedMedicalStatus,
           lockedAt: rawActiveLock.lockedAt.toISOString(),
-          lockedBy: rawActiveLock.veterinarian?.fullName || 'Dr. Sarah Connor (Chief Veterinarian)',
+          lockedBy: rawActiveLock.veterinarian?.fullName || '',
           lockReason: rawActiveLock.lockReason,
           reviewDate: rawActiveLock.recheckDate ? rawActiveLock.recheckDate.toISOString() : '',
           status: 'ACTIVE' as const,
@@ -95,48 +95,51 @@ export class HealthOverviewService {
       }));
     const latestVitals = vitalsHistory[0] || null;
 
-    const allowedActivity = isMedicalLocked
-      ? 'Strict Stall Rest'
+    let allowedActivity = isMedicalLocked
+      ? 'Light Walking Only'
       : horse.status === 'UNDER_OBSERVATION'
         ? 'Light Walking Only'
         : 'Full Training';
 
-    const careInstructions = isMedicalLocked
-      ? [
-          { activity: 'Cold hydrotherapy / ice application 20 minutes', frequency: 'Twice daily' },
-          { activity: 'Protective support compression wrap', frequency: 'Continuous in stall' },
-        ]
-      : [];
+    let careInstructions: Array<{ activity: string; frequency?: string }> = [];
 
-    let activeMedications: any[] = [];
     const latestRecord = records[0];
-    if (latestRecord?.prescriptions) {
+    if (latestRecord?.treatmentPhases) {
       try {
-        const parsed = JSON.parse(latestRecord.prescriptions);
-        if (Array.isArray(parsed)) activeMedications = parsed;
+        const phases = JSON.parse(latestRecord.treatmentPhases);
+        if (Array.isArray(phases) && phases.length > 0) {
+          const currentPhase = phases[phases.length - 1];
+          if (currentPhase?.allowedActivity) {
+            allowedActivity = currentPhase.allowedActivity;
+          }
+          if (Array.isArray(currentPhase?.careInstructions) && currentPhase.careInstructions.length > 0) {
+            careInstructions = currentPhase.careInstructions.map((c: any) =>
+              typeof c === 'string' ? { activity: c, frequency: 'Hằng ngày' } : c,
+            );
+          }
+        }
       } catch {
         // ignore
       }
     }
-    if (activeMedications.length === 0 && isMedicalLocked) {
-      activeMedications = [
-        {
-          id: `rx-${horseId}-1`,
-          medicationName: 'Phenylbutazone Paste 20%',
-          dosage: 2.2,
-          unit: 'g',
-          route: 'Oral',
-          frequencyPerDay: 2,
-          startDate: rawActiveLock?.lockedAt
-            ? rawActiveLock.lockedAt.toISOString().split('T')[0]
-            : new Date().toISOString().split('T')[0],
-          daysCount: 5,
-          withdrawalDays: 7,
-          withdrawalUntil: new Date(Date.now() + 12 * 86400000).toISOString().split('T')[0],
-          notes: 'Mix with feed morning and evening',
-          status: 'ACTIVE',
-        },
-      ];
+
+    let activeMedications: any[] = [];
+    const openRecords = records.filter((r) => r.status === 'OPEN');
+    for (const rec of openRecords) {
+      const rxSource = rec.prescriptions || rec.prescriptionDetails;
+      if (rxSource) {
+        try {
+          const parsed = JSON.parse(rxSource);
+          const rxs = Array.isArray(parsed) ? parsed : [parsed];
+          for (const rx of rxs) {
+            if (rx && (rx.status === 'ACTIVE' || !rx.status)) {
+              activeMedications.push(rx);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
 
     const mappedRecords = records.map((r) => ({
@@ -192,7 +195,7 @@ export class HealthOverviewService {
         horseId: l.horseId,
         appliedMedicalStatus: l.appliedMedicalStatus,
         lockedAt: l.lockedAt.toISOString(),
-        lockedBy: l.veterinarian?.fullName || 'Dr. Sarah Connor',
+        lockedBy: l.veterinarian?.fullName || '',
         lockReason: l.lockReason,
         reviewDate: l.recheckDate ? l.recheckDate.toISOString() : '',
         releasedAt: l.unlockedAt ? l.unlockedAt.toISOString() : undefined,

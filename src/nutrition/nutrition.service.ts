@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { NotificationCategory, NutritionPlanStatus, Prisma, Role } from '@prisma/client';
+import { NotificationCategory, NutritionPlanStatus, Prisma, Role, HorseStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -337,6 +337,13 @@ export class NutritionService {
     if (!horse) {
       throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', 'Ngựa không tồn tại.');
     }
+    if (horse.status === HorseStatus.RETIRED) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'HORSE_RETIRED',
+        'Không thể lập khẩu phần ăn cho ngựa đã ngừng quản lý.',
+      );
+    }
 
     const metrics = await this.calculateMetrics(dto.horseId, dto.meals);
     const planCode = await this.generatePlanCode();
@@ -583,6 +590,14 @@ export class NutritionService {
         HttpStatus.BAD_REQUEST,
         'PLAN_NOT_PENDING',
         'Khẩu phần ăn hiện không ở trạng thái Chờ phê duyệt (PENDING_APPROVAL).',
+      );
+    }
+
+    if (plan.createdById && plan.createdById === currentUser.userId) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'CANNOT_SELF_APPROVE',
+        'Người lập không được tự phê duyệt khẩu phần ăn của chính mình.',
       );
     }
 

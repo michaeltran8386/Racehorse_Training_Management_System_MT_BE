@@ -134,6 +134,26 @@ describe('AccountsService', () => {
     expect(mockAuth.revokeAllTokens).toHaveBeenCalledWith('binh');
   });
 
+  it('should block locking when staff has active stall assignments, unless confirmed (STT 16)', async () => {
+    withTarget({ ...manager, id: 'binh', role: Role.GROOM });
+    (mockPrisma as any).stallAllocation = {
+      count: jest.fn().mockResolvedValue(3),
+    };
+
+    const error = await fail(
+      service.changeStatus(actor, 'binh', 'lock', { reason: 'Violation of policy' }),
+    );
+    expect(error.getStatus()).toBe(HttpStatus.CONFLICT);
+    expect((error.getResponse() as any).code).toBe('USER_HAS_ACTIVE_ASSIGNMENTS');
+
+    // With confirmedActiveAssignments = true, it proceeds
+    const updated = await service.changeStatus(actor, 'binh', 'lock', {
+      reason: 'Violation of policy',
+      confirmedActiveAssignments: true,
+    });
+    expect(updated.status).toBe(UserStatus.LOCKED);
+  });
+
   it('should not let a manager lock their own account', async () => {
     withTarget(manager);
     const error = await fail(

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { IncidentStatus, Role, SeverityLevel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -414,6 +414,13 @@ export class IncidentsService {
 
     if (!incident) {
       throw new NotFoundException('Không tìm thấy sự cố.');
+    }
+
+    if (
+      (incident.status === IncidentStatus.RESOLVED || incident.status === IncidentStatus.DISMISSED) &&
+      dto.status === IncidentStatus.REPORTED
+    ) {
+      throw new BadRequestException('Không thể chuyển trạng thái sự cố đã xử lý/bác bỏ quay lại Mới báo.');
     }
 
     const updated = await this.prisma.incidentReport.update({
