@@ -177,6 +177,9 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   async recoverPendingDeliveries(): Promise<void> {
     const now = new Date();
     try {
+      if (!this.prisma?.restockRequest) {
+        return;
+      }
       const pendingDeliveries = await this.prisma.restockRequest.findMany({
         where: { status: RestockStatus.DELIVERING },
         include: { supply: true, zone: true },

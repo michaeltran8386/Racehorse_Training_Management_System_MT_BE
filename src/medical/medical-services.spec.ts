@@ -403,9 +403,7 @@ describe('Medical services', () => {
         })
         .catch((e) => e);
 
-      expect(error.getResponse()).toEqual(
-        expect.objectContaining({ code: 'ROLE_RESTRICTION' }),
-      );
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'ROLE_RESTRICTION' }));
       expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
     });
 
@@ -429,9 +427,7 @@ describe('Medical services', () => {
         })
         .catch((e) => e);
 
-      expect(error.getResponse()).toEqual(
-        expect.objectContaining({ code: 'MEDICAL_LOCK_ACTIVE' }),
-      );
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'MEDICAL_LOCK_ACTIVE' }));
       expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
     });
 
