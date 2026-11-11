@@ -41,13 +41,13 @@ export class TournamentsController {
   }
 
   @Get(':id/eligibility')
-  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER)
+  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER, UserRole.HORSE_OWNER)
   @ApiOperation({
     summary:
       'Rà soát điều kiện tham gia giải đua của đàn ngựa (SC-5.02: Khóa y tế, Thể lực, Số buổi tập)',
   })
-  async getEligibility(@Param('id') id: string) {
-    return this.tournamentsService.getEligibility(id);
+  async getEligibility(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
+    return this.tournamentsService.getEligibility(id, user);
   }
 
   @Post()

@@ -92,6 +92,26 @@ export interface WorkoutSimulationContext {
   };
 }
 
+export interface RaceSimulationContext {
+  type: 'RACE';
+  sessionId: string;
+  status: SimulatorSessionStatus;
+  tournamentId: string;
+  tournamentName: string;
+  distanceMeters: number;
+  trackType: string;
+  surface: string;
+  entries: Array<{
+    lane: number;
+    registrationId: string;
+    horse: any;
+  }>;
+  horse: WorkoutSimulationContext['horse'];
+}
+
+export type AnySimulationContext =
+  WorkoutSimulationContext | ExamSimulationContext | RaceSimulationContext;
+
 export interface SimulatorAck {
   accepted: boolean;
   id?: string;

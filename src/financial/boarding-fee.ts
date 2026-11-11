@@ -60,3 +60,21 @@ export function calculateBoardingFee(
       .toDecimalPlaces(0),
   };
 }
+
+export interface StallStayAllocation {
+  startDate: Date;
+  endDate: Date | null;
+  ownerId?: string;
+}
+
+/**
+ * Tính phí lưu chuồng nội trú pro-rated theo từng chủ sở hữu khi chuyển nhượng giữa tháng
+ */
+export function calculateBoardingFeeForOwner(
+  billingPeriod: string,
+  allocations: StallStayAllocation[],
+  ownerId: string,
+): { boardingDays: number; boardingFee: Prisma.Decimal } {
+  const filtered = allocations.filter((a) => !a.ownerId || a.ownerId === ownerId);
+  return calculateBoardingFee(billingPeriod, filtered);
+}

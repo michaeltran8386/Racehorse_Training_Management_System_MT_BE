@@ -53,6 +53,29 @@ export class SimulatorController {
     return this.simulatorService.startWorkout(workoutId, actor);
   }
 
+  @Post('tournaments/:tournamentId/start')
+  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER)
+  @ApiOperation({ summary: 'Cấp phiên mô phỏng cho giải đua chính thức' })
+  startTournamentRace(
+    @Param('tournamentId') tournamentId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return this.simulatorService.startTournamentRace(tournamentId, actor);
+  }
+
+  @Post('tournaments/:tournamentId/quick-result')
+  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER)
+  @ApiOperation({
+    summary:
+      'Đo nhanh kết quả giải đua từ mô hình huấn luyện thực tế và lưu nháp kết quả (1-click)',
+  })
+  quickSimulateTournamentRace(
+    @Param('tournamentId') tournamentId: string,
+    @CurrentUser() actor: CurrentUserPayload,
+  ) {
+    return this.simulatorService.quickSimulateTournamentRace(tournamentId, actor);
+  }
+
   @Post('horses/:horseId/exams/start')
   @Roles(UserRole.VETERINARIAN)
   @ApiOperation({ summary: 'Cấp phiên mô phỏng khám cho bác sĩ thú y' })

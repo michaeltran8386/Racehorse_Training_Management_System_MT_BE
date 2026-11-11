@@ -349,6 +349,33 @@ const history = [
     type: 'SPEED',
     skip: [-45],
   },
+  {
+    key: 'thanphong-speed',
+    n: 4,
+    name: 'Thần Phong · Nền tảng tốc độ cao',
+    from: -50,
+    to: -10,
+    type: 'SPEED',
+    skip: [-35, -25],
+  },
+  {
+    key: 'hongky-prep',
+    n: 11,
+    name: 'Hồng Kỳ · Bứt tốc cự ly trung bình',
+    from: -45,
+    to: -8,
+    type: 'SPEED',
+    skip: [-30, -20],
+  },
+  {
+    key: 'thanhloan-prep',
+    n: 12,
+    name: 'Thanh Loan · Rèn luyện thể lực bền',
+    from: -40,
+    to: -6,
+    type: 'BASE',
+    skip: [-28, -18],
+  },
 ] as const;
 const activeKey = (n: number) => `active/${n}`;
 const phase = (key: string) => id(`phase/${key}`);
