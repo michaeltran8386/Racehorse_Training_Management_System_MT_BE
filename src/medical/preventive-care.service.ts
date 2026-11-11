@@ -16,6 +16,29 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MedicalAccessService } from './medical-access.service';
 
+export const CLUB_OFFSET_MS = 7 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Chuẩn hóa các mốc ngày theo múi giờ CLB (Asia/Ho_Chi_Minh: UTC+7).
+ * Lịch chăm sóc chỉ bị coi là quá hạn (OVERDUE) sau khi hết ngày hôm nay theo giờ CLB.
+ */
+export function getClubDateBounds(now: Date = new Date()) {
+  const startOfTodayClub = new Date(
+    Math.floor((now.getTime() + CLUB_OFFSET_MS) / DAY_MS) * DAY_MS - CLUB_OFFSET_MS,
+  );
+  const endOfTodayClub = new Date(startOfTodayClub.getTime() + DAY_MS - 1);
+  const endOf7Days = new Date(endOfTodayClub.getTime() + 7 * DAY_MS);
+  const endOf30Days = new Date(endOfTodayClub.getTime() + 30 * DAY_MS);
+
+  return {
+    startOfTodayClub,
+    endOfTodayClub,
+    endOf7Days,
+    endOf30Days,
+  };
+}
+
 /** P2-05: danh mục và lịch chăm sóc định kỳ — tiêm phòng, tẩy giun, móng (FR-3.13 → FR-3.16). */
 @Injectable()
 export class PreventiveCareService {
@@ -288,15 +311,7 @@ export class PreventiveCareService {
     const baseWhere = { ...where };
 
     const now = new Date();
-    // Timezone CLB (Asia/Ho_Chi_Minh: UTC+7). Ngày hết hạn chỉ quá hạn sau khi hết ngày hôm nay.
-    const clubOffsetMs = 7 * 60 * 60 * 1000;
-    const startOfTodayClub = new Date(
-      Math.floor((now.getTime() + clubOffsetMs) / (24 * 60 * 60 * 1000)) * (24 * 60 * 60 * 1000) -
-        clubOffsetMs,
-    );
-    const endOfTodayClub = new Date(startOfTodayClub.getTime() + 24 * 60 * 60 * 1000 - 1);
-    const endOf7Days = new Date(endOfTodayClub.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const endOf30Days = new Date(endOfTodayClub.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const { startOfTodayClub, endOf7Days, endOf30Days } = getClubDateBounds(now);
 
     if (status) {
       if (status === 'OVERDUE') {
@@ -401,7 +416,10 @@ export class PreventiveCareService {
         where,
         skip,
         take,
-        orderBy: { dueDate: 'asc' },
+        orderBy:
+          status === 'COMPLETED'
+            ? [{ completedDate: 'desc' }, { dueDate: 'desc' }]
+            : [{ completedDate: { sort: 'desc', nulls: 'first' } }, { dueDate: 'asc' }],
         include: {
           horse: {
             select: {
@@ -648,7 +666,7 @@ export class PreventiveCareService {
           performedDate: performedDate.toISOString(),
           performedByMode: dto.performedByMode || 'SELF',
           performedByName,
-          productAdministered: dto.productAdministered || null,
+          productAdministered: resolvedProduct || null,
           batchNumber: dto.batchNumber || null,
           nextDueDate: nextDueDate.toISOString(),
           notes: dto.notes || null,
@@ -675,18 +693,19 @@ export class PreventiveCareService {
             },
           });
 
-          // 2. Tạo bản ghi mới PENDING cho kỳ tiếp theo (không copy dữ liệu mũi cũ sang kỳ sau)
+          // 2. Tạo bản ghi mới PENDING cho kỳ tiếp theo (giữ thông tin lần thực hiện gần nhất cho cột Last given)
           await tx.preventiveSchedule.create({
             data: {
               horseId: hId,
               typeCatalogId: schedule.typeCatalogId || catalog.id,
               scheduleType: catalog.category,
+              veterinarianUserId: actor.userId,
               dueDate: nextDueDate,
               lastCompletedDate: performedDate,
               productAdministered: null,
               batchNumber: null,
-              performedByMode: 'SELF',
-              performedByName: null,
+              performedByMode: dto.performedByMode || 'SELF',
+              performedByName,
               notes: null,
               status: PreventiveStatus.PENDING,
               historyLogs: [],
@@ -703,7 +722,7 @@ export class PreventiveCareService {
               lastCompletedDate: performedDate,
               completedDate: performedDate,
               dueDate: performedDate,
-              productAdministered: dto.productAdministered || null,
+              productAdministered: resolvedProduct || null,
               batchNumber: dto.batchNumber || null,
               performedByMode: dto.performedByMode || 'SELF',
               performedByName,
@@ -713,18 +732,19 @@ export class PreventiveCareService {
             },
           });
 
-          // Tạo dòng PENDING cho kỳ kế tiếp
+          // Tạo dòng PENDING cho kỳ kế tiếp (giữ thông tin lần thực hiện gần nhất cho cột Last given)
           await tx.preventiveSchedule.create({
             data: {
               horseId: hId,
               typeCatalogId: catalog.id,
               scheduleType: catalog.category,
+              veterinarianUserId: actor.userId,
               dueDate: nextDueDate,
               lastCompletedDate: performedDate,
               productAdministered: null,
               batchNumber: null,
-              performedByMode: 'SELF',
-              performedByName: null,
+              performedByMode: dto.performedByMode || 'SELF',
+              performedByName,
               notes: null,
               status: PreventiveStatus.PENDING,
               historyLogs: [],

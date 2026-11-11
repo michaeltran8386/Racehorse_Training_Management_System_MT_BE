@@ -1167,10 +1167,60 @@ describe('Medical services', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             status: 'PENDING',
+            veterinarianUserId: mockVetUser.userId,
+            performedByMode: 'SELF',
+            performedByName: mockVetUser.fullName,
             batchNumber: null,
             productAdministered: null,
-            performedByName: null,
             historyLogs: [],
+          }),
+        }),
+      );
+    });
+
+    it('should create COMPLETED with resolvedProduct and next PENDING preserving performer when no prior schedule exists', async () => {
+      mockPrismaService.horse.findUnique.mockResolvedValue({
+        id: 'horse-1',
+        name: 'Thunder',
+        status: 'QUALIFIED',
+      });
+      mockPrismaService.preventiveTypeCatalog.findUnique.mockResolvedValue({
+        id: 'cat-1',
+        name: 'Tiêm cúm',
+        category: 'VACCINATION',
+        intervalDays: 180,
+      });
+      mockPrismaService.preventiveSchedule.findFirst.mockResolvedValue(null);
+      mockPrismaService.preventiveSchedule.create.mockResolvedValue({ id: 'sched-new' });
+
+      await preventive.recordPreventiveCare(mockVetUser, {
+        horseId: 'horse-1',
+        typeCatalogId: 'cat-1',
+        performedDate: new Date().toISOString(),
+        performedByMode: 'EXTERNAL',
+        performedByName: 'BS. Nguyễn Văn A',
+      });
+
+      expect(mockPrismaService.preventiveSchedule.create).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'COMPLETED',
+            productAdministered: 'Tiêm cúm',
+            performedByMode: 'EXTERNAL',
+            performedByName: 'BS. Nguyễn Văn A',
+          }),
+        }),
+      );
+      expect(mockPrismaService.preventiveSchedule.create).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'PENDING',
+            veterinarianUserId: mockVetUser.userId,
+            performedByMode: 'EXTERNAL',
+            performedByName: 'BS. Nguyễn Văn A',
+            productAdministered: null,
           }),
         }),
       );
@@ -1195,15 +1245,20 @@ describe('Medical services', () => {
     });
 
     it('should calculate counts from baseWhere, combine category + search via AND, and map mutually exclusive statusBadge in getPreventiveSchedules', async () => {
-      mockPrismaService.preventiveSchedule.count
-        .mockResolvedValueOnce(2) // pagination total (filtered by OVERDUE)
-        .mockResolvedValueOnce(10) // counts.total (from baseWhere)
-        .mockResolvedValueOnce(2) // overdueCount
-        .mockResolvedValueOnce(3) // upcoming7DaysCount
-        .mockResolvedValueOnce(5) // upcoming30DaysCount
-        .mockResolvedValueOnce(1) // completedCount
-        .mockResolvedValueOnce(1) // noDataCount
-        .mockResolvedValueOnce(3); // upToDateCount
+      mockPrismaService.preventiveSchedule.count.mockImplementation(({ where }: any) => {
+        if (where.status === 'COMPLETED') return Promise.resolve(1); // completedCount
+        if (where.dueDate?.lt) return Promise.resolve(2); // pagination total (filtered by OVERDUE) & overdueCount
+        if (where.dueDate?.gte && where.dueDate?.lte) {
+          const spanDays = Math.round(
+            (where.dueDate.lte.getTime() - where.dueDate.gte.getTime()) / (24 * 60 * 60 * 1000),
+          );
+          return Promise.resolve(spanDays <= 8 ? 3 : 5); // upcoming7DaysCount (3) vs upcoming30DaysCount (5)
+        }
+        if (where.dueDate?.gt && where.lastCompletedDate === null) return Promise.resolve(1); // noDataCount
+        if (where.dueDate?.gt && Array.isArray(where.AND) && where.AND.length === 3)
+          return Promise.resolve(3); // upToDateCount
+        return Promise.resolve(10); // counts.total (from baseWhere)
+      });
 
       const now = new Date();
       mockPrismaService.preventiveSchedule.findMany.mockResolvedValue([
@@ -1251,6 +1306,7 @@ describe('Medical services', () => {
       expect(res.counts.total).toBe(10);
       expect(res.counts.overdue).toBe(2);
       expect(res.counts.upcoming7Days).toBe(3);
+      expect(res.counts.upcoming30Days).toBe(5);
       expect(res.counts.completed).toBe(1);
       expect(res.counts.noData).toBe(1);
       expect(res.counts.upToDate).toBe(3);
@@ -1262,15 +1318,38 @@ describe('Medical services', () => {
           res.counts.noData,
       ).toBe(res.counts.total);
 
+      // Verify count calls received the expected where filters
+      const countWheres = mockPrismaService.preventiveSchedule.count.mock.calls.map(
+        (c: any) => c[0].where,
+      );
+      expect(countWheres).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ status: 'COMPLETED' }),
+          expect.objectContaining({
+            dueDate: expect.objectContaining({ lt: expect.any(Date) }),
+            status: { not: 'COMPLETED' },
+          }),
+          expect.objectContaining({
+            dueDate: expect.objectContaining({ gt: expect.any(Date) }),
+            lastCompletedDate: null,
+            completedDate: null,
+          }),
+        ]),
+      );
+
       // Verify statusBadge matches the 5 mutually exclusive groups (fixed +7d boundary regardless of advanceNoticeDays=14)
       expect(res.data[0].statusBadge).toBe('OVERDUE');
       expect(res.data[1].statusBadge).toBe('NORMAL');
       expect(res.data[2].statusBadge).toBe('NODATA');
 
-      // Verify where.AND was used so category and search do not overwrite each other
+      // Verify where.AND was used so category and search do not overwrite each other, and incomplete schedules sort first
       const findManyCall = mockPrismaService.preventiveSchedule.findMany.mock.calls[0][0];
       expect(findManyCall.where.AND).toBeDefined();
       expect(findManyCall.where.AND.length).toBe(2);
+      expect(findManyCall.orderBy).toEqual([
+        { completedDate: { sort: 'desc', nulls: 'first' } },
+        { dueDate: 'asc' },
+      ]);
     });
 
     it('should setup custom preventive schedule for a horse', async () => {
