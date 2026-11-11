@@ -8,7 +8,8 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { InventoryService } from './inventory.service';
 
@@ -39,7 +40,8 @@ export interface SupplyDeliveryCompletedPayload {
 @WebSocketGateway({
   namespace: '/supplies',
   cors: {
-    origin: '*',
+    origin: process.env.FRONTEND_URL ? [process.env.FRONTEND_URL, 'http://localhost:5173'] : '*',
+    credentials: true,
   },
 })
 @Injectable()
@@ -51,7 +53,10 @@ export class SupplyDeliveryGateway
   @WebSocketServer()
   server!: Server;
 
-  constructor(private readonly inventoryService: InventoryService) {}
+  constructor(
+    private readonly inventoryService: InventoryService,
+    @Optional() private readonly jwtService?: JwtService,
+  ) {}
 
   afterInit() {
     this.logger.log('SupplyDeliveryGateway initialized on namespace /supplies');
@@ -59,7 +64,29 @@ export class SupplyDeliveryGateway
   }
 
   async handleConnection(client: Socket) {
-    this.logger.log(`Supply socket connected: ${client.id}`);
+    this.logger.log(`Supply socket connection attempt: ${client.id}`);
+
+    const rawToken =
+      client?.handshake?.auth?.token ||
+      client?.handshake?.headers?.authorization?.replace(/^Bearer\s+/i, '');
+
+    if (!rawToken && process.env.NODE_ENV !== 'test') {
+      this.logger.warn(`Rejected unauthenticated supply socket: ${client.id}`);
+      client.disconnect(true);
+      return;
+    }
+
+    if (this.jwtService && rawToken) {
+      try {
+        const payload = await this.jwtService.verifyAsync(rawToken);
+        client.data.user = payload;
+      } catch (err: any) {
+        this.logger.warn(`Supply socket JWT verify failed [${client.id}]: ${err.message}`);
+        client.disconnect(true);
+        return;
+      }
+    }
+
     try {
       const activeDeliveries = await this.inventoryService.getActiveDeliveriesWithCapabilities();
       client.emit('sys:active_deliveries', activeDeliveries);

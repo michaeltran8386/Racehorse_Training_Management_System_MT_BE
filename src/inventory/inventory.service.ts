@@ -732,8 +732,10 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   async deductStockForFeeding(
     zoneId: string,
     items: Array<{ supplyId?: string; supplyName?: string; amount?: number }>,
+    tx?: Prisma.TransactionClient,
   ) {
     if (!zoneId || !items || !Array.isArray(items) || items.length === 0) return;
+    const db = tx || this.prisma;
 
     for (const item of items) {
       if (!item.amount || Number(item.amount) <= 0) continue;
@@ -742,7 +744,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
 
       if (!supplyId && item.supplyName) {
         try {
-          const found = await this.prisma.supplyCatalog.findFirst({
+          const found = await db.supplyCatalog.findFirst({
             where: {
               OR: [
                 { name: { equals: item.supplyName, mode: 'insensitive' } },
@@ -761,7 +763,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       if (!supplyId) continue;
 
       try {
-        const balance = await this.prisma.stockBalance.findUnique({
+        const balance = await db.stockBalance.findUnique({
           where: {
             zoneId_supplyId: {
               zoneId,
@@ -774,7 +776,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         const newQty = Math.max(0, currentQty - amount);
 
         if (balance) {
-          await this.prisma.stockBalance.update({
+          await db.stockBalance.update({
             where: {
               zoneId_supplyId: {
                 zoneId,
@@ -794,6 +796,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         }
       } catch (err) {
         this.logger.error(`Failed to deduct stock for zone ${zoneId}, supply ${supplyId}:`, err);
+        throw err;
       }
     }
   }

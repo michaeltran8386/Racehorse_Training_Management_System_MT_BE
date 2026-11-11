@@ -792,6 +792,54 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       expect(result[1].id).toBe('groom-1');
       expect(result[1].hasShift).toBe(true);
     });
+
+    it('filters out busy grooms and grooms outside their shift when time is specified', async () => {
+      const gMorning = { id: 'groom-morning', fullName: 'Morning Guy', email: 'morning@club.vn' };
+      const gEvening = { id: 'groom-evening', fullName: 'Evening Guy', email: 'evening@club.vn' };
+      const gFree = { id: 'groom-free', fullName: 'Free Guy', email: 'free@club.vn' };
+      prisma.user.findMany.mockResolvedValue([gMorning, gEvening, gFree]);
+      (prisma as any).stallAllocation = { findFirst: jest.fn().mockResolvedValue(null) };
+      (prisma as any).shiftRoster = {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            groomUserId: 'groom-morning',
+            shift: { name: 'Ca Sáng', startTime: '05:00', endTime: '13:00', isOvernight: false },
+          },
+          {
+            groomUserId: 'groom-evening',
+            shift: { name: 'Ca Tối', startTime: '14:00', endTime: '22:00', isOvernight: false },
+          },
+        ]),
+      };
+      (prisma as any).workoutSession = {
+        findMany: jest.fn().mockResolvedValue([]),
+      };
+
+      // Buổi tập lúc 06:30 sáng -> Morning Guy và Free Guy rảnh; Evening Guy bị lọc vì ca tối
+      const morningRes = await workouts.findGrooms('horse-1', '2026-11-15', '06:30');
+      const morningIds = morningRes.map((g) => g.id);
+      expect(morningIds).toContain('groom-morning');
+      expect(morningIds).toContain('groom-free');
+      expect(morningIds).not.toContain('groom-evening');
+    });
+
+    it('does not filter out a groom when the overlapping workout is the one being edited (excludeWorkoutId)', async () => {
+      const gCurrent = { id: 'groom-current', fullName: 'Current Guy', email: 'current@club.vn' };
+      prisma.user.findMany.mockResolvedValue([gCurrent]);
+      (prisma as any).stallAllocation = { findFirst: jest.fn().mockResolvedValue(null) };
+      (prisma as any).shiftRoster = { findMany: jest.fn().mockResolvedValue([]) };
+      (prisma as any).workoutSession = {
+        findMany: jest.fn().mockImplementation((args) => {
+          if (args.where?.id?.not === 'workout-editing') {
+            return Promise.resolve([]);
+          }
+          return Promise.resolve([{ assignedStaffUserId: 'groom-current' }]);
+        }),
+      };
+
+      const result = await workouts.findGrooms('horse-1', '2026-11-15', '06:30', 'workout-editing');
+      expect(result.map((g) => g.id)).toContain('groom-current');
+    });
   });
 
   describe('restoreWorkout (DL-2.07)', () => {

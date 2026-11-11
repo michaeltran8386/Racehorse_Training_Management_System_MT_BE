@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -84,6 +85,18 @@ export class ReleaseMedicalLockDto {
   @IsOptional()
   @IsEnum(HorseStatus)
   newHorseStatus?: HorseStatus;
+
+  @ApiPropertyOptional({
+    description: 'Xác nhận thể lực đã đủ điều kiện tập luyện (Decision D-03)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  fitnessConfirmed?: boolean;
+
+  @ApiPropertyOptional({ description: 'Ghi chú tái khám lâm sàng' })
+  @IsOptional()
+  @IsString()
+  recheckNotes?: string;
 }
 
 export class ExtendMedicalLockDto {

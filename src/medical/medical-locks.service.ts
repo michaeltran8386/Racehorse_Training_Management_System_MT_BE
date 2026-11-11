@@ -290,6 +290,17 @@ export class MedicalLocksService {
         );
       }
 
+      if (
+        dto.newHorseStatus &&
+        (dto.newHorseStatus === HorseStatus.RETIRED || dto.newHorseStatus === HorseStatus.INJURED)
+      ) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_RELEASE_STATUS',
+          'Trạng thái sau khi gỡ khóa y tế không thể là RETIRED hoặc INJURED.',
+        );
+      }
+
       const newHorseStatus = dto.newHorseStatus || lock.horse?.status;
       const currentStatus = lock.horse?.status || lock.appliedMedicalStatus || HorseStatus.INJURED;
       if (newHorseStatus && newHorseStatus !== currentStatus) {
@@ -302,6 +313,16 @@ export class MedicalLocksService {
         });
       }
 
+      // Đếm số lệnh khóa đang còn active của ngựa (tránh tắt nhầm cờ nếu còn khóa khác - H-08)
+      const remainingActiveLocks = await tx.medicalLock.count({
+        where: {
+          horseId: lock.horseId,
+          isLocked: true,
+          id: { not: lockId },
+        },
+      });
+      const stillLocked = remainingActiveLocks > 0;
+
       const unlocked = await tx.medicalLock.update({
         where: { id: lockId },
         data: {
@@ -309,7 +330,7 @@ export class MedicalLocksService {
           unlockedAt: new Date(),
           unlockVetUserId: actor.userId,
           unlockReason: dto.unlockReason,
-          recheckNotes: dto.unlockReason,
+          recheckNotes: dto.recheckNotes || dto.unlockReason,
         },
         include: {
           horse: { select: { id: true, name: true, microchipRfid: true } },
@@ -320,7 +341,10 @@ export class MedicalLocksService {
 
       await tx.horse.update({
         where: { id: lock.horseId },
-        data: { isMedicalLocked: false, status: newHorseStatus },
+        data: {
+          isMedicalLocked: stillLocked,
+          status: stillLocked ? lock.horse?.status || HorseStatus.INJURED : newHorseStatus,
+        },
       });
 
       await this.audit.record(

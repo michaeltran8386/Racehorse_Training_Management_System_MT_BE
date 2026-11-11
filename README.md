@@ -73,9 +73,9 @@ JWT_REFRESH_EXPIRES_IN="7d"
 EMAIL_PROVIDER="smtp"
 SMTP_HOST="smtp.gmail.com"
 SMTP_PORT=587
-SMTP_USER="tmec8386@gmail.com"
-SMTP_PASS="dvmltzcfkshuttno"
-EMAIL_FROM="EquiFlow System <tmec8386@gmail.com>"
+SMTP_USER="your-email@gmail.com"
+SMTP_PASS="your-gmail-app-password"
+EMAIL_FROM="EquiFlow System <noreply@equiflow.site>"
 
 # 5. Cờ kiểm thử OTP
 # false = Gửi mã OTP ngẫu nhiên thật về hòm thư Gmail

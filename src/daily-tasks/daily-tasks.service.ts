@@ -522,6 +522,16 @@ export class DailyTasksService {
       return task; // Đã xong rồi, trả về idempotent
     }
 
+    if (
+      currentUser.role === Role.GROOM &&
+      task.assignedGroomUserId &&
+      task.assignedGroomUserId !== currentUser.userId
+    ) {
+      throw new ForbiddenException(
+        'Bạn chỉ có thể hoàn thành công việc chăm sóc được phân công cho mình.',
+      );
+    }
+
     if (task.horse?.status === HorseStatus.RETIRED) {
       throw new BadRequestException('Không thể hoàn thành việc cho ngựa đã ngừng quản lý.');
     }
@@ -543,9 +553,9 @@ export class DailyTasksService {
 
     const undoUntil = new Date(now.getTime() + UNDO_WINDOW_MS);
 
-    // Chỉ request đổi được isCompleted false -> true mới trừ kho (RULE-CONC-01): hai lần bấm đồng thời không trừ đôi.
-    const updated = await this.prisma.dailyCareTask
-      .update({
+    // Bọc cập nhật Task và Trừ kho trong cùng một transaction để đảm bảo toàn vẹn dữ liệu (H-42, H-25)
+    const runInTx = async (tx: any) => {
+      const taskUpdated = await tx.dailyCareTask.update({
         where: { id, isCompleted: false },
         data: {
           isCompleted: true,
@@ -560,11 +570,29 @@ export class DailyTasksService {
           horse: true,
           completedBy: { select: { id: true, fullName: true } },
         },
-      })
-      .catch((err: unknown) => {
-        if (lostRace(err)) return null;
-        throw err;
       });
+
+      // Trừ kho tự động cho việc cho ăn (FEEDING) cùng transaction
+      if (task.taskType === DailyTaskType.FEEDING && task.stallZoneId && task.itemsSnapshotJson) {
+        await this.inventoryService.deductStockForFeeding(
+          task.stallZoneId,
+          task.itemsSnapshotJson as any,
+          tx,
+        );
+      }
+
+      return taskUpdated;
+    };
+
+    const updated = await (
+      typeof (this.prisma as any).$transaction === 'function'
+        ? this.prisma.$transaction(runInTx)
+        : runInTx(this.prisma)
+    ).catch((err: unknown) => {
+      if (lostRace(err)) return null;
+      throw err;
+    });
+
     if (!updated) {
       return this.prisma.dailyCareTask.findUniqueOrThrow({
         where: { id },
@@ -587,15 +615,6 @@ export class DailyTasksService {
         },
       },
     );
-
-    // Trừ kho tự động CHỈ DÀNH CHO việc cho ăn (FEEDING) từ kho thức ăn khu chuồng.
-    // Việc uống thuốc (MEDICATION) dùng thuốc theo đơn của bác sĩ thú y, không trừ kho thức ăn khu chuồng.
-    if (task.taskType === DailyTaskType.FEEDING && task.stallZoneId && task.itemsSnapshotJson) {
-      await this.inventoryService.deductStockForFeeding(
-        task.stallZoneId,
-        task.itemsSnapshotJson as any,
-      );
-    }
 
     return updated;
   }

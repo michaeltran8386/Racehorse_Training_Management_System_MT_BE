@@ -41,6 +41,7 @@ deploy/backend.env
 # Logs
 logs
 *.log
+*.mp4
 
 # Prisma generated artifacts
 /src/generated/
