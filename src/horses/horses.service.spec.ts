@@ -57,7 +57,12 @@ describe('HorsesService', () => {
         delete: jest.fn(),
       },
       user: {
-        findUnique: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'owner-1',
+          role: Role.HORSE_OWNER,
+          status: UserStatus.ACTIVE,
+          isBadDebtFlagged: false,
+        }),
       },
       stallAllocation: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -157,6 +162,7 @@ describe('HorsesService', () => {
           gender: 'Colt',
           color: 'Bay',
           microchip: '123456789012345',
+          ownerId: 'owner-1',
         },
         mockManager,
       );
@@ -176,6 +182,8 @@ describe('HorsesService', () => {
             weightKg: 490,
             gender: 'Stallion',
             color: 'Bay',
+            microchip: '123456789012345',
+            ownerId: 'owner-1',
           },
           mockManager,
         ),
@@ -194,6 +202,8 @@ describe('HorsesService', () => {
             weightKg: 490,
             gender: 'Stallion',
             color: 'Bay',
+            microchip: '123456789012345',
+            ownerId: 'owner-1',
           },
           mockManager,
         ),
@@ -202,28 +212,24 @@ describe('HorsesService', () => {
       });
     });
 
-    it('should auto-generate 15-digit microchip if not provided', async () => {
-      prisma.horse.findFirst.mockResolvedValue(null);
-      prisma.horse.findUnique.mockResolvedValue(null);
-      prisma.horse.count.mockResolvedValue(0);
-
-      prisma.horse.create.mockImplementation(({ data }) =>
-        Promise.resolve({ id: 'h-auto', ...data }),
-      );
-
-      const res = await service.create(
-        {
-          name: 'Auto Generated Codes',
-          breed: 'Thoroughbred',
-          dob: '2023-01-01',
-          weightKg: 490,
-          gender: 'Stallion',
-          color: 'Bay',
-        },
-        mockManager,
-      );
-
-      expect(res.microchip).toMatch(/^\d{15}$/);
+    it('should reject if microchip is missing (MICROCHIP_REQUIRED)', async () => {
+      await expect(
+        service.create(
+          {
+            name: 'No Chip Horse',
+            breed: 'Thoroughbred',
+            dob: '2023-01-01',
+            weightKg: 490,
+            gender: 'Stallion',
+            color: 'Bay',
+            microchip: '',
+            ownerId: 'owner-1',
+          },
+          mockManager,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'MICROCHIP_REQUIRED' }),
+      });
     });
 
     it('should occupy the chosen stall inside the same transaction', async () => {
@@ -245,6 +251,7 @@ describe('HorsesService', () => {
           gender: 'Colt',
           color: 'Bay',
           microchip: '123456789012346',
+          ownerId: 'owner-1',
           stallId: 'st-1',
         },
         mockManager,
@@ -262,7 +269,12 @@ describe('HorsesService', () => {
 
     it('should reject creating horse for an owner flagged with bad debt', async () => {
       prisma.horse.findFirst.mockResolvedValue(null);
-      prisma.user.findUnique.mockResolvedValue({ id: 'bad-owner', isBadDebtFlagged: true });
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'bad-owner',
+        role: Role.HORSE_OWNER,
+        status: UserStatus.ACTIVE,
+        isBadDebtFlagged: true,
+      });
 
       await expect(
         service.create(
@@ -273,12 +285,69 @@ describe('HorsesService', () => {
             weightKg: 490,
             gender: 'Colt',
             color: 'Bay',
+            microchip: '123456789012346',
             ownerId: 'bad-owner',
           },
           mockManager,
         ),
       ).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'OWNER_BAD_DEBT' }),
+      });
+    });
+
+    it('should reject creating horse if owner has invalid role (INVALID_OWNER_ROLE)', async () => {
+      prisma.horse.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'not-an-owner',
+        role: Role.GROOM,
+        status: UserStatus.ACTIVE,
+        isBadDebtFlagged: false,
+      });
+
+      await expect(
+        service.create(
+          {
+            name: 'New Horse',
+            breed: 'Thoroughbred',
+            dob: '2021-01-01',
+            weightKg: 490,
+            gender: 'Colt',
+            color: 'Bay',
+            microchip: '123456789012346',
+            ownerId: 'not-an-owner',
+          },
+          mockManager,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'INVALID_OWNER_ROLE' }),
+      });
+    });
+
+    it('should reject creating horse if owner is inactive (OWNER_INACTIVE)', async () => {
+      prisma.horse.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'inactive-owner',
+        role: Role.HORSE_OWNER,
+        status: UserStatus.INACTIVE,
+        isBadDebtFlagged: false,
+      });
+
+      await expect(
+        service.create(
+          {
+            name: 'New Horse',
+            breed: 'Thoroughbred',
+            dob: '2021-01-01',
+            weightKg: 490,
+            gender: 'Colt',
+            color: 'Bay',
+            microchip: '123456789012346',
+            ownerId: 'inactive-owner',
+          },
+          mockManager,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'OWNER_INACTIVE' }),
       });
     });
 
@@ -301,6 +370,7 @@ describe('HorsesService', () => {
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012346',
+            ownerId: 'owner-1',
             stallId: 'st-1',
           },
           mockManager,
@@ -325,6 +395,7 @@ describe('HorsesService', () => {
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012345',
+            ownerId: 'owner-1',
           },
           mockManager,
         ),
@@ -349,6 +420,7 @@ describe('HorsesService', () => {
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012345',
+            ownerId: 'owner-1',
           },
           mockManager,
         ),

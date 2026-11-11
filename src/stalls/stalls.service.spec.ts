@@ -234,4 +234,68 @@ describe('StallsService (SC-1.04, SC-1.07, DL-1.02, DL-1.03)', () => {
       });
     });
   });
+
+  describe('findAll and Role Policy (CL-1.07)', () => {
+    const stallWithOwner = {
+      ...freeStall,
+      allocations: [
+        {
+          id: 'al-1',
+          isActive: true,
+          horse: {
+            id: 'h-1',
+            name: 'Thunderbolt',
+            owner: { id: 'u-owner', fullName: 'John Doe', email: 'owner@gmail.com' },
+          },
+          assignedGroom: { id: 'u-groom', fullName: 'Groom Guy', email: 'groom@gmail.com' },
+        },
+      ],
+    };
+
+    it('keeps owner PII for CLUB_MANAGER and HEAD_TRAINER', async () => {
+      prisma.stallZone.findUnique.mockResolvedValue(null);
+      prisma.stall.findMany.mockImplementation((args: any) => {
+        if (args?.where?.zoneId === null) return Promise.resolve([]);
+        return Promise.resolve([JSON.parse(JSON.stringify(stallWithOwner))]);
+      });
+      const res = await service.findAll({}, manager);
+      expect(res[0]?.allocations?.[0]?.horse?.owner).toBeDefined();
+      expect(res[0]?.allocations?.[0]?.horse?.owner?.fullName).toBe('John Doe');
+
+      const trainer: CurrentUserPayload = {
+        userId: 'trn-1',
+        email: 'trainer@gmail.com',
+        fullName: 'Trainer User',
+        role: UserRole.HEAD_TRAINER,
+      };
+      const resTrainer = await service.findAll({}, trainer);
+      expect(resTrainer[0]?.allocations?.[0]?.horse?.owner).toBeDefined();
+      expect(resTrainer[0]?.allocations?.[0]?.horse?.owner?.fullName).toBe('John Doe');
+    });
+
+    it('strips owner PII for VETERINARIAN and GROOM (CL-1.07)', async () => {
+      prisma.stallZone.findUnique.mockResolvedValue(null);
+      prisma.stall.findMany.mockImplementation((args: any) => {
+        if (args?.where?.zoneId === null) return Promise.resolve([]);
+        return Promise.resolve([JSON.parse(JSON.stringify(stallWithOwner))]);
+      });
+      const vet: CurrentUserPayload = {
+        userId: 'vet-1',
+        email: 'vet@gmail.com',
+        fullName: 'Vet User',
+        role: UserRole.VETERINARIAN,
+      };
+      const resVet = await service.findAll({}, vet);
+      expect(resVet[0]?.allocations?.[0]?.horse?.owner).toBeNull();
+
+      const groom: CurrentUserPayload = {
+        userId: 'g-1',
+        email: 'groom@gmail.com',
+        fullName: 'Groom User',
+        role: UserRole.GROOM,
+      };
+      const resGroom = await service.findAll({}, groom);
+      expect(resGroom[0]?.allocations?.[0]?.horse?.owner).toBeNull();
+    });
+  });
 });

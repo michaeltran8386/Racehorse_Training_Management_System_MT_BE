@@ -31,6 +31,15 @@ const STALL_INCLUDE = {
           name: true,
           status: true,
           isMedicalLocked: true,
+          isDebtImpounded: true,
+          debtImpoundReason: true,
+          owner: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
         },
       },
       assignedGroom: { select: { id: true, fullName: true, email: true } },
@@ -277,13 +286,16 @@ export class StallsService {
   /**
    * Danh sách ô. Mặc định bỏ ô Ngừng dùng (sơ đồ SC-1.04 không hiện); SC-1.07 truyền includeInactive=true.
    */
-  async findAll(query: {
-    zone?: string;
-    zoneId?: string;
-    status?: string;
-    search?: string;
-    includeInactive?: string;
-  }) {
+  async findAll(
+    query: {
+      zone?: string;
+      zoneId?: string;
+      status?: string;
+      search?: string;
+      includeInactive?: string;
+    },
+    user?: CurrentUserPayload,
+  ) {
     await this.ensureZones();
     const where: Prisma.StallWhereInput = {};
     if (query.zoneId) where.zoneId = query.zoneId;
@@ -313,11 +325,29 @@ export class StallsService {
         },
       ];
     }
-    return this.prisma.stall.findMany({
+    const stalls = await this.prisma.stall.findMany({
       where,
       include: STALL_INCLUDE,
       orderBy: [{ zone: 'asc' }, { row: 'asc' }, { col: 'asc' }, { code: 'asc' }],
     });
+
+    // CL-1.07: Thông tin chủ sở hữu (owner PII) chỉ hiển thị cho CLUB_MANAGER và HEAD_TRAINER.
+    // Ẩn hoàn toàn đối với VETERINARIAN và GROOM.
+    const canViewOwner = user?.role === Role.CLUB_MANAGER || user?.role === Role.HEAD_TRAINER;
+
+    if (!canViewOwner) {
+      for (const stall of stalls) {
+        if (stall.allocations) {
+          for (const alloc of stall.allocations) {
+            if (alloc.horse) {
+              (alloc.horse as any).owner = null;
+            }
+          }
+        }
+      }
+    }
+
+    return stalls;
   }
 
   async create(dto: CreateStallDto, user: CurrentUserPayload) {

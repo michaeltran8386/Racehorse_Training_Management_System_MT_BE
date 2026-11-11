@@ -54,19 +54,19 @@ export class CreateHorseDto {
   @IsString({ message: 'Invalid coat color string.' })
   color: string;
 
-  @ApiPropertyOptional({
-    description: 'Microchip number (exactly 15 digits, auto-generated if omitted)',
+  @ApiProperty({
+    description: 'Microchip number (exactly 15 digits ISO standard)',
     example: '985141002341001',
   })
-  @IsOptional()
-  @IsString()
+  @IsNotEmpty({ message: 'Microchip number is required.' })
+  @IsString({ message: 'Microchip number must be a string.' })
   @Matches(/^\d{15}$/, { message: 'Microchip number must consist of exactly 15 digits.' })
-  microchip?: string;
+  microchip: string;
 
-  @ApiPropertyOptional({ description: 'Owner User ID' })
-  @IsOptional()
-  @IsString()
-  ownerId?: string;
+  @ApiProperty({ description: 'Owner User ID' })
+  @IsNotEmpty({ message: 'Owner ID is required.' })
+  @IsString({ message: 'Owner ID must be a string.' })
+  ownerId: string;
 
   @ApiPropertyOptional({ description: 'Avatar URL' })
   @IsOptional()
@@ -74,8 +74,8 @@ export class CreateHorseDto {
   avatarUrl?: string;
 
   @ApiProperty({ description: 'Weight in kg (> 0)', example: 485.5 })
-  @IsNumber({}, { message: 'Cân nặng phải là số.' })
-  @Min(0.01, { message: 'Cân nặng phải lớn hơn 0 kg.' })
+  @IsNumber({}, { message: 'Weight must be a number.' })
+  @Min(0.01, { message: 'Weight must be greater than 0 kg.' })
   weightKg: number;
 
   @ApiPropertyOptional({ description: 'Initial Stall ID' })

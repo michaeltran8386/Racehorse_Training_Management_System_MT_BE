@@ -16,6 +16,29 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MedicalAccessService } from './medical-access.service';
 
+export const CLUB_OFFSET_MS = 7 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Chuẩn hóa các mốc ngày theo múi giờ CLB (Asia/Ho_Chi_Minh: UTC+7).
+ * Lịch chăm sóc chỉ bị coi là quá hạn (OVERDUE) sau khi hết ngày hôm nay theo giờ CLB.
+ */
+export function getClubDateBounds(now: Date = new Date()) {
+  const startOfTodayClub = new Date(
+    Math.floor((now.getTime() + CLUB_OFFSET_MS) / DAY_MS) * DAY_MS - CLUB_OFFSET_MS,
+  );
+  const endOfTodayClub = new Date(startOfTodayClub.getTime() + DAY_MS - 1);
+  const endOf7Days = new Date(endOfTodayClub.getTime() + 7 * DAY_MS);
+  const endOf30Days = new Date(endOfTodayClub.getTime() + 30 * DAY_MS);
+
+  return {
+    startOfTodayClub,
+    endOfTodayClub,
+    endOf7Days,
+    endOf30Days,
+  };
+}
+
 /** P2-05: danh mục và lịch chăm sóc định kỳ — tiêm phòng, tẩy giun, móng (FR-3.13 → FR-3.16). */
 @Injectable()
 export class PreventiveCareService {
@@ -243,10 +266,14 @@ export class PreventiveCareService {
       };
     }
 
+    const andConditions: any[] = [];
+
     if (typeCatalogId) {
       where.typeCatalogId = typeCatalogId;
     } else if (category) {
-      where.OR = [{ scheduleType: category }, { typeCatalog: { category } }];
+      andConditions.push({
+        OR: [{ scheduleType: category }, { typeCatalog: { category } }],
+      });
     }
 
     if (zone) {
@@ -262,11 +289,17 @@ export class PreventiveCareService {
     }
 
     if (search) {
-      where.OR = [
-        { horse: { name: { contains: search, mode: 'insensitive' } } },
-        { horse: { microchipRfid: { contains: search, mode: 'insensitive' } } },
-        { typeCatalog: { name: { contains: search, mode: 'insensitive' } } },
-      ];
+      andConditions.push({
+        OR: [
+          { horse: { name: { contains: search, mode: 'insensitive' } } },
+          { horse: { microchipRfid: { contains: search, mode: 'insensitive' } } },
+          { typeCatalog: { name: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = [...andConditions];
     }
 
     where.horse = {
@@ -275,89 +308,143 @@ export class PreventiveCareService {
       deletedAt: null,
     };
 
+    const baseWhere = { ...where };
+
     const now = new Date();
+    const { startOfTodayClub, endOf7Days, endOf30Days } = getClubDateBounds(now);
+
     if (status) {
       if (status === 'OVERDUE') {
-        where.dueDate = { lt: now };
+        where.dueDate = { lt: startOfTodayClub };
         where.status = { not: PreventiveStatus.COMPLETED };
-      } else if (status === 'UPCOMING' || status === 'UPCOMING_7') {
+      } else if (status === 'UPCOMING' || status === 'UPCOMING_7' || status === 'DUE_SOON') {
         where.dueDate = {
-          gte: now,
-          lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+          gte: startOfTodayClub,
+          lte: endOf7Days,
+        };
+        where.status = { not: PreventiveStatus.COMPLETED };
+      } else if (status === 'UPCOMING_30') {
+        where.dueDate = {
+          gte: startOfTodayClub,
+          lte: endOf30Days,
         };
         where.status = { not: PreventiveStatus.COMPLETED };
       } else if (status === 'COMPLETED') {
         where.status = PreventiveStatus.COMPLETED;
+      } else if (status === 'UP_TO_DATE' || status === 'NORMAL') {
+        where.status = { not: PreventiveStatus.COMPLETED };
+        where.dueDate = { gt: endOf7Days };
+        where.AND = [
+          ...andConditions,
+          { OR: [{ lastCompletedDate: { not: null } }, { completedDate: { not: null } }] },
+        ];
+      } else if (status === 'NODATA' || status === 'NO_DATA') {
+        where.status = { not: PreventiveStatus.COMPLETED };
+        where.dueDate = { gt: endOf7Days };
+        where.lastCompletedDate = null;
+        where.completedDate = null;
       }
     }
 
-    const baseWhere = { ...where };
-    delete baseWhere.dueDate;
-    delete baseWhere.status;
-
-    const [total, overdueCount, upcoming7DaysCount, upcoming30DaysCount, schedules] =
-      await Promise.all([
-        this.prisma.preventiveSchedule.count({ where }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: { lt: now },
-            status: { not: PreventiveStatus.COMPLETED },
+    const [
+      total,
+      totalCount,
+      overdueCount,
+      upcoming7DaysCount,
+      upcoming30DaysCount,
+      completedCount,
+      noDataCount,
+      upToDateCount,
+      schedules,
+    ] = await Promise.all([
+      this.prisma.preventiveSchedule.count({ where }),
+      this.prisma.preventiveSchedule.count({ where: baseWhere }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: { lt: startOfTodayClub },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: {
+            gte: startOfTodayClub,
+            lte: endOf7Days,
           },
-        }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: {
-              gte: now,
-              lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-            },
-            status: { not: PreventiveStatus.COMPLETED },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: {
+            gte: startOfTodayClub,
+            lte: endOf30Days,
           },
-        }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: {
-              gte: now,
-              lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
-            },
-            status: { not: PreventiveStatus.COMPLETED },
-          },
-        }),
-        this.prisma.preventiveSchedule.findMany({
-          where,
-          skip,
-          take,
-          orderBy: { dueDate: 'asc' },
-          include: {
-            horse: {
-              select: {
-                id: true,
-                name: true,
-                microchipRfid: true,
-                status: true,
-                stallAllocations: {
-                  where: { isActive: true },
-                  select: { stall: { select: { code: true, zone: true } } },
-                },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          status: PreventiveStatus.COMPLETED,
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          status: { not: PreventiveStatus.COMPLETED },
+          dueDate: { gt: endOf7Days },
+          lastCompletedDate: null,
+          completedDate: null,
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          status: { not: PreventiveStatus.COMPLETED },
+          dueDate: { gt: endOf7Days },
+          AND: [
+            ...andConditions,
+            { OR: [{ lastCompletedDate: { not: null } }, { completedDate: { not: null } }] },
+          ],
+        },
+      }),
+      this.prisma.preventiveSchedule.findMany({
+        where,
+        skip,
+        take,
+        orderBy:
+          status === 'COMPLETED'
+            ? [{ completedDate: 'desc' }, { dueDate: 'desc' }]
+            : [{ completedDate: { sort: 'desc', nulls: 'first' } }, { dueDate: 'asc' }],
+        include: {
+          horse: {
+            select: {
+              id: true,
+              name: true,
+              microchipRfid: true,
+              status: true,
+              stallAllocations: {
+                where: { isActive: true },
+                select: { stall: { select: { code: true, zone: true } } },
               },
             },
-            typeCatalog: true,
-            veterinarian: { select: { id: true, fullName: true, email: true } },
           },
-        }),
-      ]);
+          typeCatalog: true,
+          veterinarian: { select: { id: true, fullName: true, email: true } },
+        },
+      }),
+    ]);
 
     const mapped = schedules.map((sch) => {
-      const noticeDays = sch.typeCatalog?.advanceNoticeDays || 7;
       const dueDate = new Date(sch.dueDate);
 
-      const isOverdue = dueDate < now && sch.status !== PreventiveStatus.COMPLETED;
+      const isOverdue = sch.status !== PreventiveStatus.COMPLETED && dueDate < startOfTodayClub;
       const isNotice =
-        !isOverdue &&
-        dueDate <= new Date(now.getTime() + noticeDays * 24 * 60 * 60 * 1000) &&
-        sch.status !== PreventiveStatus.COMPLETED;
+        !isOverdue && sch.status !== PreventiveStatus.COMPLETED && dueDate <= endOf7Days;
 
       let statusBadge = 'NORMAL';
       if (sch.status === PreventiveStatus.COMPLETED) {
@@ -368,6 +455,8 @@ export class PreventiveCareService {
         statusBadge = 'UPCOMING';
       } else if (!sch.lastCompletedDate && !sch.completedDate) {
         statusBadge = 'NODATA';
+      } else {
+        statusBadge = 'NORMAL';
       }
 
       return {
@@ -386,7 +475,10 @@ export class PreventiveCareService {
         overdue: overdueCount,
         upcoming7Days: upcoming7DaysCount,
         upcoming30Days: upcoming30DaysCount,
-        total,
+        upToDate: upToDateCount,
+        completed: completedCount,
+        noData: noDataCount,
+        total: totalCount,
       },
       data: mapped,
       total,
@@ -409,6 +501,13 @@ export class PreventiveCareService {
         include: { typeCatalog: true },
       });
       if (initialSchedule) {
+        if (initialSchedule.status === PreventiveStatus.COMPLETED) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'SCHEDULE_ALREADY_COMPLETED',
+            'Lịch chăm sóc định kỳ này đã hoàn thành trước đó.',
+          );
+        }
         if (!horseId) horseId = initialSchedule.horseId;
         if (!typeCatalogId) typeCatalogId = initialSchedule.typeCatalogId || undefined;
       }
@@ -531,9 +630,21 @@ export class PreventiveCareService {
           ? await tx.preventiveSchedule.findUnique({ where: { id: dto.scheduleId } })
           : null;
 
+        if (schedule && schedule.status === PreventiveStatus.COMPLETED) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'SCHEDULE_ALREADY_COMPLETED',
+            'Lịch chăm sóc định kỳ này đã hoàn thành trước đó.',
+          );
+        }
+
         if (!schedule) {
           schedule = await tx.preventiveSchedule.findFirst({
-            where: { horseId: hId, typeCatalogId: catalog.id },
+            where: {
+              horseId: hId,
+              typeCatalogId: catalog.id,
+              status: { not: PreventiveStatus.COMPLETED },
+            },
           });
         }
 
@@ -555,7 +666,7 @@ export class PreventiveCareService {
           performedDate: performedDate.toISOString(),
           performedByMode: dto.performedByMode || 'SELF',
           performedByName,
-          productAdministered: dto.productAdministered || null,
+          productAdministered: resolvedProduct || null,
           batchNumber: dto.batchNumber || null,
           nextDueDate: nextDueDate.toISOString(),
           notes: dto.notes || null,
@@ -564,13 +675,13 @@ export class PreventiveCareService {
         history.push(logEntry);
 
         if (schedule) {
+          // 1. Chốt kỳ chăm sóc hiện tại thành COMPLETED
           await tx.preventiveSchedule.update({
             where: { id: schedule.id },
             data: {
               veterinarianUserId: actor.userId,
               lastCompletedDate: performedDate,
               completedDate: performedDate,
-              dueDate: nextDueDate,
               productAdministered: resolvedProduct || schedule.productAdministered || null,
               batchNumber: dto.batchNumber || null,
               performedByMode: dto.performedByMode || 'SELF',
@@ -581,7 +692,27 @@ export class PreventiveCareService {
               typeCatalogId: schedule.typeCatalogId || catalog.id,
             },
           });
+
+          // 2. Tạo bản ghi mới PENDING cho kỳ tiếp theo (giữ thông tin lần thực hiện gần nhất cho cột Last given)
+          await tx.preventiveSchedule.create({
+            data: {
+              horseId: hId,
+              typeCatalogId: schedule.typeCatalogId || catalog.id,
+              scheduleType: catalog.category,
+              veterinarianUserId: actor.userId,
+              dueDate: nextDueDate,
+              lastCompletedDate: performedDate,
+              productAdministered: null,
+              batchNumber: null,
+              performedByMode: dto.performedByMode || 'SELF',
+              performedByName,
+              notes: null,
+              status: PreventiveStatus.PENDING,
+              historyLogs: [],
+            },
+          });
         } else {
+          // Tạo dòng COMPLETED cho đợt chăm sóc vừa ghi nhận
           await tx.preventiveSchedule.create({
             data: {
               horseId: hId,
@@ -590,14 +721,33 @@ export class PreventiveCareService {
               veterinarianUserId: actor.userId,
               lastCompletedDate: performedDate,
               completedDate: performedDate,
-              dueDate: nextDueDate,
-              productAdministered: dto.productAdministered || null,
+              dueDate: performedDate,
+              productAdministered: resolvedProduct || null,
               batchNumber: dto.batchNumber || null,
               performedByMode: dto.performedByMode || 'SELF',
               performedByName,
               notes: dto.notes || null,
               status: PreventiveStatus.COMPLETED,
               historyLogs: history,
+            },
+          });
+
+          // Tạo dòng PENDING cho kỳ kế tiếp (giữ thông tin lần thực hiện gần nhất cho cột Last given)
+          await tx.preventiveSchedule.create({
+            data: {
+              horseId: hId,
+              typeCatalogId: catalog.id,
+              scheduleType: catalog.category,
+              veterinarianUserId: actor.userId,
+              dueDate: nextDueDate,
+              lastCompletedDate: performedDate,
+              productAdministered: null,
+              batchNumber: null,
+              performedByMode: dto.performedByMode || 'SELF',
+              performedByName,
+              notes: null,
+              status: PreventiveStatus.PENDING,
+              historyLogs: [],
             },
           });
         }
@@ -635,7 +785,11 @@ export class PreventiveCareService {
       if (!catalog) continue;
 
       const schedule = await this.prisma.preventiveSchedule.findFirst({
-        where: { horseId: dto.horseId, typeCatalogId: item.typeCatalogId },
+        where: {
+          horseId: dto.horseId,
+          typeCatalogId: item.typeCatalogId,
+          status: { not: PreventiveStatus.COMPLETED },
+        },
       });
 
       if (item.enabled) {
