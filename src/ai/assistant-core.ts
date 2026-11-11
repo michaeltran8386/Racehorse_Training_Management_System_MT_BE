@@ -51,8 +51,22 @@ const ASKS_DATA =
   /\b(bao nhieu|tong|nhung|nao|dang|hien (nay|tai)|hom nay|tuan nay|sap toi|cua toi|cua minh|con lai|danh sach|liet ke|which|how many|list|my)\b/;
 
 /** Danh sách công cụ dữ liệu cần gọi cho câu hỏi (tối đa 3, theo thứ tự). */
+const INTERNAL_TMEC_ANCHORS =
+  /\b(tmec|cau lac bo|clb|he thong|ung dung|phan mem|chuong|hoa don|phieu thu|lich tap|giao an|ca truc|ton kho|nhap kho|khoa y te|cua toi|cua minh|ngua cua|dan ngua|benh an|tiem phong)\b/;
+
+const EXTERNAL_TOPIC_SIGNALS =
+  /\b(thoi tiet|nhiet do|du bao|troi mua|troi nang|ha noi|sai gon|tp hcm|da nang|da lat|bitcoin|btc|eth|crypto|tien ao|chung khoan|co phieu|gia vang|gia xang|gia dau|ty gia|ngoai te|du lich|khach san|nha hang|ve may bay|pho bo|cong thuc nau|mon an|nau an|bong da|world cup|viet code|python|javascript|quoc te|the gioi|nuoc ngoai|kentucky derby|royal ascot|melbourne cup|fei|jockey club anh|lich su dua ngua|giong ngua|thoroughbred|arabian|quarter horse|luat giao thong)\b/;
+
+export function isLikelyExternalQuery(message: string): boolean {
+  const n = normalize(message);
+  return EXTERNAL_TOPIC_SIGNALS.test(n) && !INTERNAL_TMEC_ANCHORS.test(n);
+}
+
 export function routeTools(message: string): string[] {
   const n = normalize(message);
+  if (isLikelyExternalQuery(message)) {
+    return [];
+  }
   const { horses, locks } = routeIntents(message);
   const tools: string[] = [];
   if (locks) tools.push('medical_lock_status');
