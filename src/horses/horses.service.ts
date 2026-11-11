@@ -210,7 +210,11 @@ export class HorsesService {
     }
     const owner = await this.prisma.user.findUnique({ where: { id: dto.ownerId } });
     if (!owner) {
-      throw apiError(HttpStatus.NOT_FOUND, 'OWNER_NOT_FOUND', 'Không tìm thấy thông tin chủ ngựa đã chọn.');
+      throw apiError(
+        HttpStatus.NOT_FOUND,
+        'OWNER_NOT_FOUND',
+        'Không tìm thấy thông tin chủ ngựa đã chọn.',
+      );
     }
     if (owner.isBadDebtFlagged) {
       throw apiError(

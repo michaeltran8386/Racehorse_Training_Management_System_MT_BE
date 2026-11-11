@@ -57,7 +57,7 @@ describe('HorsesService', () => {
         delete: jest.fn(),
       },
       user: {
-        findUnique: jest.fn(),
+        findUnique: jest.fn().mockResolvedValue({ id: 'owner-1', isBadDebtFlagged: false }),
       },
       stallAllocation: {
         findMany: jest.fn().mockResolvedValue([]),
