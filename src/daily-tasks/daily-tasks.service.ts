@@ -573,11 +573,7 @@ export class DailyTasksService {
       });
 
       // Trừ kho tự động cho việc cho ăn (FEEDING) cùng transaction
-      if (
-        task.taskType === DailyTaskType.FEEDING &&
-        task.stallZoneId &&
-        task.itemsSnapshotJson
-      ) {
+      if (task.taskType === DailyTaskType.FEEDING && task.stallZoneId && task.itemsSnapshotJson) {
         await this.inventoryService.deductStockForFeeding(
           task.stallZoneId,
           task.itemsSnapshotJson as any,
@@ -588,9 +584,10 @@ export class DailyTasksService {
       return taskUpdated;
     };
 
-    const updated = await (typeof (this.prisma as any).$transaction === 'function'
-      ? this.prisma.$transaction(runInTx)
-      : runInTx(this.prisma)
+    const updated = await (
+      typeof (this.prisma as any).$transaction === 'function'
+        ? this.prisma.$transaction(runInTx)
+        : runInTx(this.prisma)
     ).catch((err: unknown) => {
       if (lostRace(err)) return null;
       throw err;

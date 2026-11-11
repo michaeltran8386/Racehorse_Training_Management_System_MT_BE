@@ -374,7 +374,7 @@ export class MedicalRecordsService {
         conclusion: record.conclusion || undefined,
         treatmentResult: record.treatmentResult || undefined,
         treatmentPhases: [], // Bảo mật chi tiết phác đồ lâm sàng đối với Chủ ngựa (H-01)
-        prescriptions: [],   // Bảo mật đơn thuốc ở tầng server đối với Chủ ngựa (H-01)
+        prescriptions: [], // Bảo mật đơn thuốc ở tầng server đối với Chủ ngựa (H-01)
         followUps,
         labTests: [],
         closedAt: record.closedAt ? record.closedAt.toISOString() : undefined,
@@ -1015,7 +1015,9 @@ export class MedicalRecordsService {
       if (!effectiveEndDate) {
         const s = new Date(dto.startDate || Date.now());
         const days = Number(dto.daysCount) > 0 ? Number(dto.daysCount) : 1;
-        effectiveEndDate = new Date(s.getTime() + (days - 1) * 86400000).toISOString().split('T')[0];
+        effectiveEndDate = new Date(s.getTime() + (days - 1) * 86400000)
+          .toISOString()
+          .split('T')[0];
       }
       const dosageStr = String(dto.dosage ?? '1');
 

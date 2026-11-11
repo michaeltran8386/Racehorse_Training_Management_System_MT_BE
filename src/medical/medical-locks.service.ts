@@ -290,7 +290,10 @@ export class MedicalLocksService {
         );
       }
 
-      if (dto.newHorseStatus && (dto.newHorseStatus === HorseStatus.RETIRED || dto.newHorseStatus === HorseStatus.INJURED)) {
+      if (
+        dto.newHorseStatus &&
+        (dto.newHorseStatus === HorseStatus.RETIRED || dto.newHorseStatus === HorseStatus.INJURED)
+      ) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'INVALID_RELEASE_STATUS',
@@ -340,7 +343,7 @@ export class MedicalLocksService {
         where: { id: lock.horseId },
         data: {
           isMedicalLocked: stillLocked,
-          status: stillLocked ? (lock.horse?.status || HorseStatus.INJURED) : newHorseStatus,
+          status: stillLocked ? lock.horse?.status || HorseStatus.INJURED : newHorseStatus,
         },
       });
 

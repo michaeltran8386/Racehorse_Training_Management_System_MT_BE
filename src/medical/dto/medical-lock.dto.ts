@@ -86,7 +86,9 @@ export class ReleaseMedicalLockDto {
   @IsEnum(HorseStatus)
   newHorseStatus?: HorseStatus;
 
-  @ApiPropertyOptional({ description: 'Xác nhận thể lực đã đủ điều kiện tập luyện (Decision D-03)' })
+  @ApiPropertyOptional({
+    description: 'Xác nhận thể lực đã đủ điều kiện tập luyện (Decision D-03)',
+  })
   @IsOptional()
   @IsBoolean()
   fitnessConfirmed?: boolean;
