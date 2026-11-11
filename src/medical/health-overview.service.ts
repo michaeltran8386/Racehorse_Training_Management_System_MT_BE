@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
-import { Role, HorseStatus, Prisma } from '@prisma/client';
+import { Role, HorseStatus, Prisma, PreventiveStatus } from '@prisma/client';
 import { HealthBoardQueryDto } from './dto/health-board-query.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MedicalAccessService } from './medical-access.service';
@@ -56,7 +56,7 @@ export class HealthOverviewService {
     });
 
     const preventives = await this.prisma.preventiveSchedule.findMany({
-      where: { horseId },
+      where: { horseId, status: { not: PreventiveStatus.COMPLETED } },
       orderBy: { dueDate: 'asc' },
       include: { typeCatalog: true },
     });
@@ -307,7 +307,10 @@ export class HealthOverviewService {
           select: { id: true, examinationDate: true, clinicalDiagnosis: true },
         },
         preventiveSchedules: {
-          where: { dueDate: { lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) } },
+          where: {
+            status: { not: PreventiveStatus.COMPLETED },
+            dueDate: { lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) },
+          },
           orderBy: { dueDate: 'asc' },
           include: { typeCatalog: { select: { name: true } } },
         },

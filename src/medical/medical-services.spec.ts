@@ -75,6 +75,7 @@ describe('Medical services', () => {
       findUnique: jest.fn(),
       update: jest.fn(),
       upsert: jest.fn(),
+      count: jest.fn(),
     },
   };
 
@@ -1120,12 +1121,13 @@ describe('Medical services', () => {
       expect(mockPrismaService.preventiveSchedule.update).toHaveBeenCalled();
     });
 
-    it('should complete preventive care by scheduleId', async () => {
+    it('should complete preventive care by scheduleId, close as COMPLETED, and create clean PENDING for next cycle', async () => {
       mockPrismaService.preventiveSchedule.findUnique.mockResolvedValue({
         id: 'sched-1',
         horseId: 'horse-1',
         typeCatalogId: 'cat-1',
         scheduleType: 'VACCINATION',
+        status: 'PENDING',
         productAdministered: 'Equine Influenza Vaccine',
         historyLogs: [],
       });
@@ -1139,6 +1141,10 @@ describe('Medical services', () => {
         id: 'sched-1',
         status: 'COMPLETED',
       });
+      mockPrismaService.preventiveSchedule.create.mockResolvedValue({
+        id: 'sched-next-1',
+        status: 'PENDING',
+      });
 
       const res = await preventive.recordPreventiveCare(mockVetUser, {
         scheduleId: 'sched-1',
@@ -1148,7 +1154,123 @@ describe('Medical services', () => {
       });
 
       expect(res.count).toBe(1);
-      expect(mockPrismaService.preventiveSchedule.update).toHaveBeenCalled();
+      expect(mockPrismaService.preventiveSchedule.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sched-1' },
+          data: expect.objectContaining({
+            status: 'COMPLETED',
+            batchNumber: 'BATCH-2026-01',
+          }),
+        }),
+      );
+      expect(mockPrismaService.preventiveSchedule.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'PENDING',
+            batchNumber: null,
+            productAdministered: null,
+            performedByName: null,
+            historyLogs: [],
+          }),
+        }),
+      );
+    });
+
+    it('should reject recording care on an already COMPLETED schedule', async () => {
+      mockPrismaService.preventiveSchedule.findUnique.mockResolvedValue({
+        id: 'sched-completed',
+        horseId: 'horse-1',
+        typeCatalogId: 'cat-1',
+        scheduleType: 'VACCINATION',
+        status: 'COMPLETED',
+      });
+
+      await expect(
+        preventive.recordPreventiveCare(mockVetUser, {
+          scheduleId: 'sched-completed',
+          performedDate: new Date().toISOString(),
+          productAdministered: 'Equine Influenza Vaccine',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('should calculate counts from baseWhere, combine category + search via AND, and map mutually exclusive statusBadge in getPreventiveSchedules', async () => {
+      mockPrismaService.preventiveSchedule.count
+        .mockResolvedValueOnce(2) // pagination total (filtered by OVERDUE)
+        .mockResolvedValueOnce(10) // counts.total (from baseWhere)
+        .mockResolvedValueOnce(2) // overdueCount
+        .mockResolvedValueOnce(3) // upcoming7DaysCount
+        .mockResolvedValueOnce(5) // upcoming30DaysCount
+        .mockResolvedValueOnce(1) // completedCount
+        .mockResolvedValueOnce(1) // noDataCount
+        .mockResolvedValueOnce(3); // upToDateCount
+
+      const now = new Date();
+      mockPrismaService.preventiveSchedule.findMany.mockResolvedValue([
+        {
+          id: 's-overdue',
+          horseId: 'h-1',
+          dueDate: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
+          status: 'PENDING',
+          lastCompletedDate: null,
+          completedDate: null,
+          typeCatalog: { advanceNoticeDays: 14 },
+          horse: { id: 'h-1', name: 'Thunder', stallAllocations: [] },
+        },
+        {
+          id: 's-normal',
+          horseId: 'h-1',
+          dueDate: new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000),
+          status: 'PENDING',
+          lastCompletedDate: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+          completedDate: null,
+          typeCatalog: { advanceNoticeDays: 14 },
+          horse: { id: 'h-1', name: 'Thunder', stallAllocations: [] },
+        },
+        {
+          id: 's-nodata',
+          horseId: 'h-1',
+          dueDate: new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000),
+          status: 'PENDING',
+          lastCompletedDate: null,
+          completedDate: null,
+          typeCatalog: { advanceNoticeDays: 14 },
+          horse: { id: 'h-1', name: 'Thunder', stallAllocations: [] },
+        },
+      ]);
+
+      const res = await preventive.getPreventiveSchedules(mockVetUser, {
+        status: 'OVERDUE',
+        category: 'VACCINATION' as any,
+        search: 'Thunder',
+        page: '1',
+        limit: '10',
+      });
+
+      expect(res.total).toBe(2);
+      expect(res.counts.total).toBe(10);
+      expect(res.counts.overdue).toBe(2);
+      expect(res.counts.upcoming7Days).toBe(3);
+      expect(res.counts.completed).toBe(1);
+      expect(res.counts.noData).toBe(1);
+      expect(res.counts.upToDate).toBe(3);
+      expect(
+        res.counts.overdue +
+          res.counts.upcoming7Days +
+          res.counts.upToDate +
+          res.counts.completed +
+          res.counts.noData,
+      ).toBe(res.counts.total);
+
+      // Verify statusBadge matches the 5 mutually exclusive groups (fixed +7d boundary regardless of advanceNoticeDays=14)
+      expect(res.data[0].statusBadge).toBe('OVERDUE');
+      expect(res.data[1].statusBadge).toBe('NORMAL');
+      expect(res.data[2].statusBadge).toBe('NODATA');
+
+      // Verify where.AND was used so category and search do not overwrite each other
+      const findManyCall = mockPrismaService.preventiveSchedule.findMany.mock.calls[0][0];
+      expect(findManyCall.where.AND).toBeDefined();
+      expect(findManyCall.where.AND.length).toBe(2);
     });
 
     it('should setup custom preventive schedule for a horse', async () => {

@@ -131,7 +131,7 @@ export class PreventiveQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Lọc theo trạng thái: NORMAL | UPCOMING | OVERDUE | NODATA | UPCOMING_7 | UPCOMING_30',
+      'Lọc theo trạng thái: OVERDUE | DUE_SOON | UPCOMING | UPCOMING_7 | UPCOMING_30 | UP_TO_DATE | NORMAL | COMPLETED | NO_DATA | NODATA',
   })
   @IsOptional()
   @IsString()
