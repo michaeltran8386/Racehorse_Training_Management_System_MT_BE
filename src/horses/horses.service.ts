@@ -169,26 +169,30 @@ export class HorsesService {
       throw apiError(HttpStatus.CONFLICT, 'DUPLICATE_NAME', 'Tên ngựa đã tồn tại trong hệ thống.');
     }
 
-    // Tự sinh số microchip nếu không cung cấp hoặc để trống
-    let microchip = dto.microchip?.trim();
+    // Số microchip là bắt buộc (như CCCD của ngựa), không được tự sinh ngẫu nhiên
+    const microchip = dto.microchip?.trim();
     if (!microchip) {
-      microchip = await this.generateMicrochip();
-    } else {
-      // Kiểm tra trùng số microchip
-      const existingChip = await this.prisma.horse.findFirst({
-        where: {
-          OR: [{ microchip }, { microchipRfid: microchip }],
-        },
-      });
-      if (existingChip) {
-        throw apiError(
-          HttpStatus.CONFLICT,
-          'DUPLICATE_MICROCHIP',
-          existingChip.deletedAt
-            ? 'Số microchip thuộc một hồ sơ trong mục Hồ sơ đã xóa. Hãy khôi phục hồ sơ đó thay vì tạo mới.'
-            : 'Số microchip đã được gán cho ngựa khác.',
-        );
-      }
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'MICROCHIP_REQUIRED',
+        'Số vi mạch (microchip) là bắt buộc và không được để trống.',
+      );
+    }
+
+    // Kiểm tra trùng số microchip
+    const existingChip = await this.prisma.horse.findFirst({
+      where: {
+        OR: [{ microchip }, { microchipRfid: microchip }],
+      },
+    });
+    if (existingChip) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'DUPLICATE_MICROCHIP',
+        existingChip.deletedAt
+          ? 'Số microchip thuộc một hồ sơ trong mục Hồ sơ đã xóa. Hãy khôi phục hồ sơ đó thay vì tạo mới.'
+          : 'Số microchip đã được gán cho ngựa khác.',
+      );
     }
 
     const breed = await this.catalogs.resolveName(HorseCatalogType.BREED, dto.breed);
@@ -196,15 +200,24 @@ export class HorsesService {
     const horseCode = await this.generateHorseCode();
     const microchipRfid = microchip;
 
-    if (dto.ownerId) {
-      const owner = await this.prisma.user.findUnique({ where: { id: dto.ownerId } });
-      if (owner?.isBadDebtFlagged) {
-        throw apiError(
-          HttpStatus.BAD_REQUEST,
-          'OWNER_BAD_DEBT',
-          'Chủ ngựa đang bị đánh dấu nợ xấu do quá hạn thanh toán. Không thể đăng ký thêm ngựa mới cho chủ ngựa này.',
-        );
-      }
+    // Chủ sở hữu là bắt buộc đối với mô hình nhận chăm sóc và huấn luyện ngựa đua
+    if (!dto.ownerId) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'OWNER_REQUIRED',
+        'Vui lòng chọn chủ sở hữu cho ngựa. Hệ thống không tạo ngựa không có người sở hữu.',
+      );
+    }
+    const owner = await this.prisma.user.findUnique({ where: { id: dto.ownerId } });
+    if (!owner) {
+      throw apiError(HttpStatus.NOT_FOUND, 'OWNER_NOT_FOUND', 'Không tìm thấy thông tin chủ ngựa đã chọn.');
+    }
+    if (owner.isBadDebtFlagged) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'OWNER_BAD_DEBT',
+        'Chủ ngựa đang bị đánh dấu nợ xấu do quá hạn thanh toán. Không thể đăng ký thêm ngựa mới cho chủ ngựa này.',
+      );
     }
 
     // Hồ sơ mới luôn ở Nghỉ ngơi. Nếu chọn ô chuồng ngay khi tạo: khóa dòng ô (FOR UPDATE),

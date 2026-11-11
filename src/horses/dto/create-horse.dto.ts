@@ -54,19 +54,19 @@ export class CreateHorseDto {
   @IsString({ message: 'Invalid coat color string.' })
   color: string;
 
-  @ApiPropertyOptional({
-    description: 'Microchip number (exactly 15 digits, auto-generated if omitted)',
+  @ApiProperty({
+    description: 'Microchip number (exactly 15 digits ISO standard)',
     example: '985141002341001',
   })
-  @IsOptional()
-  @IsString()
+  @IsNotEmpty({ message: 'Số vi mạch (microchip) là bắt buộc.' })
+  @IsString({ message: 'Số vi mạch phải là chuỗi ký tự.' })
   @Matches(/^\d{15}$/, { message: 'Microchip number must consist of exactly 15 digits.' })
-  microchip?: string;
+  microchip: string;
 
-  @ApiPropertyOptional({ description: 'Owner User ID' })
-  @IsOptional()
-  @IsString()
-  ownerId?: string;
+  @ApiProperty({ description: 'Owner User ID' })
+  @IsNotEmpty({ message: 'Vui lòng chọn chủ sở hữu cho ngựa.' })
+  @IsString({ message: 'Mã chủ sở hữu phải là chuỗi.' })
+  ownerId: string;
 
   @ApiPropertyOptional({ description: 'Avatar URL' })
   @IsOptional()

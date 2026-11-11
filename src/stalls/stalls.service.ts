@@ -31,6 +31,15 @@ const STALL_INCLUDE = {
           name: true,
           status: true,
           isMedicalLocked: true,
+          isDebtImpounded: true,
+          debtImpoundReason: true,
+          owner: {
+            select: {
+              id: true,
+              fullName: true,
+              email: true,
+            },
+          },
         },
       },
       assignedGroom: { select: { id: true, fullName: true, email: true } },

@@ -157,6 +157,7 @@ describe('HorsesService', () => {
           gender: 'Colt',
           color: 'Bay',
           microchip: '123456789012345',
+          ownerId: 'owner-1',
         },
         mockManager,
       );
@@ -176,6 +177,8 @@ describe('HorsesService', () => {
             weightKg: 490,
             gender: 'Stallion',
             color: 'Bay',
+            microchip: '123456789012345',
+            ownerId: 'owner-1',
           },
           mockManager,
         ),
@@ -194,6 +197,8 @@ describe('HorsesService', () => {
             weightKg: 490,
             gender: 'Stallion',
             color: 'Bay',
+            microchip: '123456789012345',
+            ownerId: 'owner-1',
           },
           mockManager,
         ),
@@ -202,28 +207,24 @@ describe('HorsesService', () => {
       });
     });
 
-    it('should auto-generate 15-digit microchip if not provided', async () => {
-      prisma.horse.findFirst.mockResolvedValue(null);
-      prisma.horse.findUnique.mockResolvedValue(null);
-      prisma.horse.count.mockResolvedValue(0);
-
-      prisma.horse.create.mockImplementation(({ data }) =>
-        Promise.resolve({ id: 'h-auto', ...data }),
-      );
-
-      const res = await service.create(
-        {
-          name: 'Auto Generated Codes',
-          breed: 'Thoroughbred',
-          dob: '2023-01-01',
-          weightKg: 490,
-          gender: 'Stallion',
-          color: 'Bay',
-        },
-        mockManager,
-      );
-
-      expect(res.microchip).toMatch(/^\d{15}$/);
+    it('should reject if microchip is missing (MICROCHIP_REQUIRED)', async () => {
+      await expect(
+        service.create(
+          {
+            name: 'No Chip Horse',
+            breed: 'Thoroughbred',
+            dob: '2023-01-01',
+            weightKg: 490,
+            gender: 'Stallion',
+            color: 'Bay',
+            microchip: '',
+            ownerId: 'owner-1',
+          },
+          mockManager,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'MICROCHIP_REQUIRED' }),
+      });
     });
 
     it('should occupy the chosen stall inside the same transaction', async () => {
@@ -245,6 +246,7 @@ describe('HorsesService', () => {
           gender: 'Colt',
           color: 'Bay',
           microchip: '123456789012346',
+          ownerId: 'owner-1',
           stallId: 'st-1',
         },
         mockManager,
@@ -273,6 +275,7 @@ describe('HorsesService', () => {
             weightKg: 490,
             gender: 'Colt',
             color: 'Bay',
+            microchip: '123456789012346',
             ownerId: 'bad-owner',
           },
           mockManager,
@@ -301,6 +304,7 @@ describe('HorsesService', () => {
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012346',
+            ownerId: 'owner-1',
             stallId: 'st-1',
           },
           mockManager,
@@ -325,6 +329,7 @@ describe('HorsesService', () => {
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012345',
+            ownerId: 'owner-1',
           },
           mockManager,
         ),
@@ -349,6 +354,7 @@ describe('HorsesService', () => {
             gender: 'Colt',
             color: 'Bay',
             microchip: '123456789012345',
+            ownerId: 'owner-1',
           },
           mockManager,
         ),
