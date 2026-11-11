@@ -22,8 +22,7 @@ npm install
 # 2. Khởi động PostgreSQL 16 bằng Docker
 docker compose up -d
 
-# 3. Trỏ DATABASE_URL và DIRECT_URL vào equiflow_seed_demo (xem mục 4)
-# Sau đó đồng bộ schema và nạp 12 ngựa mẫu
+# 3. Đồng bộ schema và nạp toàn bộ dữ liệu mẫu (38 bảng, 19 chiến mã, 10 groom, 4 bác sĩ thú y)
 npm run db:setup
 
 # 4. Khởi động Backend Server
@@ -124,60 +123,58 @@ Trình duyệt sẽ tự động mở tại **`http://localhost:5555`**.
 
 ## 3. Danh sách Tài khoản Kiểm thử (Demo Accounts)
 
-Mật khẩu mặc định cho tất cả các tài khoản: **`EquiFlow@2026`**
+Mật khẩu mặc định cho tất cả các tài khoản: **`EquiFlow@2026`** (chi tiết đầy đủ tất cả 32 tài khoản xem tại [acc.md](./acc.md))
 
-| Vai trò (Role)     | Email                                | Họ và tên            | Trạng thái | Nghiệp vụ chính                                                         |
-| :----------------- | :----------------------------------- | :------------------- | :--------- | :---------------------------------------------------------------------- |
-| **Club Manager**   | `manager@gmail.com`                  | Trần Quang Minh      | `ACTIVE`   | Quản trị tài khoản, phân quyền, sơ đồ chuồng, xem audit log, lập sao kê |
-| **Head Trainer 1** | `trainer@gmail.com`                  | Nguyễn Văn Tuấn      | `ACTIVE`   | Lập giáo án huấn luyện, xếp lịch bài tập, ghi nhận kết quả thi đấu      |
-| **Head Trainer 2** | `trainer2@gmail.com`                 | Lê Hoàng Nam         | `ACTIVE`   | Phụ trách huấn luyện nhóm ngựa đua Barn 2 & Cự ly kinh điển             |
-| **Veterinarian**   | `vet@gmail.com`                      | BS. Phạm Minh Trí    | `ACTIVE`   | Khám lâm sàng, đặt/mở Khóa Y Tế, sơ đồ chấn thương 2D                   |
-| **Groom Hand 1**   | `groom@gmail.com`                    | Lê Văn Bình          | `ACTIVE`   | Chăm sóc chuồng Barn 1 (A01-A08), tiếp tế thức ăn & vật tư              |
-| **Groom Hand 2**   | `groom2@gmail.com`                   | Hoàng Văn Phúc       | `ACTIVE`   | Chăm sóc chuồng Barn 2 (B01-B08) & xử lý sự cố chuồng                   |
-| **Groom Hand 3**   | `groom3@gmail.com`                   | Đỗ Thị Mai           | `ACTIVE`   | Chăm sóc Khu Cách ly (C01) & Khu Lưu giữ nợ phí (Zone H)                |
-| **Horse Owner 1**  | `owner@gmail.com`                    | Phạm Gia Bảo         | `ACTIVE`   | Sở hữu Bạch Long Mã, Xích Thố, Kim Long, Vân Tiêu                       |
-| **Horse Owner 2**  | `owner2@gmail.com`                   | Đặng Hoàng Yến       | `ACTIVE`   | Sở hữu Thần Phong, Lão Tướng, Tuyết Ảnh, Lôi Chấn                       |
-| **Horse Owner 3**  | `owner3@gmail.com`                   | Vũ Quốc Hưng         | `ACTIVE`   | Chủ ngựa VIP sở hữu Hắc Báo, Hồng Kỳ                                    |
-| **Horse Owner 4**  | `owner4@gmail.com`                   | Trịnh Bích Ngọc      | `ACTIVE`   | Chủ ngựa có ngựa nợ phí: Dạ Nguyệt (Zone H), Thanh Loan                 |
-| **Locked User**    | `equiflow-expired-fixture@gmail.com` | Tài khoản thử nghiệm | `LOCKED`   | Kiểm thử xử lý tài khoản bị khóa                                        |
+| Vai trò (Role)         | Email (`@gmail.com`)                                                                                                     | Số lượng | Ghi chú                                                                                                        |
+| :--------------------- | :----------------------------------------------------------------------------------------------------------------------- | :------- | :------------------------------------------------------------------------------------------------------------- |
+| **Club Manager**       | `manager`, `manager2`                                                                                                    | **2**    | Quản trị tài khoản, phân quyền, sơ đồ chuồng, hóa đơn & audit log                                              |
+| **Head Trainer**       | `trainer`, `trainer2`, `trainer3`, `trainer4`                                                                            | **4**    | Lập giáo án, lịch tập, mô phỏng đua và đăng ký giải đấu                                                        |
+| **Veterinarian**       | `vet`, `vet2`, `vet3`, `vet4`                                                                                            | **4**    | Khám lâm sàng, Khóa y tế, bản đồ chấn thương 2D, tiêm phòng & dinh dưỡng                                       |
+| **Groom**              | `groom`, `groom2` … `groom10`                                                                                            | **10**   | Ca trực 7 ngày phủ toàn bộ Khu A, B, C, H, checklist chăm sóc & kho                                            |
+| **Horse Owner**        | `owner`, `owner2` … `owner6`                                                                                             | **6**    | Chủ sở hữu 19 chiến mã (`owner4` có hóa đơn quá hạn & ngựa khu H)                                              |
+| **Lifecycle Accounts** | `applicant.email`, `applicant.approval`, `invited.vet`, `inactive.groom`, `rejected.trainer`, `equiflow-expired-fixture` | **6**    | Phủ đủ 6 trạng thái còn lại (`PENDING_EMAIL`, `PENDING_APPROVAL`, `INVITED`, `INACTIVE`, `REJECTED`, `LOCKED`) |
 
 ---
 
-## 4. Dữ liệu mẫu theo vòng đời (Lifecycle Seed 07/2026 – 12/2026)
+## 4. Dữ liệu mẫu chuẩn theo vòng đời (Canonical Full Seed 07/2026 – 12/2026)
 
-Bộ dữ liệu mẫu phủ kín **6 tháng liên tục (07/2026 đến 12/2026)** với 12 chiến mã, 20 ô chuồng, 4 giải đấu hoàn thành và chuỗi 31 hóa đơn sao kê thực tế:
+Một bộ seed chuẩn duy nhất tại `prisma/seed.ts` phủ kín **38/38 bảng Prisma** với **19 chiến mã** (đủ 8 giống ngựa chính + 1 giống `Morgan` ngừng kích hoạt, đủ 7 `HorseStatus`, ngựa `RETIRED` nhả ô chuồng theo `BR-STL-07`), **32 ô chuồng** (Khu A, B, C, H), **8 giải đấu**, chuỗi hóa đơn **6 tháng (2026-07 – 2026-12)** và lịch trực **10 Groom**:
 
 ```powershell
-# Chạy nạp dữ liệu mẫu
+# Nạp dữ liệu chuẩn (an toàn chạy nhiều lần, giữ nguyên dữ liệu mới trên DB đã có)
 npm run db:seed
+
+# Xóa sạch dữ liệu cũ và nạp lại từ đầu (chỉ dùng cho môi trường dev/local)
+npm run db:seed -- --reset
 ```
 
-| Màn hình demo            | Dữ liệu để kiểm tra                                                                                                                                                                                                                                                    |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Dashboard HLV**        | Lịch tập ngày hôm nay và chuỗi lịch tập tuần; bài tập nền tảng và bứt tốc trải dài từ tháng 7 đến tháng 11; chỉ số ACWR tính toán chuẩn xác không bị đứt đoạn.                                                                                                         |
-| **Phong độ & Giải đấu**  | Các giải đua hoàn tất: Giải Đua Mùa Hè Rực Lửa (T7), Cúp Quốc Gia (T8), Cúp Cự Ly Kinh Điển, Giải Vô Địch Mùa Thu (T10); Cúp Mùa Đông (T11) mở đăng ký; Cúp Tân Niên (T12) sắp diễn ra.                                                                                |
-| **Hồ sơ Thú y**          | Xích Thố có bệnh án mở và Khóa y tế; các ca khám định kỳ tiêm vaccine tháng 7, nha khoa tháng 8; Tuyết Ảnh cách ly tại C01; Dạ Nguyệt hồi phục tại H01.                                                                                                                |
-| **Tài chính & Sao kê**   | **31 hóa đơn** phân bổ 6 tháng (2026-07 đến 2026-12) với 4 trạng thái: 19 Đã thanh toán (`PAID`), 3 Đã gửi (`SENT`), 4 Chưa gửi (`DRAFT`), và **5 Quá hạn (`OVERDUE`)** với tổng dư nợ **49.000.000 đ** (Dạ Nguyệt nợ T8, T9, T10 ở Zone H; Xích Thố nợ y tế T9, T10). |
-| **Chuồng trại & Vật tư** | Sơ đồ 4 phân khu: Barn 1 (A), Barn 2 (B), Cách ly (C), và Khu Lưu giữ nợ phí (Zone H) chứa chiến mã có công nợ quá hạn kéo dài.                                                                                                                                        |
+Khi deploy bằng Docker (`Dockerfile`), container tự động chạy `npx prisma db push --skip-generate`, kiểm tra nếu bảng `User` đang trống (`count === 0`) sẽ tự động thực thi `npm run db:seed` một lần trước khi khởi động API.
 
-Tài khoản demo: `manager`, `trainer`, `trainer2`, `vet`, `groom`, `groom2`, `groom3`, `owner`, `owner2` (tất cả thêm `@gmail.com`). Mật khẩu demo: `EquiFlow@2026`. Các bản ghi OTP, reset, refresh phục vụ kiểm thử đều đã hết hạn hoặc bị thu hồi.
+| Màn hình demo            | Dữ liệu để kiểm tra                                                                                                                                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dashboard HLV**        | Giáo án `DRAFT`/`ACTIVE`/`COMPLETED`/`CANCELLED`; lịch tập hôm nay và lịch sử 35+ ngày phục vụ ACWR; mô phỏng `WORKOUT`/`RACE`/`EXAM`.                                                 |
+| **Phong độ & Giải đấu**  | 4 giải `COMPLETED` (T7–T10 chia thưởng 85/10/5), giải T11 `CLOSED_REGISTRATION` & `OPEN_REGISTRATION`, giải T12 `UPCOMING`, và mẫu `CANCELLED`.                                        |
+| **Hồ sơ Thú y**          | Bệnh án `OPEN`/`CLOSED`/`DRAFT` (tối đa 1 `OPEN`/ngựa theo PR #153), Khóa y tế (Xích Thố, Tuyết Ảnh, Lôi Chấn), lịch phòng ngừa đủ 4 loại (gồm `FARRIER_HOOF_CARE`) & 5 loại thực đơn. |
+| **Tài chính & Sao kê**   | Hóa đơn 6 tháng (2026-07 đến 2026-12) đủ 5 trạng thái (`PAID`, `SENT`, `DRAFT`, `OVERDUE`, `CANCELLED`); Dạ Nguyệt lưu giữ Khu H; Xích Thố có hóa đơn quá hạn T9–T10.                  |
+| **Chuồng trại & Vật tư** | Sơ đồ 4 phân khu A (`3x4`), B (`3x4`), C (`2x2`), H (`2x2`); đủ 7 nhóm vật tư, cảnh báo tồn kho, phiếu nhập đủ 5 trạng thái và sự cố đủ 4 trạng thái.                                  |
 
 ---
 
 ## 5. Danh mục Lệnh Phát Triển & Kiểm Thử
 
-| Lệnh                | Ý nghĩa                                                         |
-| :------------------ | :-------------------------------------------------------------- |
-| `npm run start:dev` | Khởi động server NestJS chế độ Hot-reload                       |
-| `npm run db:up`     | Khởi chạy PostgreSQL container bằng Docker Compose              |
-| `npm run db:down`   | Dừng và tắt PostgreSQL container                                |
-| `npm run db:setup`  | Đẩy bảng Prisma và nạp toàn bộ 100% dữ liệu mẫu                 |
-| `npm run db:seed`   | Chỉ chạy lại script nạp dữ liệu mẫu                             |
-| `npm run db:studio` | Mở giao diện trực quan Prisma Studio tại port 5555              |
-| `npm run typecheck` | Kiểm tra tính toàn vẹn kiểu dữ liệu TypeScript (`tsc --noEmit`) |
-| `npm run test:unit` | Chạy 100% Unit test suite bằng Jest (28 suites, 267 tests)      |
-| `npm run build`     | Biên dịch toàn bộ dự án NestJS ra thư mục `/dist`               |
-| `npm run lint`      | Chạy ESLint kiểm tra quy chuẩn mã nguồn                         |
+| Lệnh                         | Ý nghĩa                                                         |
+| :--------------------------- | :-------------------------------------------------------------- |
+| `npm run start:dev`          | Khởi động server NestJS chế độ Hot-reload                       |
+| `npm run db:up`              | Khởi chạy PostgreSQL container bằng Docker Compose              |
+| `npm run db:down`            | Dừng và tắt PostgreSQL container                                |
+| `npm run db:setup`           | Đẩy bảng Prisma và nạp dữ liệu chuẩn (`db:seed`)                |
+| `npm run db:seed`            | Nạp dữ liệu chuẩn idempotent (an toàn chạy lại nhiều lần)       |
+| `npm run db:seed -- --reset` | Reset sạch DB dev/local và nạp lại toàn bộ dữ liệu mẫu          |
+| `npm run db:studio`          | Mở giao diện trực quan Prisma Studio tại port 5555              |
+| `npm run typecheck`          | Kiểm tra tính toàn vẹn kiểu dữ liệu TypeScript (`tsc --noEmit`) |
+| `npm run test:unit`          | Chạy toàn bộ Unit test suite bằng Jest                          |
+| `npm run build`              | Biên dịch toàn bộ dự án NestJS ra thư mục `/dist`               |
+| `npm run lint`               | Chạy ESLint kiểm tra quy chuẩn mã nguồn                         |
 
 ---
 

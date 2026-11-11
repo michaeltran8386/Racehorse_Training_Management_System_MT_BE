@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { InvoiceStatus, Prisma } from '@prisma/client';
+import { InvoiceStatus, Prisma, RestockStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -13,6 +13,45 @@ export interface FinancialActor {
   id: string | null;
   name: string;
   role: string;
+}
+
+const CLUB_OFFSET_MS = 7 * 3600000;
+export const TRAINING_MONTHLY_RATE = 4_000_000;
+export const MEDICAL_MONTHLY_PACKAGE_FEE = 1_000_000;
+export const MEDICAL_EXAM_FEE = 1_000_000;
+export const PREVENTIVE_CARE_FEE = 1_000_000;
+
+const INVOICE_ALLOWED_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
+  [InvoiceStatus.DRAFT]: [InvoiceStatus.SENT, InvoiceStatus.CANCELLED],
+  [InvoiceStatus.SENT]: [InvoiceStatus.PAID, InvoiceStatus.OVERDUE, InvoiceStatus.CANCELLED],
+  [InvoiceStatus.OVERDUE]: [InvoiceStatus.PAID, InvoiceStatus.CANCELLED],
+  [InvoiceStatus.PAID]: [],
+  [InvoiceStatus.CANCELLED]: [],
+};
+
+function toClubBillingPeriod(date: Date): string {
+  return new Date(date.getTime() + CLUB_OFFSET_MS).toISOString().slice(0, 7);
+}
+
+function serializeInvoice<
+  T extends {
+    boardingFee: unknown;
+    boardingMonthlyRate?: unknown;
+    medicalFee: unknown;
+    trainingFee: unknown;
+    prizeCredit: unknown;
+    netAmount: unknown;
+  },
+>(inv: T) {
+  return {
+    ...inv,
+    boardingFee: Number(inv.boardingFee),
+    boardingMonthlyRate: inv.boardingMonthlyRate == null ? null : Number(inv.boardingMonthlyRate),
+    medicalFee: Number(inv.medicalFee),
+    trainingFee: Number(inv.trainingFee),
+    prizeCredit: Number(inv.prizeCredit),
+    netAmount: Number(inv.netAmount),
+  };
 }
 
 @Injectable()
@@ -129,6 +168,81 @@ export class FinancialService {
   }
 
   /**
+   * Tự động tính phí y tế, huấn luyện và khấu trừ tiền thưởng cho ngựa trong kỳ thanh toán.
+   */
+  private async calculateAutomaticServiceFees(
+    horseId: string,
+    start: Date,
+    end: Date,
+    boardingDays: number,
+    db: any = this.prisma,
+  ): Promise<{ medicalFee: number; trainingFee: number; prizeCredit: number }> {
+    const [examCount, preventiveCount, activePlanCount, workoutCount, settledResults] =
+      await Promise.all([
+        typeof db?.medicalRecord?.count === 'function'
+          ? db.medicalRecord.count({
+              where: {
+                horseId,
+                status: { not: 'DRAFT' },
+                examinationDate: { gte: start, lt: end },
+              },
+            })
+          : 0,
+        typeof db?.preventiveSchedule?.count === 'function'
+          ? db.preventiveSchedule.count({
+              where: {
+                horseId,
+                status: 'COMPLETED',
+                completedDate: { gte: start, lt: end },
+              },
+            })
+          : 0,
+        typeof db?.trainingPlan?.count === 'function'
+          ? db.trainingPlan.count({
+              where: {
+                horseId,
+                status: { in: ['ACTIVE', 'COMPLETED'] },
+                startDate: { lt: end },
+                endDate: { gte: start },
+              },
+            })
+          : 0,
+        typeof db?.workoutSession?.count === 'function'
+          ? db.workoutSession.count({
+              where: {
+                horseId,
+                status: { in: ['COMPLETED', 'SCHEDULED'] },
+                scheduledDate: { gte: start, lt: end },
+              },
+            })
+          : 0,
+        typeof db?.tournamentResult?.findMany === 'function'
+          ? db.tournamentResult.findMany({
+              where: {
+                settledAt: { gte: start, lt: end },
+                registration: { horseId },
+              },
+              select: { netOwnerPayout: true, prizeMoneyWon: true },
+            })
+          : [],
+      ]);
+
+    const hasMedicalActivity = examCount > 0 || preventiveCount > 0;
+    const medicalFee = hasMedicalActivity ? MEDICAL_MONTHLY_PACKAGE_FEE : 0;
+    const hasTrainingActivity = boardingDays > 0 || activePlanCount > 0 || workoutCount > 0;
+    const trainingFee = hasTrainingActivity ? TRAINING_MONTHLY_RATE : 0;
+    const prizeCredit = Array.isArray(settledResults)
+      ? settledResults.reduce(
+          (sum: number, r: { netOwnerPayout?: unknown; prizeMoneyWon?: unknown }) =>
+            sum + Number(r.netOwnerPayout ?? r.prizeMoneyWon ?? 0),
+          0,
+        )
+      : 0;
+
+    return { medicalFee, trainingFee, prizeCredit };
+  }
+
+  /**
    * Tạo hóa đơn tài chính mới (Club Manager)
    */
   async create(dto: CreateInvoiceDto, user: FinancialActor) {
@@ -146,23 +260,31 @@ export class FinancialService {
         where: { id: dto.horseId },
         select: { id: true, ownerId: true, name: true, status: true },
       });
-      if (horse) {
-        resolvedOwnerId = horse.ownerId || dto.ownerId;
-        if (!resolvedOwnerId) {
-          throw apiError(
-            HttpStatus.BAD_REQUEST,
-            'HORSE_HAS_NO_OWNER',
-            `Horse ${horse.name} does not have an assigned owner to bill.`,
-          );
-        }
-        if (dto.ownerId && horse.ownerId && dto.ownerId !== horse.ownerId) {
-          throw apiError(
-            HttpStatus.BAD_REQUEST,
-            'OWNER_MISMATCH',
-            `The specified ownerId ${dto.ownerId} does not match the horse's owner ${horse.ownerId}.`,
-          );
-        }
+      if (!horse) {
+        throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', `Horse ${dto.horseId} not found.`);
       }
+      resolvedOwnerId = horse.ownerId || dto.ownerId;
+      if (!resolvedOwnerId) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'HORSE_HAS_NO_OWNER',
+          `Horse ${horse.name} does not have an assigned owner to bill.`,
+        );
+      }
+      if (dto.ownerId && horse.ownerId && dto.ownerId !== horse.ownerId) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'OWNER_MISMATCH',
+          `The specified ownerId ${dto.ownerId} does not match the horse's owner ${horse.ownerId}.`,
+        );
+      }
+    }
+    if (!resolvedOwnerId) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'HORSE_HAS_NO_OWNER',
+        'Cannot create invoice without an assigned horse owner.',
+      );
     }
 
     const allocations = await this.prisma.stallAllocation.findMany({
@@ -172,11 +294,31 @@ export class FinancialService {
         OR: [{ endDate: null }, { endDate: { gte: start } }],
       },
     });
+    if (typeof this.prisma?.financialInvoice?.findFirst === 'function') {
+      const existingActive = await this.prisma.financialInvoice.findFirst({
+        where: {
+          horseId: dto.horseId,
+          billingPeriod: dto.billingPeriod,
+          status: { not: InvoiceStatus.CANCELLED },
+        },
+        select: { id: true },
+      });
+      if (existingActive) {
+        throw apiError(
+          HttpStatus.CONFLICT,
+          'DUPLICATE_INVOICE_FOR_PERIOD',
+          `An active statement already exists for this horse in period ${dto.billingPeriod}.`,
+        );
+      }
+    }
     const calculated = calculateBoardingFee(dto.billingPeriod, allocations);
     const boardingFee = calculated.boardingFee.toNumber();
-    const medicalFee = dto.medicalFee ?? 0;
-    const trainingFee = dto.trainingFee ?? 0;
-    const prizeCredit = dto.prizeCredit ?? 0;
+    const { medicalFee, trainingFee, prizeCredit } = await this.calculateAutomaticServiceFees(
+      dto.horseId,
+      start,
+      end,
+      calculated.boardingDays,
+    );
     const netAmount = boardingFee + medicalFee + trainingFee - prizeCredit;
 
     const invoice = await this.prisma.financialInvoice.create({
@@ -238,6 +380,32 @@ export class FinancialService {
       );
     }
 
+    const isEditingFees =
+      dto.boardingFee !== undefined ||
+      dto.medicalFee !== undefined ||
+      dto.trainingFee !== undefined ||
+      dto.prizeCredit !== undefined ||
+      (dto.billingPeriod !== undefined && dto.billingPeriod !== existing.billingPeriod);
+
+    if (existing.status && existing.status !== InvoiceStatus.DRAFT && isEditingFees) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'INVOICE_NOT_EDITABLE',
+        'Only DRAFT invoices can have service fees edited.',
+      );
+    }
+
+    if (dto.status !== undefined && existing.status && dto.status !== existing.status) {
+      const allowedNext = INVOICE_ALLOWED_TRANSITIONS[existing.status] || [];
+      if (!allowedNext.includes(dto.status)) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_INVOICE_STATUS_TRANSITION',
+          `Cannot transition invoice from ${existing.status} to ${dto.status}. Allowed next states: ${allowedNext.join(', ') || 'none'}.`,
+        );
+      }
+    }
+
     const boardingFee =
       dto.boardingFee !== undefined ? dto.boardingFee : Number(existing.boardingFee);
     if (
@@ -273,12 +441,16 @@ export class FinancialService {
           !existing.dueAt && { dueAt: new Date(Date.now() + 7 * 86400000) }),
         ...(dto.invoiceUrl !== undefined && { invoiceUrl: dto.invoiceUrl }),
       },
+      include: {
+        horse: { select: { id: true, name: true, horseCode: true } },
+        owner: { select: { id: true, fullName: true, email: true } },
+      },
     });
 
     if (dto.status === InvoiceStatus.OVERDUE) {
       await this.applyDebtImpoundToHorses([existing.horseId]);
       await this.applyBadDebtToOwners([existing.ownerId]);
-    } else if (dto.status === InvoiceStatus.PAID) {
+    } else if (dto.status === InvoiceStatus.PAID || dto.status === InvoiceStatus.CANCELLED) {
       await this.checkAndReleaseDebtSanctions(existing.horseId, existing.ownerId, user);
     }
 
@@ -290,16 +462,7 @@ export class FinancialService {
       { entityName: 'FinancialInvoice', oldValues: existing, newValues: updated },
     );
 
-    return {
-      ...updated,
-      boardingFee: Number(updated.boardingFee),
-      boardingMonthlyRate:
-        updated.boardingMonthlyRate == null ? null : Number(updated.boardingMonthlyRate),
-      medicalFee: Number(updated.medicalFee),
-      trainingFee: Number(updated.trainingFee),
-      prizeCredit: Number(updated.prizeCredit),
-      netAmount: Number(updated.netAmount),
-    };
+    return serializeInvoice(updated);
   }
 
   /**
@@ -334,16 +497,8 @@ export class FinancialService {
       );
     }
 
-    const ALLOWED_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
-      [InvoiceStatus.DRAFT]: [InvoiceStatus.SENT, InvoiceStatus.CANCELLED],
-      [InvoiceStatus.SENT]: [InvoiceStatus.PAID, InvoiceStatus.OVERDUE, InvoiceStatus.CANCELLED],
-      [InvoiceStatus.OVERDUE]: [InvoiceStatus.PAID, InvoiceStatus.CANCELLED],
-      [InvoiceStatus.PAID]: [],
-      [InvoiceStatus.CANCELLED]: [],
-    };
-
     if (existing.status !== status) {
-      const allowedNext = ALLOWED_TRANSITIONS[existing.status] || [];
+      const allowedNext = INVOICE_ALLOWED_TRANSITIONS[existing.status] || [];
       if (!allowedNext.includes(status)) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
@@ -379,7 +534,7 @@ export class FinancialService {
     if (status === InvoiceStatus.OVERDUE) {
       await this.applyDebtImpoundToHorses([existing.horseId]);
       await this.applyBadDebtToOwners([existing.ownerId]);
-    } else if (status === InvoiceStatus.PAID) {
+    } else if (status === InvoiceStatus.PAID || status === InvoiceStatus.CANCELLED) {
       await this.checkAndReleaseDebtSanctions(existing.horseId, existing.ownerId, user);
     }
 
@@ -679,7 +834,8 @@ export class FinancialService {
                 horse.stallAllocations,
               );
               if (boardingDays === 0) continue;
-              const trainingFee = 4000000;
+              const { medicalFee, trainingFee, prizeCredit } =
+                await this.calculateAutomaticServiceFees(horse.id, start, end, boardingDays, tx);
               await tx.financialInvoice.create({
                 data: {
                   horseId: horse.id,
@@ -688,10 +844,10 @@ export class FinancialService {
                   boardingDays,
                   boardingMonthlyRate: BOARDING_MONTHLY_RATE,
                   boardingFee: boardingFee.toNumber(),
-                  medicalFee: 0,
+                  medicalFee,
                   trainingFee,
-                  prizeCredit: 0,
-                  netAmount: boardingFee.plus(trainingFee),
+                  prizeCredit,
+                  netAmount: boardingFee.plus(medicalFee).plus(trainingFee).minus(prizeCredit),
                   status: InvoiceStatus.DRAFT,
                 },
               });
@@ -832,6 +988,158 @@ export class FinancialService {
         })),
         raceSettlements,
       },
+    };
+  }
+
+  /**
+   * Tổng hợp Thu – Chi nội bộ CLB cho Club Manager (Hóa đơn Chủ ngựa + Phiếu nhập vật tư DELIVERED)
+   */
+  async getClubCashflow(billingPeriod?: string) {
+    const selectedPeriod =
+      billingPeriod && billingPeriod !== 'ALL'
+        ? (boardingMonth(billingPeriod), billingPeriod)
+        : 'ALL';
+
+    await this.sweepOverdue();
+
+    const [invoices, restocks] = await Promise.all([
+      this.prisma.financialInvoice.findMany({
+        include: {
+          horse: { select: { id: true, name: true, horseCode: true, breed: true } },
+          owner: { select: { id: true, fullName: true, email: true } },
+        },
+        orderBy: [{ billingPeriod: 'desc' }, { createdAt: 'desc' }],
+      }),
+      typeof (this.prisma as any).restockRequest?.findMany === 'function'
+        ? (this.prisma as any).restockRequest.findMany({
+            where: { status: RestockStatus.DELIVERED },
+            include: {
+              supply: {
+                select: {
+                  id: true,
+                  code: true,
+                  name: true,
+                  unit: true,
+                  category: true,
+                  unitPrice: true,
+                },
+              },
+              zone: { select: { id: true, code: true, name: true } },
+              requestedBy: { select: { id: true, fullName: true } },
+            },
+            orderBy: [{ deliveredAt: 'desc' }, { createdAt: 'desc' }],
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const mappedSupplyExpenses = (restocks as any[]).map((req) => {
+      const effectiveDate = new Date(
+        req.deliveredAt ?? req.updatedAt ?? req.createdAt ?? new Date(),
+      );
+      const period = toClubBillingPeriod(effectiveDate);
+      const quantity = Number(req.approvedQuantity ?? req.requestedQuantity ?? 0);
+      const unitPrice = Number(req.supply?.unitPrice ?? 0);
+      const totalCost = Math.round(quantity * unitPrice);
+      return {
+        id: req.id,
+        requestNumber: req.requestNumber || req.id.slice(0, 8),
+        billingPeriod: period,
+        deliveredAt: req.deliveredAt ?? req.updatedAt ?? req.createdAt ?? null,
+        zoneName: req.zone?.name || req.zone?.code || '—',
+        zoneCode: req.zone?.code || null,
+        supplyId: req.supplyId,
+        supplyCode: req.supply?.code || '—',
+        supplyName: req.supply?.name || '—',
+        supplyCategory: req.supply?.category || null,
+        unit: req.supply?.unit || '',
+        quantity,
+        unitPrice,
+        totalCost,
+        requestedByName: req.requestedBy?.fullName || null,
+      };
+    });
+
+    const periods = Array.from(
+      new Set([
+        ...invoices.map((inv) => inv.billingPeriod),
+        ...mappedSupplyExpenses.map((s) => s.billingPeriod),
+      ]),
+    )
+      .filter(Boolean)
+      .sort()
+      .reverse();
+
+    const filteredInvoices =
+      selectedPeriod === 'ALL'
+        ? invoices
+        : invoices.filter((inv) => inv.billingPeriod === selectedPeriod);
+    const filteredSupplyExpenses =
+      selectedPeriod === 'ALL'
+        ? mappedSupplyExpenses
+        : mappedSupplyExpenses.filter((item) => item.billingPeriod === selectedPeriod);
+
+    let actualRevenuePaid = 0;
+    let pendingReceivable = 0;
+    let draftBillingTotal = 0;
+    let ownerSurplusPayoutExpense = 0;
+    let paidInvoiceCount = 0;
+    let pendingInvoiceCount = 0;
+    let overdueInvoiceCount = 0;
+    let draftInvoiceCount = 0;
+    let cancelledInvoiceCount = 0;
+    let surplusPayoutCount = 0;
+
+    for (const inv of filteredInvoices) {
+      const net = Number(inv.netAmount);
+      if (inv.status === InvoiceStatus.CANCELLED) {
+        cancelledInvoiceCount += 1;
+        continue;
+      }
+      if (net < 0) {
+        ownerSurplusPayoutExpense += Math.abs(net);
+        surplusPayoutCount += 1;
+      }
+      if (inv.status === InvoiceStatus.PAID) {
+        paidInvoiceCount += 1;
+        if (net > 0) actualRevenuePaid += net;
+      } else if (inv.status === InvoiceStatus.SENT || inv.status === InvoiceStatus.OVERDUE) {
+        pendingInvoiceCount += 1;
+        if (inv.status === InvoiceStatus.OVERDUE) overdueInvoiceCount += 1;
+        if (net > 0) pendingReceivable += net;
+      } else if (inv.status === InvoiceStatus.DRAFT) {
+        draftInvoiceCount += 1;
+        if (net > 0) draftBillingTotal += net;
+      }
+    }
+
+    const supplyImportExpense = filteredSupplyExpenses.reduce(
+      (sum, item) => sum + item.totalCost,
+      0,
+    );
+    const totalActualExpense = supplyImportExpense + ownerSurplusPayoutExpense;
+    const netCashflow = actualRevenuePaid - totalActualExpense;
+
+    return {
+      billingPeriod: selectedPeriod,
+      periods,
+      summary: {
+        actualRevenuePaid,
+        pendingReceivable,
+        draftBillingTotal,
+        supplyImportExpense,
+        ownerSurplusPayoutExpense,
+        totalActualExpense,
+        netCashflow,
+        deliveredRestockCount: filteredSupplyExpenses.length,
+        paidInvoiceCount,
+        pendingInvoiceCount,
+        overdueInvoiceCount,
+        draftInvoiceCount,
+        cancelledInvoiceCount,
+        surplusPayoutCount,
+      },
+      revenueItems: filteredInvoices.map((inv) => serializeInvoice(inv)),
+      supplyExpenses: filteredSupplyExpenses,
     };
   }
 }
