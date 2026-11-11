@@ -135,6 +135,15 @@ describe('SimulatorService', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
+      tournament: {
+        findUnique: jest.fn(),
+      },
+      tournamentRegistration: {
+        findFirst: jest.fn(),
+      },
+      tournamentResult: {
+        upsert: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -1398,6 +1407,259 @@ describe('SimulatorService', () => {
       expect(state.status).toBe('COMPLETED');
       expect(state.result.distanceCompletedM).toBe(1800);
       expect(state.result.abortReason).toBeUndefined();
+    });
+  });
+
+  describe('quickSimulateTournamentRace', () => {
+    it('computes telemetry from horse workout history, auto-distributes 50/30/20 prizes, and upserts draft TournamentResults', async () => {
+      prisma.tournament.findUnique.mockResolvedValue({
+        id: 'tourney-1',
+        name: 'Saigon Classic Cup',
+        status: 'CLOSED_REGISTRATION',
+        distanceMeters: 2000,
+        trackSurface: 'TURF',
+        prizePool: 300000000,
+        registrations: [
+          {
+            id: 'reg-1',
+            horseId: 'horse-1',
+            horse: {
+              id: 'horse-1',
+              name: 'Saigon Cyclone',
+              isMedicalLocked: false,
+              workoutSessions: [
+                {
+                  actualSpeedKmh: 62.5,
+                  actualDurationMinutes: 2.1,
+                  actualHeartRateBpm: 185,
+                  intensityLevel: 'GALLOP',
+                },
+              ],
+            },
+          },
+          {
+            id: 'reg-2',
+            horseId: 'horse-2',
+            horse: {
+              id: 'horse-2',
+              name: 'Mekong Arrow',
+              isMedicalLocked: false,
+              workoutSessions: [
+                {
+                  actualSpeedKmh: 58.0,
+                  actualDurationMinutes: 2.3,
+                  actualHeartRateBpm: 178,
+                  intensityLevel: 'CANTER',
+                },
+              ],
+            },
+          },
+          {
+            id: 'reg-3',
+            horseId: 'horse-3',
+            horse: {
+              id: 'horse-3',
+              name: 'Dalat Wind',
+              isMedicalLocked: false,
+              workoutSessions: [],
+            },
+          },
+        ],
+      });
+      prisma.simulatorSession.create.mockResolvedValue({
+        id: 'quick-race-session-1',
+        status: 'COMPLETED',
+      });
+
+      const res = await service.quickSimulateTournamentRace('tourney-1', mockCM);
+
+      expect(res.sessionId).toBe('quick-race-session-1');
+      expect(res.source).toContain('TMEC Simulator (Đo nhanh)');
+      expect(res.results).toHaveLength(3);
+      expect(res.results.map((r) => r.finalRank)).toEqual([1, 2, 3]);
+      expect(res.results[0].prizeMoneyWon).toBe(150000000);
+      expect(res.results[1].prizeMoneyWon).toBe(90000000);
+      expect(res.results[2].prizeMoneyWon).toBe(60000000);
+      expect(prisma.tournamentResult.upsert).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('startTournamentRace + recordRaceProgress + recordFinished (2D race sync)', () => {
+    it('preserves tournament metadata across sim:race_progress ticks and upserts draft TournamentResults on finish', async () => {
+      prisma.tournament.findUnique.mockResolvedValue({
+        id: 'tourney-race-1',
+        name: 'Saigon Derby 2D',
+        status: 'CLOSED_REGISTRATION',
+        distanceMeters: 1600,
+        trackType: 'TURF',
+        prizePool: 100000000,
+        registrations: [
+          {
+            id: 'reg-1',
+            horseId: 'horse-1',
+            horse: {
+              id: 'horse-1',
+              name: 'Hồng Kỳ',
+              horseCode: 'HK-01',
+              breed: 'THOROUGHBRED',
+              status: 'ACTIVE',
+              color: 'Bay',
+              weightKg: 480,
+              dob: new Date('2021-01-01'),
+              isMedicalLocked: false,
+              isDebtImpounded: false,
+            },
+          },
+          {
+            id: 'reg-2',
+            horseId: 'horse-2',
+            horse: {
+              id: 'horse-2',
+              name: 'Lôi Chấn',
+              horseCode: 'LC-02',
+              breed: 'THOROUGHBRED',
+              status: 'ACTIVE',
+              color: 'Black',
+              weightKg: 495,
+              dob: new Date('2021-03-01'),
+              isMedicalLocked: false,
+              isDebtImpounded: false,
+            },
+          },
+        ],
+      });
+
+      let storedSession: any = null;
+      prisma.simulatorSession.findMany.mockResolvedValue([]);
+      prisma.simulatorSession.create.mockImplementation(({ data }: any) => {
+        storedSession = {
+          ...data,
+          status: 'PENDING',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          startedAt: null,
+          finishedAt: null,
+          workoutSession: null,
+        };
+        return Promise.resolve(storedSession);
+      });
+      prisma.simulatorSession.findUnique.mockImplementation(({ where }: any) => {
+        return Promise.resolve(storedSession?.id === where.id ? storedSession : null);
+      });
+      prisma.simulatorSession.update.mockImplementation(({ where, data }: any) => {
+        if (storedSession?.id === where.id) {
+          storedSession = { ...storedSession, ...data };
+        }
+        return Promise.resolve(storedSession);
+      });
+      prisma.simulatorSession.updateMany.mockImplementation(({ where, data }: any) => {
+        if (storedSession?.id === where.id) {
+          storedSession = { ...storedSession, ...data };
+          return Promise.resolve({ count: 1 });
+        }
+        return Promise.resolve({ count: 0 });
+      });
+      prisma.tournamentRegistration.findFirst.mockImplementation(({ where }: any) => {
+        if (where.horseId === 'horse-1') return Promise.resolve({ id: 'reg-1' });
+        if (where.horseId === 'horse-2') return Promise.resolve({ id: 'reg-2' });
+        return Promise.resolve(null);
+      });
+
+      const started = await service.startTournamentRace('tourney-race-1', mockCM);
+      expect(started.sessionId).toBeTruthy();
+      expect(storedSession.lastSnapshot.tournamentId).toBe('tourney-race-1');
+
+      await service.recordRaceProgress(
+        {
+          event: 'sim:race_progress',
+          session_id: started.sessionId,
+          sim_time_s: 12.5,
+          positions: [
+            {
+              position: 1,
+              lane: 1,
+              horse_id: 'horse-1',
+              covered_distance_m: 220,
+              gap_lengths: 0,
+              velocity_mps: 17.6,
+              heart_rate_bpm: 175,
+              status: 'RUNNING',
+            },
+            {
+              position: 2,
+              lane: 2,
+              horse_id: 'horse-2',
+              covered_distance_m: 215,
+              gap_lengths: 2,
+              velocity_mps: 17.2,
+              heart_rate_bpm: 178,
+              status: 'RUNNING',
+            },
+          ],
+        },
+        mockCM,
+      );
+
+      // lastSnapshot must retain tournamentId & prizePool alongside latest race progress
+      expect(storedSession.lastSnapshot.tournamentId).toBe('tourney-race-1');
+      expect(storedSession.lastSnapshot.prizePool).toBe(100000000);
+      expect(storedSession.lastSnapshot.sim_time_s).toBe(12.5);
+
+      await service.recordFinished(
+        {
+          event: 'sim:session_finished',
+          session_id: started.sessionId,
+          type: 'RACE',
+          status: 'COMPLETED',
+          surface: 'GRASS',
+          distance_m: 1600,
+          results: [
+            {
+              horse_id: 'horse-1',
+              final_rank: 1,
+              finish_time_s: 92.09,
+              avg_speed_kmh: 62.55,
+              status: 'FINISHED',
+            },
+            {
+              horse_id: 'horse-2',
+              final_rank: 2,
+              finish_time_s: 92.73,
+              avg_speed_kmh: 62.12,
+              status: 'FINISHED',
+            },
+          ],
+        },
+        mockCM,
+      );
+
+      expect(prisma.tournamentResult.upsert).toHaveBeenCalledTimes(2);
+      expect(prisma.tournamentResult.upsert).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          where: { registrationId: 'reg-1' },
+          create: expect.objectContaining({
+            finalRank: 1,
+            finishTimeSeconds: 92.09,
+            avgSpeedKmh: 62.55,
+            prizeMoneyWon: 50000000,
+            officialNotes: 'Ghi nhận từ mô phỏng 2D chính thức',
+          }),
+        }),
+      );
+      expect(prisma.tournamentResult.upsert).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: { registrationId: 'reg-2' },
+          create: expect.objectContaining({
+            finalRank: 2,
+            finishTimeSeconds: 92.73,
+            avgSpeedKmh: 62.12,
+            prizeMoneyWon: 30000000,
+            officialNotes: 'Ghi nhận từ mô phỏng 2D chính thức',
+          }),
+        }),
+      );
     });
   });
 });

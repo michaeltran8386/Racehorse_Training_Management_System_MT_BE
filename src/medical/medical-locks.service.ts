@@ -1,8 +1,15 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
-import { Role, HorseStatus, WorkoutStatus } from '@prisma/client';
+import {
+  Role,
+  HorseStatus,
+  WorkoutStatus,
+  RegistrationStatus,
+  TournamentStatus,
+} from '@prisma/client';
+import { assertStatusTransition } from '../horses/horse-rules';
 import { HEAVY_WORKOUT_WHERE } from '../training/training-rules';
 import {
   CreateMedicalLockDto,
@@ -18,6 +25,8 @@ import { SimulatorRealtimeService } from '../simulator/simulator-realtime.servic
 /** P2-04: Khóa huấn luyện — đặt, gỡ, gia hạn, danh sách (FR-3.10 → FR-3.12). */
 @Injectable()
 export class MedicalLocksService {
+  private readonly logger = new Logger(MedicalLocksService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -179,6 +188,45 @@ export class MedicalLocksService {
       return { lock, horse };
     });
 
+    // Tự động rút đăng ký các giải đấu chưa diễn ra khi ngựa bị khóa y tế (STT 1: F3 → F5).
+    // Thực hiện NGOÀI transaction chính để nếu có lỗi bảng giải đấu thì không làm hỏng transaction đặt khóa.
+    try {
+      const upcomingRegs = await (this.prisma as any).tournamentRegistration?.findMany({
+        where: {
+          horseId: dto.horseId,
+          status: { in: [RegistrationStatus.REGISTERED, RegistrationStatus.CONFIRMED] },
+          tournament: {
+            raceDate: { gte: new Date() },
+            status: { notIn: [TournamentStatus.COMPLETED, TournamentStatus.CANCELLED] },
+          },
+        },
+        select: { id: true, notes: true },
+      });
+
+      for (const reg of upcomingRegs || []) {
+        const scratched = await (this.prisma as any).tournamentRegistration.update({
+          where: { id: reg.id },
+          data: {
+            status: RegistrationStatus.SCRATCHED_MEDICAL,
+            notes: reg.notes
+              ? `${reg.notes} | Rút vì Khóa y tế ${lock.lockCode}: ${dto.lockReason}`
+              : `Rút vì Khóa y tế ${lock.lockCode}: ${dto.lockReason}`,
+          },
+        });
+        await this.audit.record(
+          { id: actor.userId, name: actor.fullName },
+          'SCRATCH_TOURNAMENT_REGISTRATION',
+          `Auto-scratched registration ${reg.id} due to medical lock ${lock.lockCode}`,
+          reg.id,
+          { entityName: 'TournamentRegistration', oldValues: reg, newValues: scratched },
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Không thể tự động rút đăng ký giải đấu cho ngựa ${dto.horseId}: ${err?.message || err}`,
+      );
+    }
+
     const impactAssessment = {
       horseId: horse.id,
       horseName: horse.name,
@@ -242,7 +290,38 @@ export class MedicalLocksService {
         );
       }
 
-      const newHorseStatus = dto.newHorseStatus || lock.horse.status;
+      if (
+        dto.newHorseStatus &&
+        (dto.newHorseStatus === HorseStatus.RETIRED || dto.newHorseStatus === HorseStatus.INJURED)
+      ) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'INVALID_RELEASE_STATUS',
+          'Trạng thái sau khi gỡ khóa y tế không thể là RETIRED hoặc INJURED.',
+        );
+      }
+
+      const newHorseStatus = dto.newHorseStatus || lock.horse?.status;
+      const currentStatus = lock.horse?.status || lock.appliedMedicalStatus || HorseStatus.INJURED;
+      if (newHorseStatus && newHorseStatus !== currentStatus) {
+        assertStatusTransition({
+          role: actor.role,
+          from: currentStatus,
+          to: newHorseStatus,
+          isMedicalLocked: false,
+          reason: dto.unlockReason,
+        });
+      }
+
+      // Đếm số lệnh khóa đang còn active của ngựa (tránh tắt nhầm cờ nếu còn khóa khác - H-08)
+      const remainingActiveLocks = await tx.medicalLock.count({
+        where: {
+          horseId: lock.horseId,
+          isLocked: true,
+          id: { not: lockId },
+        },
+      });
+      const stillLocked = remainingActiveLocks > 0;
 
       const unlocked = await tx.medicalLock.update({
         where: { id: lockId },
@@ -251,7 +330,7 @@ export class MedicalLocksService {
           unlockedAt: new Date(),
           unlockVetUserId: actor.userId,
           unlockReason: dto.unlockReason,
-          recheckNotes: dto.unlockReason,
+          recheckNotes: dto.recheckNotes || dto.unlockReason,
         },
         include: {
           horse: { select: { id: true, name: true, microchipRfid: true } },
@@ -262,7 +341,10 @@ export class MedicalLocksService {
 
       await tx.horse.update({
         where: { id: lock.horseId },
-        data: { isMedicalLocked: false, status: newHorseStatus },
+        data: {
+          isMedicalLocked: stillLocked,
+          status: stillLocked ? lock.horse?.status || HorseStatus.INJURED : newHorseStatus,
+        },
       });
 
       await this.audit.record(

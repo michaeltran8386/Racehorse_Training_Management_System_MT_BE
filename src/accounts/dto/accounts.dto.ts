@@ -36,6 +36,14 @@ export class ReasonDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Xác nhận tiếp tục khóa dù nhân viên đang có công việc phụ trách',
+  })
+  @IsOptional()
+  @IsBoolean()
+  confirmedActiveAssignments?: boolean;
 }
 
 export class UpdatePermissionsDto {

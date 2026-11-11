@@ -16,7 +16,9 @@ export class DailyTasksScheduler {
   async handleNightlyTaskGeneration() {
     this.logger.log('[DailyTasksScheduler] Running nightly task generation cron job at 00:05...');
     try {
-      const result = await this.service.generateDailyTasksForDate(new Date());
+      const now = new Date();
+      const clubNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+      const result = await this.service.generateDailyTasksForDate(clubNow);
       this.logger.log(
         `[DailyTasksScheduler] Nightly generation complete: ${result.totalGenerated} tasks for ${result.horsesProcessed} horses on ${result.date}`,
       );

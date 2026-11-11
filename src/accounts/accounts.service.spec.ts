@@ -134,6 +134,26 @@ describe('AccountsService', () => {
     expect(mockAuth.revokeAllTokens).toHaveBeenCalledWith('binh');
   });
 
+  it('should block locking when staff has active stall assignments, unless confirmed (STT 16)', async () => {
+    withTarget({ ...manager, id: 'binh', role: Role.GROOM });
+    (mockPrisma as any).stallAllocation = {
+      count: jest.fn().mockResolvedValue(3),
+    };
+
+    const error = await fail(
+      service.changeStatus(actor, 'binh', 'lock', { reason: 'Violation of policy' }),
+    );
+    expect(error.getStatus()).toBe(HttpStatus.CONFLICT);
+    expect((error.getResponse() as any).code).toBe('USER_HAS_ACTIVE_ASSIGNMENTS');
+
+    // With confirmedActiveAssignments = true, it proceeds
+    const updated = await service.changeStatus(actor, 'binh', 'lock', {
+      reason: 'Violation of policy',
+      confirmedActiveAssignments: true,
+    });
+    expect(updated.status).toBe(UserStatus.LOCKED);
+  });
+
   it('should not let a manager lock their own account', async () => {
     withTarget(manager);
     const error = await fail(
@@ -176,7 +196,7 @@ describe('AccountsService', () => {
     expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'CANNOT_DELETE_USED' }));
   });
 
-  it('should invite staff as INVITED and mail an invite code, but never a Horse Owner', async () => {
+  it('should invite staff and Horse Owner as INVITED and mail an invite code', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
     mockPrisma.user.create.mockImplementation(({ data }) =>
       Promise.resolve({ id: 'tung', ...data }),
@@ -191,10 +211,14 @@ describe('AccountsService', () => {
     expect(user.invitedBy).toBe('Đỗ Quốc Việt');
     expect(mockOtp.issue).toHaveBeenCalledWith('tung.ngo@gmail.com', OtpPurpose.INVITE, true);
 
-    const error = await fail(
-      service.invite(actor, { fullName: 'X', email: 'x@gmail.com', role: 'HORSE_OWNER' }),
-    );
-    expect(error.getStatus()).toBe(HttpStatus.BAD_REQUEST);
+    const owner = await service.invite(actor, {
+      fullName: 'Trần Văn Chủ',
+      email: 'chu.ngua@gmail.com',
+      role: 'HORSE_OWNER',
+    });
+    expect(owner.status).toBe(UserStatus.INVITED);
+    expect(owner.role).toBe('HORSE_OWNER');
+    expect(mockOtp.issue).toHaveBeenCalledWith('chu.ngua@gmail.com', OtpPurpose.INVITE, true);
   });
 
   it('should count granted and revoked switches when saving permissions', async () => {

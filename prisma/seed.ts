@@ -35,6 +35,7 @@ const staff = [
   ['trainer', 'Nguyễn Văn Tuấn', 'HEAD_TRAINER'],
   ['trainer2', 'Lê Hoàng Nam', 'HEAD_TRAINER'],
   ['vet', 'BS. Phạm Minh Trí', 'VETERINARIAN'],
+  ['vet2', 'BS. Lý Thanh Tâm', 'VETERINARIAN'],
   ['groom', 'Lê Văn Bình', 'GROOM'],
   ['groom2', 'Hoàng Văn Phúc', 'GROOM'],
   ['groom3', 'Đỗ Thị Mai', 'GROOM'],
@@ -133,6 +134,7 @@ async function clearFixtures(tx: Prisma.TransactionClient) {
 }
 
 async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
+  const passwordVet2 = await bcrypt.hash('EquiFlow@2006', 10);
   const users: Prisma.UserCreateManyInput[] = [
     ...staff.map(([key, fullName, role], i) => ({
       id: user(key),
@@ -140,7 +142,7 @@ async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
       fullName,
       role,
       status: 'ACTIVE' as const,
-      passwordHash,
+      passwordHash: key === 'vet2' ? passwordVet2 : passwordHash,
       phoneNumber: `+849012345${pad(60 + i)}`,
       ...stamp(-90),
     })),

@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { AuthModule } from '../auth/auth.module';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
 import { SupplyDeliveryGateway } from './supply-delivery.gateway';
 
 @Module({
-  imports: [PrismaModule, AuditModule, NotificationsModule],
+  imports: [PrismaModule, AuditModule, NotificationsModule, AuthModule],
   controllers: [InventoryController],
   providers: [InventoryService, SupplyDeliveryGateway],
   exports: [InventoryService, SupplyDeliveryGateway],

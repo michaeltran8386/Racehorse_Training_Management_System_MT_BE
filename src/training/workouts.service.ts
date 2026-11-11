@@ -165,9 +165,16 @@ export class WorkoutsService {
         'Ngựa đang bị lưu giữ do nợ phí. Chỉ được phép đi bộ / vận động nhẹ (WALK), không được xếp bài tập nặng.',
       );
     }
-    // 2. Ngựa ngừng quản lý.
+    // 2. Ngựa ngừng quản lý hoặc cách ly.
     if (horse.status === HorseStatus.RETIRED) {
       throw apiError(HttpStatus.BAD_REQUEST, 'HORSE_RETIRED', 'Ngựa đã ngừng quản lý.');
+    }
+    if (horse.status === HorseStatus.ISOLATED) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'HORSE_ISOLATED',
+        'Ngựa đang ở trạng thái Cách ly kiểm dịch, không được xếp lịch tập luyện ra sân chung.',
+      );
     }
 
     // Kiểm tra ô nhập phụ thuộc nhau (DTO không tự kiểm được).
@@ -383,6 +390,21 @@ export class WorkoutsService {
       if (other) {
         warnings.push(
           `Ngựa có bài tập nặng khác lúc ${clubDate(other.scheduledDate)}, cách chưa đủ 48 giờ.`,
+        );
+      }
+    }
+    // Cảnh báo ca trực của người chăm sóc (STT 34: cảnh báo nếu groom không có ca trực trong ngày)
+    if (tx.shiftRoster?.findMany) {
+      const dayStart = startOfClubDay(w.scheduledDate);
+      const rosters = await tx.shiftRoster.findMany({
+        where: {
+          groomUserId: w.assignedStaffUserId,
+          date: { gte: dayStart, lt: addDays(dayStart, 1) },
+        },
+      });
+      if (rosters.length === 0) {
+        warnings.push(
+          `Nhân viên ${groom.fullName} không có ca trực trong ngày ${clubDate(w.scheduledDate)}.`,
         );
       }
     }
@@ -1102,12 +1124,173 @@ export class WorkoutsService {
     return this.findAllWorkouts({ ...query, workoutType: 'TRIAL' }, user);
   }
 
-  /** Nhân viên chăm sóc đang hoạt động, để HT chọn khi xếp buổi tập. */
-  async findGrooms() {
-    return this.prisma.user.findMany({
+  /** Nhân viên chăm sóc đang hoạt động, lọc theo thời gian rảnh nếu có date & time. */
+  async findGrooms(
+    horseId?: string,
+    dateStr?: string,
+    timeStr?: string,
+    excludeWorkoutId?: string,
+  ): Promise<
+    Array<{
+      id: string;
+      fullName: string;
+      email: string;
+      isAssignedToHorse?: boolean;
+      hasShift?: boolean;
+      isAvailable?: boolean;
+      shiftInfo?: string;
+    }>
+  > {
+    const grooms = await this.prisma.user.findMany({
       where: { role: Role.GROOM, status: UserStatus.ACTIVE },
       select: { id: true, fullName: true, email: true },
       orderBy: { fullName: 'asc' },
+    });
+
+    if (!horseId && !dateStr) {
+      return grooms;
+    }
+
+    let assignedGroomId: string | null = null;
+    if (horseId && this.prisma.stallAllocation?.findFirst) {
+      const alloc = await this.prisma.stallAllocation.findFirst({
+        where: { horseId, isActive: true },
+        select: { assignedGroomUserId: true },
+      });
+      assignedGroomId = alloc?.assignedGroomUserId ?? null;
+    }
+
+    let groomsWithShift: Set<string> | null = null;
+    const shiftMap = new Map<
+      string,
+      Array<{ startTime: string; endTime: string; isOvernight: boolean; name: string }>
+    >();
+
+    if (dateStr && this.prisma.shiftRoster?.findMany) {
+      const d = new Date(dateStr);
+      const dayStart = startOfClubDay(isNaN(d.getTime()) ? new Date() : d);
+      const rosters = await this.prisma.shiftRoster.findMany({
+        where: {
+          date: { gte: dayStart, lt: addDays(dayStart, 1) },
+        },
+        include: { shift: true },
+      });
+      groomsWithShift = new Set(rosters.map((r) => r.groomUserId));
+      for (const r of rosters) {
+        if (r.shift) {
+          const list = shiftMap.get(r.groomUserId) || [];
+          list.push({
+            startTime: r.shift.startTime,
+            endTime: r.shift.endTime,
+            isOvernight: Boolean(r.shift.isOvernight),
+            name: r.shift.name,
+          });
+          shiftMap.set(r.groomUserId, list);
+        }
+      }
+    }
+
+    // Xác định target date-time nếu có truyền timeStr hoặc dateStr dạng ISO
+    let targetDateTime: Date | null = null;
+    if (dateStr) {
+      if (timeStr) {
+        const dateOnly = dateStr.slice(0, 10);
+        targetDateTime = new Date(
+          `${dateOnly}T${timeStr.length === 5 ? timeStr + ':00' : timeStr}+07:00`,
+        );
+      } else if (dateStr.includes('T')) {
+        targetDateTime = new Date(dateStr);
+      }
+    }
+
+    const busyGroomIds = new Set<string>();
+    if (
+      targetDateTime &&
+      !isNaN(targetDateTime.getTime()) &&
+      this.prisma.workoutSession?.findMany
+    ) {
+      // 1. Tìm các groom bị trùng buổi tập khác trong khoảng ±30 phút (loại trừ buổi tập đang sửa)
+      const overlap = GROOM_OVERLAP_MINUTES * 60 * 1000;
+      const workouts = await this.prisma.workoutSession.findMany({
+        where: {
+          status: { not: WorkoutStatus.CANCELLED },
+          ...(excludeWorkoutId ? { id: { not: excludeWorkoutId } } : {}),
+          scheduledDate: {
+            gt: new Date(targetDateTime.getTime() - overlap),
+            lt: new Date(targetDateTime.getTime() + overlap),
+          },
+        },
+        select: { assignedStaffUserId: true },
+      });
+      for (const w of workouts) {
+        if (w.assignedStaffUserId) busyGroomIds.add(w.assignedStaffUserId);
+      }
+    }
+
+    // Kiểm tra giờ tập có nằm trong khung giờ của ca trực không
+    const isWithinShift = (
+      shifts: Array<{ startTime: string; endTime: string; isOvernight: boolean }>,
+      targetDt: Date,
+    ): boolean => {
+      const { hour, minute } = clubTime(targetDt);
+      const targetMins = hour * 60 + minute;
+      for (const s of shifts) {
+        const [sh, sm] = (s.startTime || '00:00').split(':').map(Number);
+        const [eh, em] = (s.endTime || '23:59').split(':').map(Number);
+        const startMins = sh * 60 + (sm || 0);
+        const endMins = eh * 60 + (em || 0);
+        if (s.isOvernight) {
+          if (targetMins >= startMins || targetMins <= endMins) return true;
+        } else {
+          if (targetMins >= startMins && targetMins <= endMins) return true;
+        }
+      }
+      return false;
+    };
+
+    const mapped = grooms.map((g) => {
+      const shifts = shiftMap.get(g.id);
+      const hasRoster = Boolean(shifts && shifts.length > 0);
+      let isAvailable = true;
+      let shiftInfo: string | undefined = undefined;
+
+      if (hasRoster && shifts) {
+        shiftInfo = shifts.map((s) => `${s.name} (${s.startTime}-${s.endTime})`).join(', ');
+      }
+
+      if (targetDateTime && !isNaN(targetDateTime.getTime())) {
+        // Nếu bị trùng buổi tập khác trong 30 phút -> BẬN
+        if (busyGroomIds.has(g.id)) {
+          isAvailable = false;
+        }
+        // Nếu có ca trực mà giờ tập KHÔNG nằm trong ca trực (ví dụ ca tối mà tập sáng) -> BẬN
+        else if (hasRoster && shifts && !isWithinShift(shifts, targetDateTime)) {
+          isAvailable = false;
+        }
+        // Nếu không có ca trực (Groom lách luật tự do / không làm gì cả) -> RẢNH (isAvailable = true)
+      }
+
+      return {
+        ...g,
+        isAssignedToHorse: assignedGroomId ? g.id === assignedGroomId : undefined,
+        hasShift: groomsWithShift ? groomsWithShift.has(g.id) : undefined,
+        isAvailable,
+        shiftInfo,
+      };
+    });
+
+    // Nếu có truyền giờ cụ thể (timeStr hoặc dateStr ISO): CHỈ LẤY NHỮNG GROOM RẢNH
+    const result =
+      targetDateTime && !isNaN(targetDateTime.getTime())
+        ? mapped.filter((g) => g.isAvailable)
+        : mapped;
+
+    return result.sort((a, b) => {
+      if (a.isAssignedToHorse && !b.isAssignedToHorse) return -1;
+      if (!a.isAssignedToHorse && b.isAssignedToHorse) return 1;
+      if (a.hasShift && !b.hasShift) return -1;
+      if (!a.hasShift && b.hasShift) return 1;
+      return a.fullName.localeCompare(b.fullName);
     });
   }
 }

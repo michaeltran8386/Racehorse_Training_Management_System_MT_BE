@@ -26,6 +26,47 @@ export interface TournamentActor {
   role: string;
 }
 
+export interface PrizeSplit {
+  grossPrize: number;
+  entryFeeDeducted: number;
+  trainerCut: number;
+  jockeyCut: number;
+  netOwnerPayout: number;
+}
+
+/**
+ * Công thức phân bổ giải thưởng chuẩn quốc tế 85/10/5:
+ * Net Prize = Gross Prize - Entry Fee
+ * Owner: 85% Net Prize
+ * Trainer: 10% Net Prize
+ * Jockey: 5% Net Prize (phần dư bảo đảm tổng các phần = Net Prize)
+ */
+export function calculatePrizeSplit(grossPrize: number, entryFee: number): PrizeSplit {
+  const gross = Math.max(0, Number(grossPrize) || 0);
+  const fee = Math.max(0, Number(entryFee) || 0);
+  if (gross === 0) {
+    return {
+      grossPrize: 0,
+      entryFeeDeducted: fee,
+      trainerCut: 0,
+      jockeyCut: 0,
+      netOwnerPayout: 0,
+    };
+  }
+  const netPrize = Math.max(0, gross - fee);
+  const ownerShare = Math.round(netPrize * 0.85);
+  const trainerCut = Math.round(netPrize * 0.1);
+  const jockeyCut = netPrize - ownerShare - trainerCut;
+
+  return {
+    grossPrize: gross,
+    entryFeeDeducted: fee,
+    trainerCut,
+    jockeyCut,
+    netOwnerPayout: ownerShare,
+  };
+}
+
 @Injectable()
 export class TournamentsService {
   private readonly logger = new Logger(TournamentsService.name);
@@ -456,7 +497,7 @@ export class TournamentsService {
    * Rà soát điều kiện tham gia giải của toàn bộ đàn ngựa trong CLB
    * Phục vụ SC-5.02 (Race Eligibility Check)
    */
-  async getEligibility(tournamentId: string) {
+  async getEligibility(tournamentId: string, actor?: CurrentUserPayload) {
     const tournament = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: { registrations: { select: { horseId: true, id: true } } },
@@ -471,12 +512,14 @@ export class TournamentsService {
     }
 
     const registeredHorseMap = new Map(tournament.registrations.map((r) => [r.horseId, r.id]));
+    const isOwner = actor?.role === UserRole.HORSE_OWNER;
 
     // Lấy tất cả ngựa không bị xóa mềm và chưa nghỉ hưu
     const horses = await this.prisma.horse.findMany({
       where: {
         deletedAt: null,
         status: { not: HorseStatus.RETIRED },
+        ...(isOwner && actor ? { ownerId: actor.userId } : {}),
       },
       include: {
         owner: { select: { id: true, fullName: true, email: true } },
@@ -805,9 +848,15 @@ export class TournamentsService {
       ? tournament.registrations.some((r) => r.horseId === horseId)
       : false;
 
+    const isEligible = blockingReasons.length === 0;
+
     return {
-      eligible: blockingReasons.length === 0,
+      eligible: isEligible,
+      isEligible,
       isRegistered,
+      horseId: horse.id,
+      horseName: horse.name,
+      reasons: blockingReasons,
       horse: {
         id: horse.id,
         name: horse.name,
@@ -824,6 +873,36 @@ export class TournamentsService {
         prizePool: Number(tournament.prizePool) || 0,
       },
       checks,
+      checklist: {
+        statusCheck: {
+          pass: statusPassed,
+          value: horse.status,
+          required: 'ACTIVE',
+        },
+        ageCheck: {
+          pass: agePassed,
+          ageYears,
+          minRequired: minAge,
+        },
+        medicalLockCheck: {
+          pass: !hasMedLock,
+          locked: hasMedLock,
+          details: hasMedLock ? 'Đang có lệnh khóa y tế từ Bác sĩ thú y' : undefined,
+        },
+        debtCheck: {
+          pass: !horse.isDebtImpounded,
+          impounded: horse.isDebtImpounded,
+        },
+        withdrawalCheck: {
+          pass: withdrawalPassed,
+          activeMeds: withdrawalViolations,
+        },
+        fitnessCheck: {
+          pass: fitnessPassed,
+          completedWorkouts,
+          required: 4,
+        },
+      },
       blockingReasons,
     };
   }
@@ -1120,7 +1199,12 @@ export class TournamentsService {
         );
       }
 
-      if (new Date() < new Date(tournament.raceDate)) {
+      const hasSimResults = tournament.registrations.some((r) => r.result !== null);
+      if (
+        new Date() < new Date(tournament.raceDate) &&
+        !hasSimResults &&
+        (!dto.results || dto.results.length === 0)
+      ) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'RACE_NOT_FINISHED',
@@ -1151,6 +1235,14 @@ export class TournamentsService {
             HttpStatus.BAD_REQUEST,
             'CANNOT_RECORD_RESULT',
             `Cannot record result for registration ${item.registrationId} with status ${reg.status}. Results may only be recorded for active registrations.`,
+          );
+        }
+
+        if (reg.horse?.isMedicalLocked) {
+          throw apiError(
+            HttpStatus.BAD_REQUEST,
+            'HORSE_MEDICAL_LOCKED',
+            `Cannot record result for horse ${reg.horse.name}: Horse is currently under Veterinary Medical Lock.`,
           );
         }
       }
@@ -1192,6 +1284,11 @@ export class TournamentsService {
               ? item.avgSpeedKmh
               : Math.round((tournament.distanceMeters / item.finishTimeSeconds) * 3.6 * 100) / 100;
 
+          const split = calculatePrizeSplit(
+            item.prizeMoneyWon ?? 0,
+            Number(tournament.entryFee) || 0,
+          );
+
           const res = await tx.tournamentResult.upsert({
             where: { registrationId: item.registrationId },
             create: {
@@ -1200,15 +1297,11 @@ export class TournamentsService {
               finishTimeSeconds: item.finishTimeSeconds,
               avgSpeedKmh: calculatedSpeed,
               prizeMoneyWon: item.prizeMoneyWon ?? 0,
-              grossPrize: item.prizeMoneyWon ?? 0,
-              trainerCut: Math.round((item.prizeMoneyWon ?? 0) * 0.1),
-              jockeyCut: Math.round((item.prizeMoneyWon ?? 0) * 0.05),
-              entryFeeDeducted: Number(tournament.entryFee) || 0,
-              netOwnerPayout:
-                (item.prizeMoneyWon ?? 0) > 0
-                  ? Math.round((item.prizeMoneyWon ?? 0) * 0.85) -
-                    (Number(tournament.entryFee) || 0)
-                  : -(Number(tournament.entryFee) || 0),
+              grossPrize: split.grossPrize,
+              trainerCut: split.trainerCut,
+              jockeyCut: split.jockeyCut,
+              entryFeeDeducted: split.entryFeeDeducted,
+              netOwnerPayout: split.netOwnerPayout,
               settledAt: now,
               officialNotes: item.officialNotes,
             },
@@ -1217,15 +1310,11 @@ export class TournamentsService {
               finishTimeSeconds: item.finishTimeSeconds,
               avgSpeedKmh: calculatedSpeed,
               prizeMoneyWon: item.prizeMoneyWon ?? 0,
-              grossPrize: item.prizeMoneyWon ?? 0,
-              trainerCut: Math.round((item.prizeMoneyWon ?? 0) * 0.1),
-              jockeyCut: Math.round((item.prizeMoneyWon ?? 0) * 0.05),
-              entryFeeDeducted: Number(tournament.entryFee) || 0,
-              netOwnerPayout:
-                (item.prizeMoneyWon ?? 0) > 0
-                  ? Math.round((item.prizeMoneyWon ?? 0) * 0.85) -
-                    (Number(tournament.entryFee) || 0)
-                  : -(Number(tournament.entryFee) || 0),
+              grossPrize: split.grossPrize,
+              trainerCut: split.trainerCut,
+              jockeyCut: split.jockeyCut,
+              entryFeeDeducted: split.entryFeeDeducted,
+              netOwnerPayout: split.netOwnerPayout,
               settledAt: now,
               officialNotes: item.officialNotes,
             },
@@ -1267,7 +1356,10 @@ export class TournamentsService {
 
           const prizeWon = Number(res.prizeMoneyWon || 0);
           if (prizeWon > 0 && reg.horse.ownerId) {
-            const ownerShare = Math.round(prizeWon * 0.7);
+            const split = calculatePrizeSplit(prizeWon, Number(tournament.entryFee) || 0);
+            const ownerShare = Number.isFinite(Number(res.netOwnerPayout))
+              ? Number(res.netOwnerPayout)
+              : split.netOwnerPayout;
 
             const existingInvoice = await tx.financialInvoice.findFirst({
               where: {
@@ -1317,6 +1409,11 @@ export class TournamentsService {
               ? item.avgSpeedKmh
               : Math.round((tournament.distanceMeters / item.finishTimeSeconds) * 3.6 * 100) / 100;
 
+          const split = calculatePrizeSplit(
+            item.prizeMoneyWon ?? 0,
+            Number(tournament.entryFee) || 0,
+          );
+
           const res = await tx.tournamentResult.upsert({
             where: { registrationId: item.registrationId },
             create: {
@@ -1325,6 +1422,11 @@ export class TournamentsService {
               finishTimeSeconds: item.finishTimeSeconds,
               avgSpeedKmh: calculatedSpeed,
               prizeMoneyWon: item.prizeMoneyWon ?? 0,
+              grossPrize: split.grossPrize,
+              trainerCut: split.trainerCut,
+              jockeyCut: split.jockeyCut,
+              entryFeeDeducted: split.entryFeeDeducted,
+              netOwnerPayout: split.netOwnerPayout,
               officialNotes: item.officialNotes,
             },
             update: {
@@ -1332,6 +1434,11 @@ export class TournamentsService {
               finishTimeSeconds: item.finishTimeSeconds,
               avgSpeedKmh: calculatedSpeed,
               prizeMoneyWon: item.prizeMoneyWon ?? 0,
+              grossPrize: split.grossPrize,
+              trainerCut: split.trainerCut,
+              jockeyCut: split.jockeyCut,
+              entryFeeDeducted: split.entryFeeDeducted,
+              netOwnerPayout: split.netOwnerPayout,
               officialNotes: item.officialNotes,
             },
           });
@@ -1405,7 +1512,7 @@ export class TournamentsService {
    * Chốt kết quả thi đấu (Club Manager only)
    * 1. Khóa trạng thái giải sang COMPLETED.
    * 2. Tự động chuyển ngựa về trạng thái RESTING (nghỉ ngơi hồi phục).
-   * 3. Tự động phân bổ tiền thưởng: Owner 70%, CLB 15%, Trainer 10%, Jockey 5%.
+   * 3. Tự động phân bổ tiền thưởng: Owner 85%, Trainer 10%, Jockey 5% (chuẩn quốc tế sau trừ phí tham gia giải).
    */
   async lockResults(tournamentId: string, actor: TournamentActor) {
     if (actor.role !== 'CLUB_MANAGER') {
@@ -1463,7 +1570,8 @@ export class TournamentsService {
         );
       }
 
-      if (new Date() < new Date(tournament.raceDate)) {
+      const hasResults = tournament.registrations.some((r) => r.result !== null);
+      if (new Date() < new Date(tournament.raceDate) && !hasResults) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'RACE_NOT_FINISHED',
@@ -1513,10 +1621,24 @@ export class TournamentsService {
           data: { status: HorseStatus.RESTING },
         });
 
-        const prizeWon = Number(reg.result.prizeMoneyWon);
+        const prizeWon = Number(reg.result.prizeMoneyWon || 0);
+        const split = calculatePrizeSplit(prizeWon, Number(tournament.entryFee) || 0);
+
+        await tx.tournamentResult.update({
+          where: { registrationId: reg.id },
+          data: {
+            grossPrize: split.grossPrize,
+            trainerCut: split.trainerCut,
+            jockeyCut: split.jockeyCut,
+            entryFeeDeducted: split.entryFeeDeducted,
+            netOwnerPayout: split.netOwnerPayout,
+            settledAt: now,
+          },
+        });
+
         if (prizeWon > 0 && reg.horse.ownerId) {
-          // Owner nhận 70% tiền thưởng
-          const ownerShare = Math.round(prizeWon * 0.7);
+          // Owner nhận 85% tiền thưởng sau khi trừ phí tham gia giải
+          const ownerShare = split.netOwnerPayout;
 
           // Tạo hoặc cập nhật hóa đơn tài chính của Owner cho kỳ hiện tại
           const existingInvoice = await tx.financialInvoice.findFirst({

@@ -31,7 +31,7 @@ export function normalize(text: string): string {
 
 // Từ quá phổ biến làm nhiễu điểm BM25.
 const STOP = new Set(
-  'la cua va cho co khong the nao gi duoc nhung mot cac trong khi thi de voi tu nay do o ra vao toi minh ban the the is the a an of to and or in on for'.split(
+  'la cua va cho co khong the nao gi duoc nhung mot cac trong khi thi de voi tu nay do o ra vao toi minh ban hien tai bao nhieu lam sao hay hoac den da se chua nhu bi can muon neu ai ve is are what how where when a an of to and or in on for'.split(
     ' ',
   ),
 );
@@ -96,19 +96,26 @@ export function chunkMarkdown(documentId: string, text: string): EvidenceUnit[] 
 
 /** Okapi BM25 (k1=1.2, b=0.75); tiêu đề được cộng vào nội dung để câu hỏi theo tên màn hình/luật vẫn trúng. */
 export class Bm25Index {
-  private readonly docs: { unit: EvidenceUnit; tf: Map<string, number>; len: number }[] = [];
+  private readonly docs: {
+    unit: EvidenceUnit;
+    tf: Map<string, number>;
+    len: number;
+    normText: string;
+  }[] = [];
   private readonly df = new Map<string, number>();
   private avgLen = 0;
 
   constructor(units: readonly EvidenceUnit[]) {
     for (const unit of units) {
-      const tokens = tokenize(
-        `${unit.headingPath.join(' ')} ${unit.headingPath.join(' ')} ${unit.content}`,
-      );
+      const rawText = `${unit.headingPath.join(' ')} ${unit.content}`;
+      const tokens = tokenize(`${unit.headingPath.join(' ')} ${rawText}`);
       const tf = new Map<string, number>();
       for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
       for (const t of tf.keys()) this.df.set(t, (this.df.get(t) ?? 0) + 1);
-      this.docs.push({ unit, tf, len: tokens.length });
+      const normText = ` ${normalize(rawText)
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()} `;
+      this.docs.push({ unit, tf, len: tokens.length, normText });
     }
     this.avgLen = this.docs.reduce((s, d) => s + d.len, 0) / Math.max(1, this.docs.length);
   }
@@ -120,16 +127,36 @@ export class Bm25Index {
   search(query: string, k = 4): RetrievedEvidence[] {
     const q = [...new Set(tokenize(query))];
     if (q.length === 0) return [];
+    const qWords = normalize(query)
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 0);
+    const bigrams: string[] = [];
+    for (let i = 0; i < qWords.length - 1; i++) {
+      bigrams.push(` ${qWords[i]} ${qWords[i + 1]} `);
+    }
     const n = this.docs.length;
     const scored = this.docs
-      .map(({ unit, tf, len }) => {
+      .map(({ unit, tf, len, normText }) => {
         let score = 0;
+        let matched = 0;
+        let longestMatch = 0;
         for (const t of q) {
           const f = tf.get(t);
           if (!f) continue;
+          matched++;
+          if (t.length > longestMatch) longestMatch = t.length;
           const df = this.df.get(t) ?? 0;
           const idf = Math.log(1 + (n - df + 0.5) / (df + 0.5));
           score += (idf * f * 2.2) / (f + 1.2 * (0.25 + (0.75 * len) / this.avgLen));
+        }
+        // Prevent isolated Vietnamese syllable homonyms (e.g. "công thức"+"phở bò" vs "phân công"+"toàn bộ")
+        // from clearing strong threshold without either decent coverage or an intact 2-word phrase match.
+        const hasBigramHit = bigrams.some((bg) => normText.includes(bg));
+        if (
+          (matched === 1 && (q.length >= 3 || (q.length >= 2 && longestMatch <= 2))) ||
+          (q.length >= 4 && matched / q.length <= 0.45 && !hasBigramHit)
+        ) {
+          score *= 0.35;
         }
         return { unit, score };
       })

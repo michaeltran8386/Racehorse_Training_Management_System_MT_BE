@@ -4,6 +4,13 @@ import { DailyTaskType } from '@prisma/client';
 // Mỗi việc được gán cho Groom trực ca chứa giờ gốc của việc đó, và các việc của cùng một Groom trong một ca
 // được xếp nối tiếp nhau (không chồng giờ).
 
+export interface ScheduleCareInstruction {
+  activity: string;
+  frequencyPerDay: number; // 1, 2, or 3
+  notes?: string;
+  phaseName?: string;
+}
+
 export interface ScheduleHorse {
   id: string;
   zoneId?: string;
@@ -11,6 +18,7 @@ export interface ScheduleHorse {
   stallCode?: string;
   allocationGroomId?: string;
   isLocked: boolean;
+  allowedActivityLevel?: string;
   mealsJson?: unknown;
   medications?: Array<{
     name: string;
@@ -19,7 +27,9 @@ export interface ScheduleHorse {
     route?: string;
     notes?: string;
     supplyId?: string;
+    frequencyPerDay?: number;
   }>;
+  careInstructions?: ScheduleCareInstruction[];
 }
 
 export interface ScheduleRoster {
@@ -154,66 +164,83 @@ function templatesFor(horse: ScheduleHorse): Template[] {
     minutes: 10,
   });
 
-  if (horse.isLocked) {
-    list.push(
-      {
-        taskType: DailyTaskType.ICE_BOOT_REST,
-        title: 'Ngâm chân nước đá phục hồi buổi sáng',
-        description:
-          'Ngựa có Khóa Huấn Luyện Y Tế. Ngâm chân nước đá 20 phút cho chân đau/khớp viêm, sau đó để ngựa nghỉ tại ô.',
-        mealType: null,
-        baseTime: '09:30',
-        minutes: 15,
-      },
-      {
-        taskType: DailyTaskType.ICE_BOOT_REST,
-        title: 'Chườm lạnh & theo dõi vết thương buổi chiều',
-        description:
-          'Kiểm tra lại khớp/vết thương, chườm lạnh 15 phút. Tuyệt đối không dắt chạy nhanh hay để ngựa vận động mạnh.',
-        mealType: null,
-        baseTime: '13:30',
-        minutes: 15,
-      },
-    );
-  } else {
-    list.push(
-      {
-        taskType: DailyTaskType.GROOMING,
-        title: 'Tắm rửa, chải lông móng & kiểm tra thể trạng',
-        description:
-          'Tắm mát, chải mượt bờm lông, cạo sạch sỏi bùn trong lòng móng và lau khô chân ngựa.',
-        mealType: null,
-        baseTime: '13:30',
-        minutes: 15,
-      },
-      {
-        taskType: DailyTaskType.WALKING,
-        title: 'Dắt đi dạo nhẹ nhàng & thả lỏng cơ bắp',
-        description: 'Dắt ngựa đi bộ thả lỏng 15 phút trong sân bóng mát.',
-        mealType: null,
-        baseTime: '15:30',
-        minutes: 15,
-      },
-    );
+  // Chăm sóc y tế từ Phác đồ điều trị của Vet (Chỉ dẫn chăm sóc hàng ngày)
+  // Bỏ hoàn toàn việc hardcode ngâm nước đá khi bị lock! Chấp nhận để trống nếu không có chỉ định từ Vet.
+  if (horse.careInstructions && horse.careInstructions.length > 0) {
+    for (const inst of horse.careInstructions) {
+      const freq = Math.min(3, Math.max(1, Number(inst.frequencyPerDay) || 1));
+      const times =
+        freq === 1 ? ['09:30'] : freq === 2 ? ['09:30', '15:00'] : ['09:30', '13:30', '17:00'];
+
+      times.forEach((time, idx) => {
+        const suffix = times.length > 1 ? ` (Lần ${idx + 1})` : '';
+        const isIceCold = /đá|lạnh|ice|boot|chườm|ngâm/i.test(inst.activity);
+        list.push({
+          taskType: isIceCold ? DailyTaskType.ICE_BOOT_REST : DailyTaskType.ICE_BOOT_REST,
+          title: `${inst.activity}${suffix}`,
+          description: `Chỉ dẫn chăm sóc theo phác đồ y tế${inst.phaseName ? ` [${inst.phaseName}]` : ''}: ${inst.activity}.${inst.notes ? ` Ghi chú: ${inst.notes}` : ''}`,
+          mealType: null,
+          baseTime: time,
+          minutes: 15,
+        });
+      });
+    }
+  }
+
+  // Tắm rửa, chải lông móng luôn có cho ngựa hàng ngày
+  list.push({
+    taskType: DailyTaskType.GROOMING,
+    title: 'Tắm rửa, chải lông móng & kiểm tra thể trạng',
+    description:
+      'Tắm mát, chải mượt bờm lông, cạo sạch sỏi bùn trong lòng móng và lau khô chân ngựa.',
+    mealType: null,
+    baseTime: '13:30',
+    minutes: 15,
+  });
+
+  // Dắt đi dạo nhẹ nhàng - chỉ khi ngựa không bị chỉ định nghỉ ngơi nghiêm ngặt tại ô chuồng
+  const isStrictStallRest =
+    horse.isLocked || /stall rest|nghỉ tại ô|strict/i.test(horse.allowedActivityLevel || '');
+
+  if (!isStrictStallRest) {
+    list.push({
+      taskType: DailyTaskType.WALKING,
+      title: 'Dắt đi dạo nhẹ nhàng & thả lỏng cơ bắp',
+      description: 'Dắt ngựa đi bộ thả lỏng 15 phút trong sân bóng mát.',
+      mealType: null,
+      baseTime: '15:30',
+      minutes: 15,
+    });
   }
 
   if (horse.medications && horse.medications.length > 0) {
     for (const med of horse.medications) {
-      list.push({
-        taskType: DailyTaskType.MEDICATION,
-        title: `Cho uống thuốc: ${med.name}`,
-        description: `Liều lượng: ${med.dosage} ${med.unit || ''}. Đường dùng: ${med.route || 'Uống'}.${med.notes ? ` Ghi chú: ${med.notes}` : ''}`,
-        mealType: null,
-        baseTime: '08:00',
-        minutes: 10,
-        itemsSnapshotJson: [
-          {
-            supplyId: med.supplyId,
-            supplyName: med.name,
-            amount: Number(med.dosage) || 1,
-            unit: med.unit,
-          },
-        ],
+      const rawFreq = Number(med.frequencyPerDay) || 1;
+      const freq = Math.min(3, Math.max(1, rawFreq)); // Tối đa 3 lần/ngày theo yêu cầu
+      const times =
+        freq === 1 ? ['08:00'] : freq === 2 ? ['08:00', '18:00'] : ['08:00', '13:00', '19:00'];
+
+      times.forEach((time, idx) => {
+        const suffix = times.length > 1 ? ` (Lần ${idx + 1})` : '';
+        const parsedDosage =
+          typeof med.dosage === 'number' ? med.dosage : parseFloat(String(med.dosage)) || 1;
+        list.push({
+          taskType: DailyTaskType.MEDICATION,
+          title: `Cho uống thuốc: ${med.name}${suffix}`,
+          description: `Liều lượng: ${med.dosage} ${med.unit || ''}. Đường dùng: ${med.route || 'Uống'}.${med.notes ? ` Ghi chú: ${med.notes}` : ''}`,
+          mealType: null,
+          baseTime: time,
+          minutes: 10,
+          itemsSnapshotJson: [
+            {
+              supplyId: med.supplyId,
+              supplyName: med.name,
+              amount: parsedDosage,
+              unit: med.unit,
+              isMedicine: true,
+            },
+          ],
+        });
       });
     }
   }

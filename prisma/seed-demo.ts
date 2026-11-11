@@ -200,15 +200,16 @@ async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
       statusChangedBy: 'Trần Quang Minh',
       ...stamp(-90),
     },
-    // Nhân viên được mời nhưng chưa nhận lời mời (chưa đặt mật khẩu) -> danh sách có trạng thái "Đã mời".
+    // Bác sĩ thú y thứ 2 — đang hoạt động (vet2@gmail.com / EquiFlow@2006)
     {
       id: user('vet2'),
-      email: 'demo.equiflow.thanhtam@gmail.com',
+      email: 'vet2@gmail.com',
       fullName: 'BS. Lý Thanh Tâm',
       role: 'VETERINARIAN',
-      status: 'INVITED',
-      invitedBy: 'Trần Quang Minh',
-      ...stamp(-1),
+      status: 'ACTIVE',
+      passwordHash: await bcrypt.hash('EquiFlow@2006', 10),
+      phoneNumber: '+84901234599',
+      ...stamp(-90),
     },
   ];
   // Keep seeded account IDs in place so unrelated sessions and audit references survive.
@@ -347,6 +348,33 @@ const history = [
     to: -22,
     type: 'SPEED',
     skip: [-45],
+  },
+  {
+    key: 'thanphong-speed',
+    n: 4,
+    name: 'Thần Phong · Nền tảng tốc độ cao',
+    from: -50,
+    to: -10,
+    type: 'SPEED',
+    skip: [-35, -25],
+  },
+  {
+    key: 'hongky-prep',
+    n: 11,
+    name: 'Hồng Kỳ · Bứt tốc cự ly trung bình',
+    from: -45,
+    to: -8,
+    type: 'SPEED',
+    skip: [-30, -20],
+  },
+  {
+    key: 'thanhloan-prep',
+    n: 12,
+    name: 'Thanh Loan · Rèn luyện thể lực bền',
+    from: -40,
+    to: -6,
+    type: 'BASE',
+    skip: [-28, -18],
   },
 ] as const;
 const activeKey = (n: number) => `active/${n}`;

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { TournamentsService } from './tournaments.service';
+import { TournamentsService, calculatePrizeSplit } from './tournaments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -39,6 +39,7 @@ describe('TournamentsService', () => {
       tournamentResult: {
         upsert: jest.fn(),
         findMany: jest.fn(),
+        update: jest.fn(),
       },
       horse: {
         findMany: jest.fn(),
@@ -818,6 +819,36 @@ describe('TournamentsService', () => {
     });
   });
 
+  describe('calculatePrizeSplit (85/10/5 standard model)', () => {
+    it('splits net prize (gross 50M - entry fee 3M = 47M): Owner 85%, Trainer 10%, Jockey 5%', () => {
+      const result = calculatePrizeSplit(50000000, 3000000);
+      expect(result.grossPrize).toBe(50000000);
+      expect(result.entryFeeDeducted).toBe(3000000);
+      expect(result.netOwnerPayout).toBe(39950000);
+      expect(result.trainerCut).toBe(4700000);
+      expect(result.jockeyCut).toBe(2350000);
+      expect(result.netOwnerPayout + result.trainerCut + result.jockeyCut).toBe(47000000);
+    });
+
+    it('splits prize with 0 entry fee (gross 10M, fee 0): Owner 8.5M, Trainer 1M, Jockey 500k', () => {
+      const result = calculatePrizeSplit(10000000, 0);
+      expect(result.grossPrize).toBe(10000000);
+      expect(result.entryFeeDeducted).toBe(0);
+      expect(result.netOwnerPayout).toBe(8500000);
+      expect(result.trainerCut).toBe(1000000);
+      expect(result.jockeyCut).toBe(500000);
+      expect(result.netOwnerPayout + result.trainerCut + result.jockeyCut).toBe(10000000);
+    });
+
+    it('handles zero gross prize safely (rank without prize)', () => {
+      const result = calculatePrizeSplit(0, 3000000);
+      expect(result.grossPrize).toBe(0);
+      expect(result.netOwnerPayout).toBe(0);
+      expect(result.trainerCut).toBe(0);
+      expect(result.jockeyCut).toBe(0);
+    });
+  });
+
   describe('recordResults & lockResults', () => {
     it.each(['draft', 'combined', 'lock'] as const)(
       'rejects a stale %s writer after another transaction finalizes the tournament',
@@ -1181,7 +1212,7 @@ describe('TournamentsService', () => {
         expect.objectContaining({
           data: expect.objectContaining({
             ownerId: 'o-1',
-            prizeCredit: 7000000,
+            prizeCredit: 8500000,
           }),
         }),
       );

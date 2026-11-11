@@ -144,6 +144,7 @@ describe('Medical services', () => {
     preventive = module.get(PreventiveCareService);
     notifications = module.get(NotificationsService);
     jest.clearAllMocks();
+    mockPrismaService.medicalRecord.findFirst.mockResolvedValue(null);
   });
 
   it('should be defined', () => {
@@ -251,11 +252,35 @@ describe('Medical services', () => {
       expect(mockPrismaService.horse.update).not.toHaveBeenCalled();
     });
 
+    it('should throw ConflictException if horse already has an OPEN medical record', async () => {
+      mockPrismaService.horse.findUnique.mockResolvedValue({ id: 'horse-1', name: 'Thunder' });
+      mockPrismaService.medicalRecord.findFirst.mockResolvedValue({
+        id: 'rec-old',
+        recordNumber: 'BA-2611-001',
+        status: 'OPEN',
+      });
+
+      const error = await records
+        .createMedicalRecord(mockVetUser, {
+          horseId: 'horse-1',
+          examinationType: 'Khám bệnh',
+          reason: 'Lý do khám bệnh chi tiết',
+        })
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({ code: 'HORSE_HAS_OPEN_RECORD' }),
+      );
+      expect(mockPrismaService.medicalRecord.create).not.toHaveBeenCalled();
+    });
+
     it('numbers records from the highest number of the month, not the total row count', async () => {
       mockPrismaService.horse.findUnique.mockResolvedValue({ id: 'horse-1', name: 'Thunder' });
       const now = new Date();
       const prefix = `BA-${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}-`;
-      mockPrismaService.medicalRecord.findFirst.mockResolvedValue({ recordNumber: `${prefix}005` });
+      mockPrismaService.medicalRecord.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ recordNumber: `${prefix}005` });
       mockPrismaService.medicalRecord.create.mockResolvedValue({ id: 'rec-6' });
 
       await records.createMedicalRecord(mockVetUser, {
@@ -271,15 +296,39 @@ describe('Medical services', () => {
   });
 
   describe('updateMedicalRecord', () => {
-    it('rejects editing a record that is no longer a draft', async () => {
-      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({ id: 'rec-1', status: 'OPEN' });
+    it('rejects editing a record that has already been closed', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-1',
+        status: 'CLOSED',
+      });
 
       const error = await records
         .updateMedicalRecord('rec-1', mockVetUser, { symptoms: 'Sốt cao' })
         .catch((e) => e);
 
-      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'RECORD_NOT_DRAFT' }));
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'RECORD_CLOSED' }));
       expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
+    });
+
+    it('allows editing an OPEN medical record', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-1',
+        horseId: 'horse-1',
+        status: 'OPEN',
+      });
+      mockPrismaService.horse.findUnique.mockResolvedValue({
+        id: 'horse-1',
+        name: 'Thunder',
+        status: 'INJURED',
+      });
+      mockPrismaService.medicalRecord.update.mockResolvedValue({ id: 'rec-1', status: 'OPEN' });
+
+      await records.updateMedicalRecord('rec-1', mockVetUser, {
+        symptoms: 'Triệu chứng mới',
+        diagnosis: 'Chẩn đoán cập nhật',
+      });
+
+      expect(mockPrismaService.medicalRecord.update).toHaveBeenCalled();
     });
 
     it('saves vitals, severity and proposed status of a draft', async () => {
@@ -305,6 +354,101 @@ describe('Medical services', () => {
         }),
       );
     });
+
+    it('updates horse status when editing an OPEN record with valid medical status', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-open',
+        recordNumber: 'BA-2611-009',
+        horseId: 'horse-1',
+        status: 'OPEN',
+      });
+      mockPrismaService.horse.findUnique.mockResolvedValue({
+        id: 'horse-1',
+        name: 'Thunder',
+        status: 'UNDER_OBSERVATION',
+        isMedicalLocked: false,
+      });
+      mockPrismaService.medicalRecord.update.mockResolvedValue({
+        id: 'rec-open',
+        status: 'OPEN',
+      });
+
+      await records.updateMedicalRecord('rec-open', mockVetUser, {
+        recommendedHorseStatus: 'INJURED',
+      });
+
+      expect(mockPrismaService.horse.update).toHaveBeenCalledWith({
+        where: { id: 'horse-1' },
+        data: { status: 'INJURED' },
+      });
+    });
+
+    it('rejects updating horse status to ACTIVE for veterinarian due to role restriction', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-open',
+        recordNumber: 'BA-2611-009',
+        horseId: 'horse-1',
+        status: 'OPEN',
+      });
+      mockPrismaService.horse.findUnique.mockResolvedValue({
+        id: 'horse-1',
+        name: 'Thunder',
+        status: 'UNDER_OBSERVATION',
+        isMedicalLocked: false,
+      });
+
+      const error = await records
+        .updateMedicalRecord('rec-open', mockVetUser, {
+          recommendedHorseStatus: 'ACTIVE',
+        })
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'ROLE_RESTRICTION' }));
+      expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects updating horse status back to work when medical lock is active', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-open',
+        recordNumber: 'BA-2611-009',
+        horseId: 'horse-1',
+        status: 'OPEN',
+      });
+      mockPrismaService.horse.findUnique.mockResolvedValue({
+        id: 'horse-1',
+        name: 'Thunder',
+        status: 'INJURED',
+        isMedicalLocked: true,
+      });
+
+      const error = await records
+        .updateMedicalRecord('rec-open', mockVetUser, {
+          recommendedHorseStatus: 'RESTING',
+        })
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'MEDICAL_LOCK_ACTIVE' }));
+      expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects examination date in future or older than 30 days', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue({
+        id: 'rec-1',
+        status: 'DRAFT',
+      });
+
+      const futureDate = new Date(Date.now() + 86400000 * 2).toISOString();
+      const futureErr = await records
+        .updateMedicalRecord('rec-1', mockVetUser, { examinationDate: futureDate })
+        .catch((e) => e);
+      expect(futureErr.getResponse()).toEqual(expect.objectContaining({ code: 'DATE_IN_FUTURE' }));
+
+      const oldDate = new Date(Date.now() - 86400000 * 40).toISOString();
+      const oldErr = await records
+        .updateMedicalRecord('rec-1', mockVetUser, { examinationDate: oldDate })
+        .catch((e) => e);
+      expect(oldErr.getResponse()).toEqual(expect.objectContaining({ code: 'DATE_TOO_OLD' }));
+    });
   });
 
   describe('finalizeMedicalRecord', () => {
@@ -327,6 +471,24 @@ describe('Medical services', () => {
         where: { id: 'horse-1' },
         data: { status: 'UNDER_OBSERVATION' },
       });
+    });
+
+    it('rejects finalizing if the horse already has another open record', async () => {
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue(draft);
+      mockPrismaService.medicalRecord.findFirst.mockResolvedValue({
+        id: 'rec-2',
+        recordNumber: 'BA-2611-002',
+        status: 'OPEN',
+      });
+
+      const error = await records
+        .finalizeMedicalRecord('rec-1', mockVetUser, { applyProposedStatus: true })
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({ code: 'HORSE_HAS_OPEN_RECORD' }),
+      );
+      expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
     });
 
     it('keeps the record as a draft when the Training Lock cannot be placed', async () => {
@@ -405,6 +567,56 @@ describe('Medical services', () => {
         .catch((e) => e);
 
       expect(error.getResponse()).toEqual(expect.objectContaining({ code: 'RECORD_NOT_OPEN' }));
+      expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reopenMedicalRecord', () => {
+    it('reopens a closed record when valid and no other record is open', async () => {
+      const closedRecord = {
+        id: 'rec-closed',
+        horseId: 'horse-1',
+        status: 'CLOSED',
+        closedAt: new Date(Date.now() - 86400000), // 1 day ago
+      };
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue(closedRecord);
+      mockPrismaService.medicalRecord.findFirst.mockResolvedValue(null);
+      mockPrismaService.medicalRecord.update.mockResolvedValue({
+        ...closedRecord,
+        status: 'OPEN',
+      });
+
+      const result = await records.reopenMedicalRecord('rec-closed', mockVetUser, {
+        reason: 'Triệu chứng tái phát cần theo dõi tiếp',
+      });
+
+      expect(result.status).toBe('OPEN');
+      expect(mockPrismaService.medicalRecord.update).toHaveBeenCalled();
+    });
+
+    it('rejects reopening if the horse already has another open medical record', async () => {
+      const closedRecord = {
+        id: 'rec-closed',
+        horseId: 'horse-1',
+        status: 'CLOSED',
+        closedAt: new Date(Date.now() - 86400000),
+      };
+      mockPrismaService.medicalRecord.findUnique.mockResolvedValue(closedRecord);
+      mockPrismaService.medicalRecord.findFirst.mockResolvedValue({
+        id: 'rec-other-open',
+        recordNumber: 'BA-2611-099',
+        status: 'OPEN',
+      });
+
+      const error = await records
+        .reopenMedicalRecord('rec-closed', mockVetUser, {
+          reason: 'Triệu chứng tái phát cần theo dõi tiếp',
+        })
+        .catch((e) => e);
+
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({ code: 'HORSE_HAS_OPEN_RECORD' }),
+      );
       expect(mockPrismaService.medicalRecord.update).not.toHaveBeenCalled();
     });
   });

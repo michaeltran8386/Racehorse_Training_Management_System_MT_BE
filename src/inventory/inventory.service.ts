@@ -177,6 +177,9 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   async recoverPendingDeliveries(): Promise<void> {
     const now = new Date();
     try {
+      if (!this.prisma?.restockRequest) {
+        return;
+      }
       const pendingDeliveries = await this.prisma.restockRequest.findMany({
         where: { status: RestockStatus.DELIVERING },
         include: { supply: true, zone: true },
@@ -732,8 +735,10 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   async deductStockForFeeding(
     zoneId: string,
     items: Array<{ supplyId?: string; supplyName?: string; amount?: number }>,
+    tx?: Prisma.TransactionClient,
   ) {
     if (!zoneId || !items || !Array.isArray(items) || items.length === 0) return;
+    const db = tx || this.prisma;
 
     for (const item of items) {
       if (!item.amount || Number(item.amount) <= 0) continue;
@@ -742,7 +747,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
 
       if (!supplyId && item.supplyName) {
         try {
-          const found = await this.prisma.supplyCatalog.findFirst({
+          const found = await db.supplyCatalog.findFirst({
             where: {
               OR: [
                 { name: { equals: item.supplyName, mode: 'insensitive' } },
@@ -761,25 +766,40 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       if (!supplyId) continue;
 
       try {
-        await this.prisma.stockBalance.upsert({
+        const balance = await db.stockBalance.findUnique({
           where: {
             zoneId_supplyId: {
               zoneId,
               supplyId,
             },
           },
-          create: {
-            zoneId,
-            supplyId,
-            quantity: new Prisma.Decimal(-amount),
-            minThreshold: new Prisma.Decimal(10),
-          },
-          update: {
-            quantity: { decrement: new Prisma.Decimal(amount) },
-          },
         });
+
+        const currentQty = balance ? Number(balance.quantity) : 0;
+        const newQty = Math.max(0, currentQty - amount);
+
+        if (balance) {
+          await db.stockBalance.update({
+            where: {
+              zoneId_supplyId: {
+                zoneId,
+                supplyId,
+              },
+            },
+            data: {
+              quantity: new Prisma.Decimal(newQty),
+            },
+          });
+        }
+
+        if (currentQty < amount) {
+          this.logger.warn(
+            `[InventoryService] Thiếu hàng khi trừ kho khu ${zoneId}, vật tư ${supplyId}: Yêu cầu ${amount}, tồn kho hiện có ${currentQty}. Đã trừ về 0.`,
+          );
+        }
       } catch (err) {
-        console.error(`Failed to deduct stock for zone ${zoneId}, supply ${supplyId}:`, err);
+        this.logger.error(`Failed to deduct stock for zone ${zoneId}, supply ${supplyId}:`, err);
+        throw err;
       }
     }
   }

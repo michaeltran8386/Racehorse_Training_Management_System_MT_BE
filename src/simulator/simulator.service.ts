@@ -9,11 +9,10 @@ import {
   TelemetryTickPacketDto,
 } from './dto/simulator-packet.dto';
 import {
-  ExamSimulationContext,
+  AnySimulationContext,
   ExamSimulationResultResponse,
   LiveSimulatorSession,
   SimulatorSessionsResponse,
-  WorkoutSimulationContext,
   WorkoutSimulationResultResponse,
   WorkoutSimulationStartResponse,
 } from './simulator.types';
@@ -246,6 +245,382 @@ export class SimulatorService {
     };
   }
 
+  async startTournamentRace(tournamentId: string, actor: CurrentUserPayload) {
+    if (actor.role !== UserRole.HEAD_TRAINER && actor.role !== UserRole.CLUB_MANAGER) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_ROLE_FORBIDDEN',
+        'Only Head Trainer or Club Manager can start tournament race simulation.',
+      );
+    }
+
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        registrations: {
+          where: {
+            status: { in: ['CONFIRMED', 'REGISTERED'] },
+          },
+          include: {
+            horse: {
+              select: {
+                id: true,
+                name: true,
+                horseCode: true,
+                breed: true,
+                status: true,
+                color: true,
+                weightKg: true,
+                dob: true,
+                isMedicalLocked: true,
+                isDebtImpounded: true,
+              },
+            },
+          },
+          orderBy: { registrationDate: 'asc' },
+        },
+      },
+    });
+
+    if (!tournament) {
+      throw apiError(HttpStatus.NOT_FOUND, 'TOURNAMENT_NOT_FOUND', 'Tournament not found.');
+    }
+
+    if (tournament.status === 'COMPLETED') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'TOURNAMENT_COMPLETED',
+        'Tournament already completed.',
+      );
+    }
+
+    const activeEntries = tournament.registrations.filter(
+      (r) => !r.horse.isMedicalLocked && !r.horse.isDebtImpounded,
+    );
+
+    if (activeEntries.length === 0) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'NO_ELIGIBLE_ENTRIES',
+        'No eligible horses registered for this tournament.',
+      );
+    }
+
+    const horseIds = activeEntries.map((r) => r.horse.id);
+
+    const session = await this.prisma.$transaction(async (tx) => {
+      const pendingSessions = await tx.simulatorSession.findMany({
+        where: {
+          type: SimulatorSessionType.RACE,
+          actorUserId: actor.userId,
+          status: SimulatorSessionStatus.PENDING,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      const existing = pendingSessions.find(
+        (s) => (s.lastSnapshot as any)?.tournamentId === tournament.id,
+      );
+
+      const snapshot = {
+        tournamentId: tournament.id,
+        tournamentName: tournament.name,
+        distanceMeters: tournament.distanceMeters,
+        trackType: tournament.trackType,
+        prizePool: Number(tournament.prizePool || 0),
+      };
+
+      const now = new Date();
+      if (existing) {
+        return tx.simulatorSession.update({
+          where: { id: existing.id },
+          data: {
+            horseIds,
+            status: SimulatorSessionStatus.PENDING,
+            lastSnapshot: snapshot,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+      }
+
+      return tx.simulatorSession.create({
+        data: {
+          id: randomUUID(),
+          type: SimulatorSessionType.RACE,
+          status: SimulatorSessionStatus.PENDING,
+          horseIds,
+          actorUserId: actor.userId,
+          lastSnapshot: snapshot,
+        },
+      });
+    });
+
+    const baseUrl = this.config
+      .get<string>('SIMULATOR_URL', 'http://localhost:5175')
+      .replace(/\/$/, '');
+
+    return {
+      sessionId: session.id,
+      status: session.status,
+      launchUrl: `${baseUrl}/?sessionId=${encodeURIComponent(session.id)}&type=RACE&tournamentId=${encodeURIComponent(tournament.id)}`,
+      tournament: {
+        id: tournament.id,
+        name: tournament.name,
+        distanceMeters: tournament.distanceMeters,
+        trackType: tournament.trackType,
+      },
+      entries: activeEntries.map((r, i) => ({
+        lane: i + 1,
+        registrationId: r.id,
+        horse: r.horse,
+      })),
+    };
+  }
+
+  async quickSimulateTournamentRace(tournamentId: string, actor: CurrentUserPayload) {
+    if (actor.role !== UserRole.HEAD_TRAINER && actor.role !== UserRole.CLUB_MANAGER) {
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'SIMULATOR_ROLE_FORBIDDEN',
+        'Only Head Trainer or Club Manager can run tournament race quick simulation.',
+      );
+    }
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const tournament = await this.prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      include: {
+        registrations: {
+          where: {
+            status: { in: ['CONFIRMED', 'REGISTERED'] },
+          },
+          include: {
+            horse: {
+              select: {
+                id: true,
+                name: true,
+                horseCode: true,
+                breed: true,
+                status: true,
+                color: true,
+                weightKg: true,
+                dob: true,
+                isMedicalLocked: true,
+                isDebtImpounded: true,
+                workoutSessions: {
+                  where: {
+                    status: 'COMPLETED',
+                    scheduledDate: { gte: thirtyDaysAgo },
+                  },
+                  select: {
+                    distanceMeters: true,
+                    actualTimeSeconds: true,
+                    targetSpeedKmh: true,
+                    performanceScore: true,
+                    heartRatePeak: true,
+                  },
+                  orderBy: { scheduledDate: 'desc' },
+                  take: 15,
+                },
+              },
+            },
+          },
+          orderBy: { registrationDate: 'asc' },
+        },
+      },
+    });
+
+    if (!tournament) {
+      throw apiError(HttpStatus.NOT_FOUND, 'TOURNAMENT_NOT_FOUND', 'Tournament not found.');
+    }
+
+    if (tournament.status === 'COMPLETED') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'TOURNAMENT_COMPLETED',
+        'Tournament already completed.',
+      );
+    }
+
+    const activeEntries = tournament.registrations.filter(
+      (r) => !r.horse.isMedicalLocked && !r.horse.isDebtImpounded,
+    );
+
+    if (activeEntries.length === 0) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'NO_ELIGIBLE_ENTRIES',
+        'No eligible horses registered for this tournament.',
+      );
+    }
+
+    const distanceMeters = Math.max(400, Number(tournament.distanceMeters || 1600));
+    const prizePool = Number(tournament.prizePool || 0);
+    const surfaceFactor = tournament.trackType === 'DIRT' ? 0.985 : 1.0;
+
+    // Tính toán tốc độ thực tế từ lịch sử tập luyện 30 ngày gần nhất của từng chiến mã
+    const rawRunners = activeEntries.map((reg, index) => {
+      const workouts = reg.horse.workoutSessions || [];
+      let baseSpeedKmh = 56.8;
+
+      if (workouts.length > 0) {
+        const speeds: number[] = [];
+        let scoreSum = 0;
+        let scoreCount = 0;
+
+        for (const w of workouts) {
+          if (w.actualTimeSeconds && w.actualTimeSeconds > 0 && w.distanceMeters > 0) {
+            const sp = (w.distanceMeters / w.actualTimeSeconds) * 3.6;
+            if (sp >= 35 && sp <= 70) speeds.push(sp);
+          } else if (w.targetSpeedKmh && w.targetSpeedKmh >= 35 && w.targetSpeedKmh <= 70) {
+            speeds.push(w.targetSpeedKmh);
+          }
+          if (typeof w.performanceScore === 'number') {
+            scoreSum += w.performanceScore;
+            scoreCount++;
+          }
+        }
+
+        if (speeds.length > 0) {
+          const avgWorkoutSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+          // Trong giải đua chính thức, ngựa bung sức nhanh hơn buổi tập thông thường ~12-18%
+          baseSpeedKmh = Math.min(61.8, Math.max(54.2, avgWorkoutSpeed * 1.14));
+        }
+
+        const avgScore = scoreCount > 0 ? scoreSum / scoreCount : 8.0;
+        const fitnessBonus = Math.min(1.6, workouts.length * 0.08) + (avgScore - 7.5) * 0.35;
+        baseSpeedKmh += fitnessBonus;
+      }
+
+      // Dao động ngẫu nhiên nhỏ trong ngày thi đấu (-0.85 .. +0.85 km/h) để tạo kịch tính thực tế
+      const raceDayVariance = (Math.random() - 0.48) * 1.7;
+      const effectiveSpeedKmh = Math.min(
+        63.2,
+        Math.max(53.0, (baseSpeedKmh + raceDayVariance) * surfaceFactor),
+      );
+      const rawFinishTime = distanceMeters / (effectiveSpeedKmh / 3.6);
+
+      return {
+        lane: index + 1,
+        registrationId: reg.id,
+        horseId: reg.horse.id,
+        horseName: reg.horse.name,
+        horseCode: reg.horse.horseCode,
+        workoutCount30d: workouts.length,
+        rawFinishTime,
+      };
+    });
+
+    // Xếp hạng theo thời gian về đích tăng dần, đảm bảo không trùng khít hoàn toàn thời gian (cách nhau tối thiểu 0.08s)
+    rawRunners.sort((a, b) => a.rawFinishTime - b.rawFinishTime);
+    for (let i = 1; i < rawRunners.length; i++) {
+      if (rawRunners[i].rawFinishTime <= rawRunners[i - 1].rawFinishTime + 0.07) {
+        rawRunners[i].rawFinishTime = rawRunners[i - 1].rawFinishTime + 0.12;
+      }
+    }
+
+    const capturedAt = new Date().toISOString();
+    const computedResults = rawRunners.map((runner, idx) => {
+      const finalRank = idx + 1;
+      const finishTimeSeconds = Math.round(runner.rawFinishTime * 100) / 100;
+      const avgSpeedKmh = Math.round((distanceMeters / finishTimeSeconds) * 3.6 * 100) / 100;
+      let prizeShare = 0;
+      if (finalRank === 1) prizeShare = 0.5;
+      else if (finalRank === 2) prizeShare = 0.3;
+      else if (finalRank === 3) prizeShare = 0.2;
+      const prizeMoneyWon = Math.round(prizePool * prizeShare);
+      const peakHr = Math.min(208, Math.max(176, Math.round(182 + avgSpeedKmh * 0.32 - idx * 1.2)));
+
+      return {
+        registrationId: runner.registrationId,
+        horseId: runner.horseId,
+        horseName: runner.horseName,
+        horseCode: runner.horseCode,
+        lane: runner.lane,
+        finalRank,
+        finishTimeSeconds,
+        avgSpeedKmh,
+        prizeMoneyWon,
+        peakHeartRateBpm: peakHr,
+        officialNotes: `TMEC Simulator (Đo nhanh) · Làn ${runner.lane} · Nhịp tim đỉnh ${peakHr} bpm`,
+      };
+    });
+
+    const horseIds = computedResults.map((r) => r.horseId);
+
+    const session = await this.prisma.$transaction(async (tx) => {
+      for (const item of computedResults) {
+        await tx.tournamentResult.upsert({
+          where: { registrationId: item.registrationId },
+          create: {
+            registrationId: item.registrationId,
+            finalRank: item.finalRank,
+            finishTimeSeconds: item.finishTimeSeconds,
+            avgSpeedKmh: item.avgSpeedKmh,
+            prizeMoneyWon: item.prizeMoneyWon,
+            officialNotes: item.officialNotes,
+          },
+          update: {
+            finalRank: item.finalRank,
+            finishTimeSeconds: item.finishTimeSeconds,
+            avgSpeedKmh: item.avgSpeedKmh,
+            prizeMoneyWon: item.prizeMoneyWon,
+            officialNotes: item.officialNotes,
+          },
+        });
+      }
+
+      return tx.simulatorSession.create({
+        data: {
+          id: randomUUID(),
+          type: SimulatorSessionType.RACE,
+          status: SimulatorSessionStatus.COMPLETED,
+          horseIds,
+          actorUserId: actor.userId,
+          startedAt: new Date(),
+          finishedAt: new Date(),
+          lastSnapshot: {
+            tournamentId: tournament.id,
+            tournamentName: tournament.name,
+            distanceMeters,
+            trackType: tournament.trackType,
+            prizePool,
+            mode: 'QUICK_READING',
+          },
+          result: {
+            modelVersion: 'TMEC-QuickSim-v3',
+            capturedAt,
+            surface: tournament.trackType === 'DIRT' ? 'DIRT' : 'GRASS',
+            distance_m: distanceMeters,
+            results: computedResults.map((r) => ({
+              final_rank: r.finalRank,
+              lane: r.lane,
+              horse_id: r.horseId,
+              status: 'FINISHED',
+              finish_time_s: r.finishTimeSeconds,
+              avg_speed_kmh: r.avgSpeedKmh,
+              prize_money_won: r.prizeMoneyWon,
+              peak_heart_rate_bpm: r.peakHeartRateBpm,
+            })),
+          } as any,
+        },
+      });
+    });
+
+    return {
+      sessionId: session.id,
+      status: session.status,
+      source: `TMEC Simulator (Đo nhanh) · ${new Date(capturedAt).toLocaleTimeString('vi-VN')}`,
+      capturedAt,
+      tournamentId: tournament.id,
+      tournamentName: tournament.name,
+      distanceMeters,
+      prizePool,
+      results: computedResults,
+    };
+  }
+
   async getHorsesForSimulator() {
     const horses = await this.prisma.horse.findMany({
       where: { deletedAt: null },
@@ -379,7 +754,7 @@ export class SimulatorService {
   async getContext(
     sessionId: string,
     actor?: CurrentUserPayload | null,
-  ): Promise<WorkoutSimulationContext | ExamSimulationContext> {
+  ): Promise<AnySimulationContext> {
     const session = await this.prisma.simulatorSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -524,6 +899,58 @@ export class SimulatorService {
           weightKg: horse.weightKg ?? null,
           stall: activeStallCode,
         },
+      };
+    }
+
+    if (session.type === SimulatorSessionType.RACE) {
+      const snapshot = (session.lastSnapshot as any) || {};
+      const tournamentId = snapshot.tournamentId;
+      const tournament = tournamentId
+        ? await this.prisma.tournament.findUnique({
+            where: { id: tournamentId },
+            include: {
+              registrations: {
+                where: { status: { in: ['CONFIRMED', 'REGISTERED'] } },
+                include: {
+                  horse: {
+                    select: {
+                      id: true,
+                      name: true,
+                      horseCode: true,
+                      breed: true,
+                      status: true,
+                      color: true,
+                      dob: true,
+                      weightKg: true,
+                      avatarUrl: true,
+                    },
+                  },
+                },
+                orderBy: { registrationDate: 'asc' },
+              },
+            },
+          })
+        : null;
+
+      const entries = tournament
+        ? tournament.registrations.map((r, i) => ({
+            lane: i + 1,
+            registrationId: r.id,
+            horse: r.horse,
+          }))
+        : [];
+
+      return {
+        type: 'RACE',
+        sessionId: session.id,
+        status: session.status,
+        tournamentId: tournament?.id || tournamentId,
+        tournamentName: tournament?.name || snapshot.tournamentName || 'Giải đua mô phỏng',
+        distanceMeters: tournament?.distanceMeters || snapshot.distanceMeters || 1600,
+        trackType: tournament?.trackType || snapshot.trackType || 'TURF',
+        surface: tournament?.trackType === 'DIRT' ? 'DIRT' : 'GRASS',
+        entries,
+        horse: (entries[0]?.horse as any) || ({} as any),
       };
     }
 
@@ -708,6 +1135,25 @@ export class SimulatorService {
       actor,
     );
 
+    const prevSnapshot =
+      session.lastSnapshot &&
+      typeof session.lastSnapshot === 'object' &&
+      !Array.isArray(session.lastSnapshot)
+        ? (session.lastSnapshot as Record<string, any>)
+        : {};
+    const mergedSnapshot = {
+      ...(prevSnapshot.tournamentId
+        ? {
+            tournamentId: prevSnapshot.tournamentId,
+            tournamentName: prevSnapshot.tournamentName,
+            distanceMeters: prevSnapshot.distanceMeters,
+            trackType: prevSnapshot.trackType,
+            prizePool: prevSnapshot.prizePool,
+          }
+        : {}),
+      ...dto,
+    };
+
     const live: LiveSimulatorSession = {
       sessionId: dto.session_id,
       type: SimulatorSessionType.RACE,
@@ -716,7 +1162,7 @@ export class SimulatorService {
       actorUserId: actor.userId,
       startedAt: session.startedAt,
       finishedAt: null,
-      lastSnapshot: dto,
+      lastSnapshot: mergedSnapshot,
       updatedAt: new Date(),
     };
     this.active.set(dto.session_id, live);
@@ -725,7 +1171,7 @@ export class SimulatorService {
       where: { id: dto.session_id },
       data: {
         status: SimulatorSessionStatus.RUNNING,
-        lastSnapshot: dto as any,
+        lastSnapshot: mergedSnapshot as any,
         updatedAt: new Date(),
       },
     });
@@ -786,6 +1232,74 @@ export class SimulatorService {
       });
 
       this.active.delete(dto.session_id);
+
+      // Tự động lưu kết quả giải đua khi nhận gói tin sim:session_finished của cuộc đua
+      if (dto.type === 'RACE' && Array.isArray(dto.results) && dto.results.length > 0) {
+        const snapshot = (issued.lastSnapshot as any) || {};
+        const tournamentId = snapshot.tournamentId;
+        const prizePool = Number(snapshot.prizePool || 0);
+        const targetTournament =
+          tournamentId && typeof tx.tournament?.findUnique === 'function'
+            ? await tx.tournament.findUnique({
+                where: { id: tournamentId },
+                select: { status: true },
+              })
+            : null;
+        if (tournamentId && targetTournament?.status !== 'COMPLETED') {
+          for (let i = 0; i < dto.results.length; i++) {
+            const r = dto.results[i];
+            const horseId = r.horse_id;
+            if (!horseId) continue;
+
+            const reg = await tx.tournamentRegistration.findFirst({
+              where: {
+                tournamentId,
+                horseId,
+                status: { in: ['CONFIRMED', 'REGISTERED'] },
+              },
+            });
+
+            if (reg) {
+              const finalRank =
+                typeof r.final_rank === 'number' ? r.final_rank : r.status === 'DNF' ? 99 : i + 1;
+              const finishTimeSeconds = typeof r.finish_time_s === 'number' ? r.finish_time_s : 0;
+              const avgSpeedKmh = typeof r.avg_speed_kmh === 'number' ? r.avg_speed_kmh : 0;
+              let prizeShare = 0;
+              if (r.status !== 'DNF') {
+                if (finalRank === 1) prizeShare = 0.5;
+                else if (finalRank === 2) prizeShare = 0.3;
+                else if (finalRank === 3) prizeShare = 0.2;
+              }
+              const prizeMoneyWon = Math.round(prizePool * prizeShare);
+
+              await tx.tournamentResult.upsert({
+                where: { registrationId: reg.id },
+                create: {
+                  registrationId: reg.id,
+                  finalRank,
+                  finishTimeSeconds,
+                  avgSpeedKmh,
+                  prizeMoneyWon,
+                  officialNotes:
+                    r.status === 'DNF'
+                      ? 'DNF - Dừng thi đấu do sự cố trên đường đua'
+                      : 'Ghi nhận từ mô phỏng 2D chính thức',
+                },
+                update: {
+                  finalRank,
+                  finishTimeSeconds,
+                  avgSpeedKmh,
+                  prizeMoneyWon,
+                  officialNotes:
+                    r.status === 'DNF'
+                      ? 'DNF - Dừng thi đấu do sự cố trên đường đua'
+                      : 'Ghi nhận từ mô phỏng 2D chính thức',
+                },
+              });
+            }
+          }
+        }
+      }
 
       const session = await tx.simulatorSession.findUnique({
         where: { id: dto.session_id },

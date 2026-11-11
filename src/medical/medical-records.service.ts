@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { Role, HorseStatus, SeverityLevel } from '@prisma/client';
+import { assertStatusTransition } from '../horses/horse-rules';
 import { CreateMedicalRecordDto } from './dto/create-medical-record.dto';
 import { UpdateMedicalRecordDto } from './dto/update-medical-record.dto';
 import { MedicalRecordQueryDto } from './dto/medical-record-query.dto';
@@ -18,6 +19,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MedicalAccessService } from './medical-access.service';
 import { MedicalLocksService } from './medical-locks.service';
+import { Optional } from '@nestjs/common';
+import { DailyTasksService } from '../daily-tasks/daily-tasks.service';
 
 /** P2-02: bệnh án, phác đồ, đơn thuốc, tái khám (FR-3.03 → FR-3.07). */
 @Injectable()
@@ -27,6 +30,7 @@ export class MedicalRecordsService {
     private readonly audit: AuditService,
     private readonly access: MedicalAccessService,
     private readonly locks: MedicalLocksService,
+    @Optional() private readonly dailyTasks?: DailyTasksService,
   ) {}
 
   /** Trạng thái đề xuất hợp lệ của ngựa; giá trị lạ hoặc rỗng → null. */
@@ -65,6 +69,22 @@ export class MedicalRecordsService {
         HttpStatus.BAD_REQUEST,
         'HORSE_RETIRED',
         'The horse is no longer managed by the club; medical records cannot be created.',
+      );
+    }
+
+    // Kiểm tra quy tắc nghiệp vụ: Mỗi chiến mã chỉ có tối đa 1 bệnh án mở tại một thời điểm
+    const existingOpenRecord = await this.prisma.medicalRecord.findFirst({
+      where: {
+        horseId: dto.horseId,
+        status: 'OPEN',
+      },
+      select: { id: true, recordNumber: true },
+    });
+    if (existingOpenRecord) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_HAS_OPEN_RECORD',
+        `Chiến mã này đang có bệnh án ở trạng thái mở (${existingOpenRecord.recordNumber || existingOpenRecord.id}). Không thể tạo thêm bệnh án khi bệnh án cũ chưa kết thúc điều trị.`,
       );
     }
 
@@ -433,12 +453,13 @@ export class MedicalRecordsService {
     if (!record) {
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
     }
-    // Chỉ bản nháp được sửa (FE chỉ hiện nút Sửa với nháp); bệnh án chính thức đổi qua phác đồ / đơn thuốc / tái khám.
-    if (record.status !== 'DRAFT') {
+    // Cho phép chỉnh sửa khi bệnh án ở trạng thái nháp (DRAFT) hoặc đang mở điều trị (OPEN).
+    // Bệnh án đã đóng / kết thúc (CLOSED) không được phép chỉnh sửa.
+    if (record.status === 'CLOSED') {
       throw apiError(
         HttpStatus.BAD_REQUEST,
-        'RECORD_NOT_DRAFT',
-        'Only a draft medical record can be edited.',
+        'RECORD_CLOSED',
+        'Cannot edit a medical record that has already been closed.',
       );
     }
 
@@ -469,18 +490,85 @@ export class MedicalRecordsService {
       dataToUpdate.labTests = dto.labTests.length > 0 ? JSON.stringify(dto.labTests) : null;
     }
     if (dto.examinationDate) {
-      dataToUpdate.examinationDate = new Date(dto.examinationDate);
+      const examDate = new Date(dto.examinationDate);
+      const now = new Date();
+      if (examDate > now) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'DATE_IN_FUTURE',
+          'The examination date cannot be in the future.',
+        );
+      }
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      if (examDate < thirtyDaysAgo) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'DATE_TOO_OLD',
+          'The examination date cannot be more than 30 days ago.',
+        );
+      }
+      dataToUpdate.examinationDate = examDate;
     }
 
-    const updated = await this.prisma.medicalRecord.update({
-      where: { id },
-      data: dataToUpdate,
-      include: {
-        horse: true,
-        veterinarian: true,
-        injuries: true,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      let horseUpdateNeeded = false;
+      let targetHorse: any = null;
+
+      if (record.status === 'OPEN' && dataToUpdate.recommendedHorseStatus) {
+        targetHorse = await tx.horse.findUnique({
+          where: { id: record.horseId },
+          select: { id: true, name: true, status: true, isMedicalLocked: true },
+        });
+
+        if (targetHorse && targetHorse.status !== dataToUpdate.recommendedHorseStatus) {
+          if (targetHorse.status === HorseStatus.RETIRED) {
+            throw apiError(
+              HttpStatus.BAD_REQUEST,
+              'HORSE_RETIRED',
+              'The horse is no longer managed by the club; its status cannot change.',
+            );
+          }
+
+          assertStatusTransition({
+            role: actor.role,
+            from: targetHorse.status,
+            to: dataToUpdate.recommendedHorseStatus,
+            isMedicalLocked: targetHorse.isMedicalLocked,
+            reason: `Cập nhật từ bệnh án #${record.recordNumber || record.id}`,
+          });
+
+          horseUpdateNeeded = true;
+        }
+      }
+
+      const updatedRecord = await tx.medicalRecord.update({
+        where: { id },
+        data: dataToUpdate,
+        include: {
+          horse: true,
+          veterinarian: true,
+          injuries: true,
+        },
+      });
+
+      if (horseUpdateNeeded && targetHorse) {
+        await tx.horse.update({
+          where: { id: record.horseId },
+          data: { status: dataToUpdate.recommendedHorseStatus },
+        });
+      }
+
+      return { updatedRecord, horseUpdateNeeded, targetHorse };
     });
+
+    if (updated.horseUpdateNeeded && updated.targetHorse) {
+      await this.audit.record(
+        { id: actor.userId, name: actor.fullName },
+        'HORSE_STATUS_CHANGED',
+        `Changed status of horse ${updated.targetHorse.name} from ${updated.targetHorse.status} to ${dataToUpdate.recommendedHorseStatus}. Reason: Cập nhật từ bệnh án #${record.recordNumber || record.id}`,
+        record.horseId,
+      );
+    }
 
     await this.audit.record(
       { id: actor.userId, name: actor.fullName },
@@ -490,7 +578,7 @@ export class MedicalRecordsService {
       { entityName: 'MedicalRecord' },
     );
 
-    return updated;
+    return updated.updatedRecord;
   }
 
   async deleteMedicalRecord(id: string, actor: CurrentUserPayload) {
@@ -549,6 +637,23 @@ export class MedicalRecordsService {
       );
     }
 
+    // Kiểm tra: Không thể chốt bản nháp nếu ngựa đã có một bệnh án khác đang mở
+    const existingOpenRecord = await this.prisma.medicalRecord.findFirst({
+      where: {
+        horseId: record.horseId,
+        status: 'OPEN',
+        id: { not: record.id },
+      },
+      select: { id: true, recordNumber: true },
+    });
+    if (existingOpenRecord) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_HAS_OPEN_RECORD',
+        `Chiến mã này đang có bệnh án khác ở trạng thái mở (${existingOpenRecord.recordNumber || existingOpenRecord.id}). Không thể chốt bệnh án này.`,
+      );
+    }
+
     const targetStatus = record.recommendedHorseStatus;
     const applyStatus =
       !!dto.applyProposedStatus && !!targetStatus && record.horse?.status !== targetStatus;
@@ -588,6 +693,14 @@ export class MedicalRecordsService {
 
     // 3. Áp dụng trạng thái đề xuất lên ngựa (khóa ở bước 1 đã đặt trạng thái này rồi thì bỏ qua)
     if (applyStatus && !dto.proposeMedicalLock && targetStatus) {
+      assertStatusTransition({
+        role: actor.role,
+        from: record.horse.status,
+        to: targetStatus,
+        isMedicalLocked: record.horse.isMedicalLocked,
+        reason: `Áp dụng đề xuất khi chốt bệnh án #${record.recordNumber || record.id}`,
+      });
+
       await this.prisma.horse.update({
         where: { id: record.horseId },
         data: { status: targetStatus },
@@ -712,6 +825,23 @@ export class MedicalRecordsService {
       );
     }
 
+    // Kiểm tra: Không thể mở lại bệnh án nếu ngựa đang có một bệnh án khác ở trạng thái OPEN
+    const existingOpenRecord = await this.prisma.medicalRecord.findFirst({
+      where: {
+        horseId: record.horseId,
+        status: 'OPEN',
+        id: { not: record.id },
+      },
+      select: { id: true, recordNumber: true },
+    });
+    if (existingOpenRecord) {
+      throw apiError(
+        HttpStatus.CONFLICT,
+        'HORSE_HAS_OPEN_RECORD',
+        `Chiến mã này đang có một bệnh án khác ở trạng thái mở (${existingOpenRecord.recordNumber || existingOpenRecord.id}). Không thể mở lại bệnh án này.`,
+      );
+    }
+
     // Kiểm tra quy tắc nghiệp vụ: Chỉ được mở lại trong vòng 7 ngày kể từ khi kết thúc
     if (record.closedAt) {
       const diffMs = Date.now() - new Date(record.closedAt).getTime();
@@ -758,6 +888,14 @@ export class MedicalRecordsService {
     const record = await this.prisma.medicalRecord.findUnique({ where: { id: recordId } });
     if (!record)
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
+
+    if (record.status === 'CLOSED') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'RECORD_CLOSED',
+        'Bệnh án đã đóng điều trị, không thể thêm giai đoạn phác đồ.',
+      );
+    }
 
     if (dto.startDate && dto.endDate) {
       const start = new Date(dto.startDate);
@@ -832,6 +970,14 @@ export class MedicalRecordsService {
     if (!record)
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
 
+    if (record.status === 'CLOSED') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'RECORD_CLOSED',
+        'Bệnh án đã đóng điều trị, không thể chỉnh sửa phác đồ.',
+      );
+    }
+
     let phases: any[] = [];
     if (record.treatmentPhases) {
       try {
@@ -898,6 +1044,14 @@ export class MedicalRecordsService {
     const record = await this.prisma.medicalRecord.findUnique({ where: { id: recordId } });
     if (!record)
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
+
+    if (record.status === 'CLOSED') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'RECORD_CLOSED',
+        'Bệnh án đã đóng điều trị, không thể kê thêm đơn thuốc.',
+      );
+    }
 
     let currentRx: any[] = [];
     const rxSource = record.prescriptions || record.prescriptionDetails;
@@ -1021,6 +1175,14 @@ export class MedicalRecordsService {
     if (!record)
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
 
+    if (record.status === 'CLOSED') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'RECORD_CLOSED',
+        'Bệnh án đã đóng điều trị, không thể chỉnh sửa đơn thuốc.',
+      );
+    }
+
     let currentRx: any[] = [];
     const rxSource = record.prescriptions || record.prescriptionDetails;
     if (rxSource) {
@@ -1083,6 +1245,14 @@ export class MedicalRecordsService {
     if (!record)
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
 
+    if (record.status === 'CLOSED') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'RECORD_CLOSED',
+        'Bệnh án đã đóng điều trị, không thể thao tác trên đơn thuốc.',
+      );
+    }
+
     let currentRx: any[] = [];
     const rxSource = record.prescriptions || record.prescriptionDetails;
     if (rxSource) {
@@ -1129,6 +1299,14 @@ export class MedicalRecordsService {
     const record = await this.prisma.medicalRecord.findUnique({ where: { id: recordId } });
     if (!record)
       throw apiError(HttpStatus.NOT_FOUND, 'RECORD_NOT_FOUND', 'Medical record not found.');
+
+    if (record.status === 'CLOSED') {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'RECORD_CLOSED',
+        'Bệnh án đã đóng điều trị, không thể thêm lịch tái khám.',
+      );
+    }
 
     const rawVisitDate = dto.followUpDate || dto.visitDate;
     const visitDate = rawVisitDate ? new Date(rawVisitDate) : new Date();
