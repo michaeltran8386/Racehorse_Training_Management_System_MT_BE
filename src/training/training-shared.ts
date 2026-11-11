@@ -2,7 +2,9 @@
 import { HorseStatus, PlanStatus, Prisma } from '@prisma/client';
 import { UserRole } from '../common/enums/role.enum';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
-import { PlanPhase } from './training-rules';
+import { PlanPhase, workoutDurationMinutes, GROOM_BUFFER_MINUTES } from './training-rules';
+
+export { workoutDurationMinutes, GROOM_BUFFER_MINUTES };
 
 export type Tx = Prisma.TransactionClient;
 

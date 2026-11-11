@@ -58,6 +58,17 @@ export const PENDING_WORKOUT_STATUSES: WorkoutStatus[] = [
 ];
 
 export const MAX_WORKOUTS_PER_DAY = 3; // Q-2.13
+
+/** Thời lượng tiêu chuẩn của bài tập (phút) theo BR-TRN-23. */
+export function workoutDurationMinutes(workoutType?: string | null): number {
+  if (workoutType === 'WALK' || workoutType === 'SWIM') return 45;
+  if (workoutType === 'TRIAL') return 90;
+  return 60; // TROT, CANTER, BREEZE, TREADMILL, default
+}
+
+/** Thời gian đệm chuyển tiếp giữa hai buổi tập của Groom (phút) theo BR-TRN-24 (tháo yên, tắm ngựa, vệ sinh). */
+export const GROOM_BUFFER_MINUTES = 15;
+
 /** Tổng cự ly một buổi (cự ly mỗi hiệp × số hiệp) — khớp giới hạn ô "Cự ly thực tế" khi ghi kết quả. */
 export const MAX_SESSION_DISTANCE_METERS = 10000;
 /** Kỷ lục ngựa đua ≈ 70 km/h; tốc độ trung bình tính ra vượt mức này là dữ liệu nhập sai. */
