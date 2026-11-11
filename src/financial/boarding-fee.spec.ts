@@ -1,4 +1,4 @@
-import { calculateBoardingFee } from './boarding-fee';
+import { calculateBoardingFee, calculateBoardingFeeForOwner } from './boarding-fee';
 
 const stay = (start: string, end: string | null) => ({
   startDate: new Date(start),
@@ -53,5 +53,28 @@ describe('calculateBoardingFee', () => {
   it('rejects reversed or invalid stay dates', () => {
     expect(() => calculateBoardingFee('2026-11', [stay('2026-11-04', '2026-11-03')])).toThrow();
     expect(() => calculateBoardingFee('2026-11', [stay('invalid', null)])).toThrow();
+  });
+
+  it('prorates boarding fees when a horse transfers ownership mid-month', () => {
+    const allocations = [
+      {
+        startDate: new Date('2026-11-01T00:00:00+07:00'),
+        endDate: new Date('2026-11-16T00:00:00+07:00'),
+        ownerId: 'owner-A',
+      },
+      {
+        startDate: new Date('2026-11-16T00:00:00+07:00'),
+        endDate: new Date('2026-12-01T00:00:00+07:00'),
+        ownerId: 'owner-B',
+      },
+    ];
+    const feeA = calculateBoardingFeeForOwner('2026-11', allocations, 'owner-A');
+    const feeB = calculateBoardingFeeForOwner('2026-11', allocations, 'owner-B');
+
+    expect(feeA.boardingDays).toBe(15);
+    expect(feeB.boardingDays).toBe(15);
+    expect(feeA.boardingFee.toNumber()).toBe(3000000);
+    expect(feeB.boardingFee.toNumber()).toBe(3000000);
+    expect(feeA.boardingFee.plus(feeB.boardingFee).toNumber()).toBe(6000000);
   });
 });

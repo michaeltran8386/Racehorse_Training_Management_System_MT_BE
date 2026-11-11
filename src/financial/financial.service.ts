@@ -771,6 +771,9 @@ export class FinancialService {
             where: {
               registration: {
                 horseId: { in: horseIds },
+                ...(ownerId && {
+                  horse: { ownerId },
+                }),
               },
             },
             include: {

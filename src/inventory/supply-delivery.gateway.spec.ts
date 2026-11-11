@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { SupplyDeliveryGateway } from './supply-delivery.gateway';
+import { JwtService } from '@nestjs/jwt';
+import {
+  SupplyDeliveryGateway,
+  getAllowedSupplyOrigins,
+  isAllowedSupplyOrigin,
+} from './supply-delivery.gateway';
 import { InventoryService } from './inventory.service';
 
 describe('SupplyDeliveryGateway', () => {
@@ -114,5 +119,79 @@ describe('SupplyDeliveryGateway', () => {
     });
     expect(res).toEqual({ success: false, error: 'INVALID_PAYLOAD' });
     expect(inventoryService.handleSimulatorAck).not.toHaveBeenCalled();
+  });
+
+  it('allows direct Simulator origin (port 5175) and SIMULATOR_URL in CORS helper', () => {
+    const prevSim = process.env.SIMULATOR_URL;
+    const prevNodeEnv = process.env.NODE_ENV;
+    try {
+      process.env.SIMULATOR_URL = 'https://sim.equiflow.test/';
+      process.env.NODE_ENV = 'production';
+      const origins = getAllowedSupplyOrigins();
+      expect(origins).toContain('https://sim.equiflow.test');
+      expect(isAllowedSupplyOrigin('https://sim.equiflow.test')).toBe(true);
+      expect(isAllowedSupplyOrigin('https://evil.example.com')).toBe(false);
+
+      process.env.NODE_ENV = 'development';
+      expect(isAllowedSupplyOrigin('http://localhost:5175')).toBe(true);
+      expect(isAllowedSupplyOrigin('http://localhost:5173')).toBe(true);
+    } finally {
+      if (prevSim === undefined) delete process.env.SIMULATOR_URL;
+      else process.env.SIMULATOR_URL = prevSim;
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+    }
+  });
+
+  it('allows direct Simulator connection without JWT in non-test environments and marks isDirectSimulator', async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    try {
+      const mockClient = {
+        id: 'sim-direct-1',
+        handshake: { headers: { origin: 'http://localhost:5175' }, auth: {} },
+        data: {} as Record<string, unknown>,
+        emit: jest.fn(),
+        disconnect: jest.fn(),
+      };
+      await gateway.handleConnection(mockClient as any);
+      expect(mockClient.disconnect).not.toHaveBeenCalled();
+      expect(mockClient.data.isDirectSimulator).toBe(true);
+      expect(mockClient.emit).toHaveBeenCalledWith('sys:active_deliveries', expect.any(Array));
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevNodeEnv;
+    }
+  });
+
+  it('rejects connections from disallowed Origin headers or with invalid JWT tokens', async () => {
+    const disallowedClient = {
+      id: 'bad-origin-1',
+      handshake: { headers: { origin: 'https://evil.example.com' }, auth: {} },
+      data: {},
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+    };
+    await gateway.handleConnection(disallowedClient as any);
+    expect(disallowedClient.disconnect).toHaveBeenCalledWith(true);
+
+    const jwtGateway = new SupplyDeliveryGateway(
+      inventoryService as InventoryService,
+      {
+        verifyAsync: jest.fn().mockRejectedValue(new Error('invalid token')),
+      } as unknown as JwtService,
+    );
+    const invalidJwtClient = {
+      id: 'bad-jwt-1',
+      handshake: {
+        headers: { origin: 'http://localhost:5173' },
+        auth: { token: 'forged.jwt.token' },
+      },
+      data: {},
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+    };
+    await jwtGateway.handleConnection(invalidJwtClient as any);
+    expect(invalidJwtClient.disconnect).toHaveBeenCalledWith(true);
   });
 });
