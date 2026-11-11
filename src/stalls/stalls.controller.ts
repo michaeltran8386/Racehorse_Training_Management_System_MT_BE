@@ -50,8 +50,9 @@ export class StallsController {
       search?: string;
       includeInactive?: string;
     },
+    @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.stallsService.findAll(query);
+    return this.stallsService.findAll(query, user);
   }
 
   @Get('zones')
