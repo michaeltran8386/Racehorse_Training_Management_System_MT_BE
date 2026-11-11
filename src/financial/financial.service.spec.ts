@@ -375,6 +375,50 @@ describe('FinancialService', () => {
       expect(breakdown.drilldown.raceSettlements[0].tournamentName).toBe('Autumn Cup');
       expect(breakdown.drilldown.raceSettlements[0].netOwnerPayout).toBe(15000000);
     });
+
+    it('isolates prize settlements so Owner B does not see tournament winnings belonging to Owner A', async () => {
+      prisma.financialInvoice.findMany.mockResolvedValue([
+        {
+          id: 'inv-b-1',
+          horseId: 'h-1',
+          ownerId: 'o-2',
+          billingPeriod: '2026-11',
+          boardingFee: 3000000,
+          boardingDays: 15,
+          medicalFee: 0,
+          trainingFee: 0,
+          prizeCredit: 0,
+          netAmount: 3000000,
+          status: InvoiceStatus.SENT,
+          horse: { id: 'h-1', name: 'Thunder', horseCode: 'HR-001' },
+          owner: { id: 'o-2', fullName: 'Owner B', email: 'owner_b@gmail.com' },
+        },
+      ]);
+
+      prisma.tournamentResult = {
+        findMany: jest.fn().mockImplementation(({ where }) => {
+          if (where?.registration?.horse?.ownerId === 'o-2') {
+            return Promise.resolve([]);
+          }
+          return Promise.resolve([
+            {
+              finalRank: 1,
+              grossPrize: 20000000,
+              netOwnerPayout: 17000000,
+              registration: {
+                horseId: 'h-1',
+                tournament: { id: 't-old', name: 'Past Cup', raceDate: new Date('2026-10-15') },
+                horse: { id: 'h-1', name: 'Thunder', horseCode: 'HR-001', ownerId: 'o-1' },
+              },
+            },
+          ]);
+        }),
+      };
+
+      const breakdown = await service.getOwnerStatementBreakdown('o-2', '2026-11');
+      expect(breakdown.summary.totalRaceNet).toBe(0);
+      expect(breakdown.drilldown.raceSettlements).toHaveLength(0);
+    });
   });
 
   describe('getOwnerSummary', () => {
