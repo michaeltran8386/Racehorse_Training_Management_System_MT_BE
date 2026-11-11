@@ -180,8 +180,9 @@ export class TrainingController {
     @Query('date') date?: string,
     @Query('time') time?: string,
     @Query('excludeWorkoutId') excludeWorkoutId?: string,
+    @Query('workoutType') workoutType?: string,
   ) {
-    return this.workouts.findGrooms(horseId, date, time, excludeWorkoutId);
+    return this.workouts.findGrooms(horseId, date, time, excludeWorkoutId, workoutType);
   }
 
   @Post('plans/:id/workouts')

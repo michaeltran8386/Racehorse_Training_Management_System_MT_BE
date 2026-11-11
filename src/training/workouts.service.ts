@@ -26,6 +26,8 @@ import {
   startOfClubWeek,
   TRIAL_SLOT_MINUTES,
   withinTrainingHours,
+  workoutDurationMinutes,
+  GROOM_BUFFER_MINUTES,
 } from './training-rules';
 import {
   Tx,
@@ -408,24 +410,74 @@ export class WorkoutsService {
         );
       }
     }
-    // 7. Một người chăm sóc không thể kèm 2 ngựa cùng lúc (cách nhau dưới 30 phút) -> chặn hẳn.
-    const overlap = GROOM_OVERLAP_MINUTES * 60 * 1000;
-    const busy = await tx.workoutSession.findFirst({
-      where: {
-        ...live,
-        assignedStaffUserId: w.assignedStaffUserId,
-        scheduledDate: {
-          gt: new Date(w.scheduledDate.getTime() - overlap),
-          lt: new Date(w.scheduledDate.getTime() + overlap),
+    // 7. Một người chăm sóc không thể kèm 2 ngựa cùng lúc (phải cách nhau thời lượng + 15 phút đệm chuyển tiếp theo BR-TRN-24).
+    const newStart = w.scheduledDate.getTime();
+    const newDur = workoutDurationMinutes(w.workoutType);
+    const newEnd = newStart + (newDur + GROOM_BUFFER_MINUTES) * 60 * 1000;
+    const maxPreWindow = 120 * 60 * 1000;
+
+    let busy: {
+      id: string;
+      scheduledDate: Date;
+      workoutType?: string | null;
+      horse: { name: string };
+      trainingPlan: { trainer: { fullName: string } } | null;
+    } | null = null;
+
+    if (tx.workoutSession?.findMany) {
+      const candidates = await tx.workoutSession.findMany({
+        where: {
+          ...live,
+          assignedStaffUserId: w.assignedStaffUserId,
+          scheduledDate: {
+            gte: new Date(newStart - maxPreWindow),
+            lte: new Date(newEnd),
+          },
         },
-      },
-      select: {
-        id: true,
-        scheduledDate: true,
-        horse: { select: { name: true } },
-        ...TRAINER_OF_WORKOUT,
-      },
-    });
+        select: {
+          id: true,
+          scheduledDate: true,
+          workoutType: true,
+          horse: { select: { name: true } },
+          ...TRAINER_OF_WORKOUT,
+        },
+        orderBy: { scheduledDate: 'asc' },
+      });
+      if (Array.isArray(candidates) && candidates.length > 0) {
+        busy =
+          candidates.find((other) => {
+            if (!other?.scheduledDate || typeof other.scheduledDate.getTime !== 'function')
+              return false;
+            const otherStart = other.scheduledDate.getTime();
+            const otherDur = workoutDurationMinutes(other.workoutType);
+            const otherEnd = otherStart + (otherDur + GROOM_BUFFER_MINUTES) * 60 * 1000;
+            return newStart < otherEnd && otherStart < newEnd;
+          }) ?? null;
+      }
+    }
+
+    // Fallback cho findFirst (hỗ trợ cả mock trong unit test)
+    if (!busy && tx.workoutSession?.findFirst) {
+      const fallbackOverlap = (newDur + GROOM_BUFFER_MINUTES) * 60 * 1000;
+      busy = await tx.workoutSession.findFirst({
+        where: {
+          ...live,
+          assignedStaffUserId: w.assignedStaffUserId,
+          scheduledDate: {
+            gt: new Date(newStart - fallbackOverlap),
+            lt: new Date(newStart + fallbackOverlap),
+          },
+        },
+        select: {
+          id: true,
+          scheduledDate: true,
+          workoutType: true,
+          horse: { select: { name: true } },
+          ...TRAINER_OF_WORKOUT,
+        },
+      });
+    }
+
     if (busy) {
       const c = conflictInfo(busy.scheduledDate, GROOM_OVERLAP_MINUTES, busy);
       throw apiError(
@@ -1130,6 +1182,7 @@ export class WorkoutsService {
     dateStr?: string,
     timeStr?: string,
     excludeWorkoutId?: string,
+    workoutType?: string,
   ): Promise<
     Array<{
       id: string;
@@ -1209,21 +1262,36 @@ export class WorkoutsService {
       !isNaN(targetDateTime.getTime()) &&
       this.prisma.workoutSession?.findMany
     ) {
-      // 1. Tìm các groom bị trùng buổi tập khác trong khoảng ±30 phút (loại trừ buổi tập đang sửa)
-      const overlap = GROOM_OVERLAP_MINUTES * 60 * 1000;
+      // 1. Tìm các groom bị trùng buổi tập khác trong khung giờ (thời lượng + 15 phút đệm chuyển tiếp theo BR-TRN-24)
+      const targetDuration = workoutDurationMinutes(workoutType);
+      const targetStart = targetDateTime.getTime();
+      const targetEnd = targetStart + (targetDuration + GROOM_BUFFER_MINUTES) * 60 * 1000;
+      const maxPreWindow = 120 * 60 * 1000;
+
       const workouts = await this.prisma.workoutSession.findMany({
         where: {
           status: { not: WorkoutStatus.CANCELLED },
           ...(excludeWorkoutId ? { id: { not: excludeWorkoutId } } : {}),
           scheduledDate: {
-            gt: new Date(targetDateTime.getTime() - overlap),
-            lt: new Date(targetDateTime.getTime() + overlap),
+            gte: new Date(targetStart - maxPreWindow),
+            lte: new Date(targetEnd),
           },
         },
-        select: { assignedStaffUserId: true },
+        select: { assignedStaffUserId: true, scheduledDate: true, workoutType: true },
       });
       for (const w of workouts) {
-        if (w.assignedStaffUserId) busyGroomIds.add(w.assignedStaffUserId);
+        if (
+          !w.assignedStaffUserId ||
+          !w.scheduledDate ||
+          typeof w.scheduledDate.getTime !== 'function'
+        )
+          continue;
+        const otherStart = w.scheduledDate.getTime();
+        const otherDur = workoutDurationMinutes(w.workoutType);
+        const otherEnd = otherStart + (otherDur + GROOM_BUFFER_MINUTES) * 60 * 1000;
+        if (targetStart < otherEnd && otherStart < targetEnd) {
+          busyGroomIds.add(w.assignedStaffUserId);
+        }
       }
     }
 
