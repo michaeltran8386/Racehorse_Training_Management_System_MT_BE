@@ -3,10 +3,10 @@ import { Cron } from '@nestjs/schedule';
 import { PreventiveStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DAY_MS, getClubDateBounds } from './preventive-care.service';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-// Lịch không gắn danh mục: nhắc trước 3 ngày (blueprint FR-012).
-const DEFAULT_NOTICE_DAYS = 3;
+// Lịch không gắn danh mục: nhắc trước 7 ngày đồng bộ với cửa sổ "Sắp đến hạn" (hoặc theo advanceNoticeDays của danh mục).
+const DEFAULT_NOTICE_DAYS = 7;
 
 /**
  * C-02 / FR-3.15: 06:00 giờ CLB mỗi ngày, nhắc lịch tiêm phòng / tẩy giun / móng sắp đến hạn hoặc quá hạn
@@ -24,11 +24,11 @@ export class PreventiveScheduler {
   @Cron('0 6 * * *', { name: 'preventive-reminders', timeZone: 'Asia/Ho_Chi_Minh' })
   async dailyReminders(now = new Date()): Promise<number> {
     try {
-      const horizon = new Date(now.getTime() + 30 * DAY_MS);
+      const { startOfTodayClub, endOfTodayClub, endOf30Days } = getClubDateBounds(now);
       const schedules = await this.prisma.preventiveSchedule.findMany({
         where: {
           status: { not: PreventiveStatus.COMPLETED },
-          dueDate: { lte: horizon },
+          dueDate: { lte: endOf30Days },
           horse: { deletedAt: null },
         },
         include: {
@@ -40,9 +40,9 @@ export class PreventiveScheduler {
       let sent = 0;
       for (const s of schedules) {
         const noticeDays = s.typeCatalog?.advanceNoticeDays ?? DEFAULT_NOTICE_DAYS;
-        const daysLeft = Math.ceil((s.dueDate.getTime() - now.getTime()) / DAY_MS);
-        if (daysLeft > noticeDays) continue;
-        const overdue = daysLeft < 0;
+        const noticeHorizon = new Date(endOfTodayClub.getTime() + noticeDays * DAY_MS);
+        if (s.dueDate > noticeHorizon) continue;
+        const overdue = s.dueDate < startOfTodayClub;
         const due = s.dueDate.toISOString().slice(0, 10);
         const task = s.typeCatalog?.name ?? s.scheduleType;
         await this.notifications.notifyHorse(

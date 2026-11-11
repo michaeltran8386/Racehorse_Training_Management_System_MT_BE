@@ -1,10 +1,11 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
-import { Role, HorseStatus, Prisma } from '@prisma/client';
+import { Role, HorseStatus, Prisma, PreventiveStatus } from '@prisma/client';
 import { HealthBoardQueryDto } from './dto/health-board-query.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MedicalAccessService } from './medical-access.service';
+import { getClubDateBounds } from './preventive-care.service';
 
 /** SC-3.01, SC-3.02: sơ đồ sức khỏe đàn, hồ sơ y tế 6 tab, ghi chú quan sát (FR-3.01, FR-3.02, FR-3.17). */
 @Injectable()
@@ -56,7 +57,7 @@ export class HealthOverviewService {
     });
 
     const preventives = await this.prisma.preventiveSchedule.findMany({
-      where: { horseId },
+      where: { horseId, status: { not: PreventiveStatus.COMPLETED } },
       orderBy: { dueDate: 'asc' },
       include: { typeCatalog: true },
     });
@@ -275,6 +276,7 @@ export class HealthOverviewService {
    */
   async getHealthBoard(query: HealthBoardQueryDto, currentUser: CurrentUserPayload) {
     const now = new Date();
+    const { startOfTodayClub, endOf30Days } = getClubDateBounds(now);
     const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     // C-03: OWNER chỉ thấy ngựa mình sở hữu, GROOM chỉ thấy ngựa mình đang chăm (giống getMedicalRecords).
     const scope: Prisma.HorseWhereInput =
@@ -307,7 +309,10 @@ export class HealthOverviewService {
           select: { id: true, examinationDate: true, clinicalDiagnosis: true },
         },
         preventiveSchedules: {
-          where: { dueDate: { lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) } },
+          where: {
+            status: { not: PreventiveStatus.COMPLETED },
+            dueDate: { lte: endOf30Days },
+          },
           orderBy: { dueDate: 'asc' },
           include: { typeCatalog: { select: { name: true } } },
         },
@@ -331,7 +336,7 @@ export class HealthOverviewService {
       const preventiveDue = horse.preventiveSchedules.map((p) => ({
         name: p.typeCatalog?.name || p.scheduleType,
         dueDate: p.dueDate,
-        overdue: p.dueDate < now,
+        overdue: p.dueDate < startOfTodayClub,
       }));
       const observation = horse.dailyGroomingLogs[0];
       return {
