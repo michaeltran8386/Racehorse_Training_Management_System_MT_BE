@@ -276,87 +276,127 @@ export class PreventiveCareService {
     };
 
     const now = new Date();
+    // Timezone CLB (Asia/Ho_Chi_Minh: UTC+7). Ngày hết hạn chỉ quá hạn sau khi hết ngày hôm nay.
+    const clubOffsetMs = 7 * 60 * 60 * 1000;
+    const startOfTodayClub = new Date(
+      Math.floor((now.getTime() + clubOffsetMs) / (24 * 60 * 60 * 1000)) * (24 * 60 * 60 * 1000) -
+        clubOffsetMs,
+    );
+    const endOfTodayClub = new Date(startOfTodayClub.getTime() + 24 * 60 * 60 * 1000 - 1);
+
     if (status) {
       if (status === 'OVERDUE') {
-        where.dueDate = { lt: now };
+        where.dueDate = { lt: startOfTodayClub };
         where.status = { not: PreventiveStatus.COMPLETED };
-      } else if (status === 'UPCOMING' || status === 'UPCOMING_7') {
+      } else if (status === 'UPCOMING' || status === 'UPCOMING_7' || status === 'DUE_SOON') {
         where.dueDate = {
-          gte: now,
-          lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+          gte: startOfTodayClub,
+          lte: new Date(endOfTodayClub.getTime() + 7 * 24 * 60 * 60 * 1000),
         };
         where.status = { not: PreventiveStatus.COMPLETED };
       } else if (status === 'COMPLETED') {
         where.status = PreventiveStatus.COMPLETED;
+      } else if (status === 'UP_TO_DATE' || status === 'NORMAL') {
+        where.status = { not: PreventiveStatus.COMPLETED };
+        where.dueDate = {
+          gt: new Date(endOfTodayClub.getTime() + 7 * 24 * 60 * 60 * 1000),
+        };
+      } else if (status === 'NODATA' || status === 'NO_DATA') {
+        where.status = { not: PreventiveStatus.COMPLETED };
+        where.lastCompletedDate = null;
+        where.completedDate = null;
       }
     }
 
     const baseWhere = { ...where };
     delete baseWhere.dueDate;
     delete baseWhere.status;
+    delete baseWhere.lastCompletedDate;
+    delete baseWhere.completedDate;
 
-    const [total, overdueCount, upcoming7DaysCount, upcoming30DaysCount, schedules] =
-      await Promise.all([
-        this.prisma.preventiveSchedule.count({ where }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: { lt: now },
-            status: { not: PreventiveStatus.COMPLETED },
+    const [
+      total,
+      overdueCount,
+      upcoming7DaysCount,
+      upcoming30DaysCount,
+      completedCount,
+      noDataCount,
+      schedules,
+    ] = await Promise.all([
+      this.prisma.preventiveSchedule.count({ where }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: { lt: startOfTodayClub },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: {
+            gte: startOfTodayClub,
+            lte: new Date(endOfTodayClub.getTime() + 7 * 24 * 60 * 60 * 1000),
           },
-        }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: {
-              gte: now,
-              lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
-            },
-            status: { not: PreventiveStatus.COMPLETED },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: {
+            gte: startOfTodayClub,
+            lte: new Date(endOfTodayClub.getTime() + 30 * 24 * 60 * 60 * 1000),
           },
-        }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: {
-              gte: now,
-              lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
-            },
-            status: { not: PreventiveStatus.COMPLETED },
-          },
-        }),
-        this.prisma.preventiveSchedule.findMany({
-          where,
-          skip,
-          take,
-          orderBy: { dueDate: 'asc' },
-          include: {
-            horse: {
-              select: {
-                id: true,
-                name: true,
-                microchipRfid: true,
-                status: true,
-                stallAllocations: {
-                  where: { isActive: true },
-                  select: { stall: { select: { code: true, zone: true } } },
-                },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          status: PreventiveStatus.COMPLETED,
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          status: { not: PreventiveStatus.COMPLETED },
+          lastCompletedDate: null,
+          completedDate: null,
+        },
+      }),
+      this.prisma.preventiveSchedule.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { dueDate: 'asc' },
+        include: {
+          horse: {
+            select: {
+              id: true,
+              name: true,
+              microchipRfid: true,
+              status: true,
+              stallAllocations: {
+                where: { isActive: true },
+                select: { stall: { select: { code: true, zone: true } } },
               },
             },
-            typeCatalog: true,
-            veterinarian: { select: { id: true, fullName: true, email: true } },
           },
-        }),
-      ]);
+          typeCatalog: true,
+          veterinarian: { select: { id: true, fullName: true, email: true } },
+        },
+      }),
+    ]);
 
     const mapped = schedules.map((sch) => {
       const noticeDays = sch.typeCatalog?.advanceNoticeDays || 7;
       const dueDate = new Date(sch.dueDate);
 
-      const isOverdue = dueDate < now && sch.status !== PreventiveStatus.COMPLETED;
+      const isOverdue = dueDate < startOfTodayClub && sch.status !== PreventiveStatus.COMPLETED;
       const isNotice =
         !isOverdue &&
-        dueDate <= new Date(now.getTime() + noticeDays * 24 * 60 * 60 * 1000) &&
+        dueDate <= new Date(endOfTodayClub.getTime() + noticeDays * 24 * 60 * 60 * 1000) &&
         sch.status !== PreventiveStatus.COMPLETED;
 
       let statusBadge = 'NORMAL';
@@ -386,6 +426,8 @@ export class PreventiveCareService {
         overdue: overdueCount,
         upcoming7Days: upcoming7DaysCount,
         upcoming30Days: upcoming30DaysCount,
+        completed: completedCount,
+        noData: noDataCount,
         total,
       },
       data: mapped,
@@ -564,13 +606,13 @@ export class PreventiveCareService {
         history.push(logEntry);
 
         if (schedule) {
+          // 1. Chốt kỳ chăm sóc hiện tại thành COMPLETED
           await tx.preventiveSchedule.update({
             where: { id: schedule.id },
             data: {
               veterinarianUserId: actor.userId,
               lastCompletedDate: performedDate,
               completedDate: performedDate,
-              dueDate: nextDueDate,
               productAdministered: resolvedProduct || schedule.productAdministered || null,
               batchNumber: dto.batchNumber || null,
               performedByMode: dto.performedByMode || 'SELF',
@@ -581,7 +623,26 @@ export class PreventiveCareService {
               typeCatalogId: schedule.typeCatalogId || catalog.id,
             },
           });
+
+          // 2. Tạo bản ghi mới PENDING cho kỳ tiếp theo
+          await tx.preventiveSchedule.create({
+            data: {
+              horseId: hId,
+              typeCatalogId: schedule.typeCatalogId || catalog.id,
+              scheduleType: catalog.category,
+              dueDate: nextDueDate,
+              lastCompletedDate: performedDate,
+              productAdministered: resolvedProduct || schedule.productAdministered || null,
+              batchNumber: dto.batchNumber || null,
+              performedByMode: dto.performedByMode || 'SELF',
+              performedByName,
+              notes: null,
+              status: PreventiveStatus.PENDING,
+              historyLogs: history,
+            },
+          });
         } else {
+          // Tạo dòng COMPLETED cho đợt chăm sóc vừa ghi nhận
           await tx.preventiveSchedule.create({
             data: {
               horseId: hId,
@@ -590,13 +651,31 @@ export class PreventiveCareService {
               veterinarianUserId: actor.userId,
               lastCompletedDate: performedDate,
               completedDate: performedDate,
-              dueDate: nextDueDate,
+              dueDate: performedDate,
               productAdministered: dto.productAdministered || null,
               batchNumber: dto.batchNumber || null,
               performedByMode: dto.performedByMode || 'SELF',
               performedByName,
               notes: dto.notes || null,
               status: PreventiveStatus.COMPLETED,
+              historyLogs: history,
+            },
+          });
+
+          // Tạo dòng PENDING cho kỳ kế tiếp
+          await tx.preventiveSchedule.create({
+            data: {
+              horseId: hId,
+              typeCatalogId: catalog.id,
+              scheduleType: catalog.category,
+              dueDate: nextDueDate,
+              lastCompletedDate: performedDate,
+              productAdministered: dto.productAdministered || null,
+              batchNumber: dto.batchNumber || null,
+              performedByMode: dto.performedByMode || 'SELF',
+              performedByName,
+              notes: null,
+              status: PreventiveStatus.PENDING,
               historyLogs: history,
             },
           });
