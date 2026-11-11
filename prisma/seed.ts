@@ -1,2036 +1,3500 @@
-import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { Prisma, PrismaClient } from '@prisma/client';
+import {
+  BodySide,
+  DailyTaskType,
+  HorseCatalogType,
+  HorseStatus,
+  IncidentStatus,
+  InjuryStatus,
+  InsightStatus,
+  InsightType,
+  InvoiceStatus,
+  MedicalRecordStatus,
+  NotificationCategory,
+  NutritionPlanStatus,
+  OtpPurpose,
+  PermissionRequestStatus,
+  PlanStatus,
+  PreventiveStatus,
+  PreventiveType,
+  Prisma,
+  PrismaClient,
+  RegistrationStatus,
+  RestockStatus,
+  RetireReason,
+  Role,
+  SeverityLevel,
+  ShiftType,
+  SimulatorSessionStatus,
+  SimulatorSessionType,
+  StallStatus,
+  SupplyCategory,
+  SupplyUnit,
+  TournamentStatus,
+  TrackSurface,
+  UserStatus,
+  WorkoutStatus,
+} from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { createHash } from 'crypto';
+import { existsSync } from 'fs';
+import { yymm } from '../src/common/utils/input';
+import { planDailyTasks, ScheduleHorse } from '../src/daily-tasks/daily-schedule';
 import { BOARDING_MONTHLY_RATE, calculateBoardingFee } from '../src/financial/boarding-fee';
-import { planDailyTasks } from '../src/daily-tasks/daily-schedule';
 import { clubDate } from '../src/training/training-rules';
 
-const now = new Date();
-const DAY = 86400000;
-const clubDay = (offset: number) => clubDate(new Date(now.getTime() + offset * DAY));
-const pad = (n: number, length = 2) => String(n).padStart(length, '0');
-const clubDateTime = (day: number, hour: number, minute = 0) =>
-  new Date(`${clubDay(day)}T${pad(hour)}:${pad(minute)}:00+07:00`);
-const dateOnly = (day: number) => new Date(`${clubDay(day)}T00:00:00Z`);
-const stamp = (day: number) => {
-  const at = day === 0 ? now : clubDateTime(day, 7);
-  return { createdAt: at, updatedAt: at };
-};
+type Tx = Prisma.TransactionClient;
 
-const prefix = 'e091f100-';
-const hash = (s: string) => createHash('sha256').update(s).digest('hex');
-const id = (key: string) => {
-  const h = hash(key);
-  return `${prefix}${h.slice(0, 4)}-4${h.slice(4, 7)}-8${h.slice(7, 10)}-${h.slice(10, 22)}`;
-};
-const fixture = { id: { startsWith: prefix } };
-const expiredEmail = 'equiflow-expired-fixture@gmail.com';
-const googleSubject = 'equiflow-lifecycle-unlinked-test-subject';
-const resetHash = hash('equiflow-expired-reset-fixture');
-const permissionId = 39101;
+const RESET_FLAG = process.argv.includes('--reset');
 
-const staff = [
-  ['manager', 'Trần Quang Minh', 'CLUB_MANAGER'],
-  ['trainer', 'Nguyễn Văn Tuấn', 'HEAD_TRAINER'],
-  ['trainer2', 'Lê Hoàng Nam', 'HEAD_TRAINER'],
-  ['vet', 'BS. Phạm Minh Trí', 'VETERINARIAN'],
-  ['vet2', 'BS. Lý Thanh Tâm', 'VETERINARIAN'],
-  ['groom', 'Lê Văn Bình', 'GROOM'],
-  ['groom2', 'Hoàng Văn Phúc', 'GROOM'],
-  ['groom3', 'Đỗ Thị Mai', 'GROOM'],
-  ['owner', 'Phạm Gia Bảo', 'HORSE_OWNER'],
-  ['owner2', 'Đặng Hoàng Yến', 'HORSE_OWNER'],
-  ['owner3', 'Vũ Quốc Hưng', 'HORSE_OWNER'],
-  ['owner4', 'Trịnh Bích Ngọc', 'HORSE_OWNER'],
-] as const;
-const user = (key: string) => id(`user/${key}`);
-const horse = (n: number) => id(`horse/${n}`);
-const zone = (key: string) => id(`zone/${key}`);
-const stall = (key: string) => id(`stall/${key}`);
-const supply = (key: string) => id(`supply/${key}`);
-const plan = (key: string) => id(`plan/${key}`);
-const med = (key: string) => id(`medical/${key}`);
-
-const horses = [
-  ['Bạch Long Mã', 'Colt', 'Bay Dark', 495, 'ACTIVE', 'A01', 'owner', 'trainer', -125, 5],
-  ['Xích Thố', 'Stallion', 'Chestnut', 510, 'INJURED', 'A02', 'owner', 'trainer', -120, 6],
-  ['Hắc Báo', 'Filly', 'Black', 490, 'IN_TRAINING', 'A03', 'owner3', 'trainer', -115, 4],
-  ['Thần Phong', 'Gelding', 'Bay', 480, 'ACTIVE', 'A04', 'owner2', 'trainer2', -125, 5],
-  ['Lão Tướng', 'Gelding', 'Grey', 520, 'RETIRED', 'B01', 'owner2', 'trainer2', -125, 18],
-  ['Tuyết Ảnh', 'Mare', 'Grey', 475, 'ISOLATED', 'C01', 'owner2', 'trainer2', -10, 6],
-  ['Kim Long', 'Stallion', 'Palomino', 505, 'RESTING', 'B02', 'owner', 'trainer', -72, 7],
-  ['Vân Tiêu', 'Colt', 'Roan', 470, 'IN_TRAINING', 'B03', 'owner', 'trainer', -45, 3],
-  ['Dạ Nguyệt', 'Mare', 'Bay', 485, 'UNDER_OBSERVATION', 'H01', 'owner4', 'trainer2', -120, 6],
-  ['Lôi Chấn', 'Stallion', 'Black', 515, 'ACTIVE', 'A06', 'owner2', 'trainer2', -125, 5],
-  ['Hồng Kỳ', 'Colt', 'Chestnut', 490, 'ACTIVE', 'A07', 'owner3', 'trainer', -110, 4],
-  ['Thanh Loan', 'Filly', 'Bay Dark', 480, 'ACTIVE', 'A08', 'owner4', 'trainer2', -105, 4],
-] as const;
-const trainerOf = (n: number) => user(horses[n - 1][7]);
-const groomOf = (key: string) =>
-  user(key.startsWith('A') ? 'groom' : key.startsWith('B') ? 'groom2' : 'groom3');
-const allocation = (n: number) => ({ startDate: clubDateTime(horses[n - 1][8], 0), endDate: null });
-
-function demoDatabase(): string {
-  if (existsSync('.env')) process.loadEnvFile('.env');
-  const configured = process.env.DATABASE_URL;
-  if (process.env.NODE_ENV === 'production' || !configured) {
-    throw new Error('Lifecycle seed requires a disposable local PostgreSQL database.');
+function resolveDatabaseUrl(): string {
+  if (!process.env.DIRECT_URL && !process.env.DATABASE_URL && existsSync('.env')) {
+    process.loadEnvFile('.env');
   }
-  for (const value of [configured, process.env.DIRECT_URL ?? configured]) {
-    const url = new URL(value);
-    if (
-      !['postgresql:', 'postgres:'].includes(url.protocol) ||
-      !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
-      !['/equiflow', '/equiflow_seed_demo', '/racehorse_ci'].includes(url.pathname) ||
-      url.searchParams.has('host')
-    ) {
-      throw new Error(
-        'Use a local equiflow_seed_demo (or racehorse_ci) database for both Prisma URLs.',
-      );
+  // Prefer DIRECT_URL (Session pooler 5432 on Supabase/Render) for interactive seed transactions.
+  const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error('DIRECT_URL or DATABASE_URL must be configured. Check .env or environment.');
+  }
+  return url;
+}
+
+/** Deterministic RFC-4122 UUID derived from a readable seed tag. */
+function id(tag: string): string {
+  const h = createHash('sha256').update(`equiflow-canonical:${tag}`).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+function sha256Hex(raw: string): string {
+  return createHash('sha256').update(raw).digest('hex');
+}
+
+const now = new Date();
+const DAY_MS = 24 * 60 * 60 * 1000;
+const days = (offsetDays: number, hour = 0, minute = 0): Date => {
+  const base = clubDate(new Date(now.getTime() + offsetDays * DAY_MS));
+  const localHour = String(hour).padStart(2, '0');
+  const localMin = String(minute).padStart(2, '0');
+  return new Date(`${base}T${localHour}:${localMin}:00+07:00`);
+};
+const dateStrOffset = (offsetDays: number) =>
+  clubDate(new Date(now.getTime() + offsetDays * DAY_MS));
+const monthOf = (d: Date) =>
+  `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+const pastIso = (offsetDays: number) => dateStrOffset(offsetDays);
+
+const horseIds = Array.from({ length: 19 }, (_, idx) => id(`horse:${idx + 1}`));
+const stallIds = {
+  A: Array.from({ length: 12 }, (_, i) => id(`stall:A${String(i + 1).padStart(2, '0')}`)),
+  B: Array.from({ length: 12 }, (_, i) => id(`stall:B${String(i + 1).padStart(2, '0')}`)),
+  C: Array.from({ length: 4 }, (_, i) => id(`stall:C${String(i + 1).padStart(2, '0')}`)),
+  H: Array.from({ length: 4 }, (_, i) => id(`stall:H${String(i + 1).padStart(2, '0')}`)),
+};
+const zoneIds = {
+  A: id('zone:A'),
+  B: id('zone:B'),
+  C: id('zone:C'),
+  H: id('zone:H'),
+};
+
+const userIds = {
+  manager: id('user:manager'),
+  manager2: id('user:manager2'),
+  trainer: id('user:trainer'),
+  trainer2: id('user:trainer2'),
+  trainer3: id('user:trainer3'),
+  trainer4: id('user:trainer4'),
+  vet: id('user:vet'),
+  vet2: id('user:vet2'),
+  vet3: id('user:vet3'),
+  vet4: id('user:vet4'),
+  grooms: Array.from({ length: 10 }, (_, i) => id(`user:groom${i === 0 ? '' : i + 1}`)),
+  owners: Array.from({ length: 6 }, (_, i) => id(`user:owner${i === 0 ? '' : i + 1}`)),
+  pendingEmail: id('user:pending-email'),
+  pendingApproval: id('user:pending-approval'),
+  invited: id('user:invited-vet'),
+  inactive: id('user:inactive-groom'),
+  rejected: id('user:rejected-trainer'),
+  locked: id('user:locked-owner'),
+};
+
+const shiftIds = {
+  MORNING: id('shift:MORNING'),
+  AFTERNOON: id('shift:AFTERNOON'),
+  NIGHT: id('shift:NIGHT'),
+};
+
+const supplyIds = {
+  timothyHay: id('supply:timothy-hay'),
+  oatGrain: id('supply:oat-grain'),
+  electrolyte: id('supply:electrolyte'),
+  antiInflam: id('supply:anti-inflam'),
+};
+
+const preventiveTypeIds = {
+  VACCINATION: id('prev-type:VACCINATION'),
+  DEWORMING: id('prev-type:DEWORMING'),
+  FARRIER_HOOF_CARE: id('prev-type:FARRIER_HOOF_CARE'),
+  DENTAL: id('prev-type:DENTAL'),
+};
+
+async function clearFixtures(tx: Tx) {
+  await tx.ownerAiMessage.deleteMany();
+  await tx.auditLog.deleteMany();
+  await tx.notification.deleteMany();
+  await tx.aIInsight.deleteMany();
+  await tx.financialInvoice.deleteMany();
+  await tx.tournamentResult.deleteMany();
+  await tx.tournamentRegistration.deleteMany();
+  await tx.tournament.deleteMany();
+  await tx.simulatorSession.deleteMany();
+  await tx.workoutSession.deleteMany();
+  await tx.trainingPlan.deleteMany();
+  await tx.incidentReport.deleteMany();
+  await tx.dailyCareTask.deleteMany();
+  await tx.dailyGroomingLog.deleteMany();
+  await tx.shiftRoster.deleteMany();
+  await tx.restockRequest.deleteMany();
+  await tx.stockBalance.deleteMany();
+  await tx.nutritionPlan.deleteMany();
+  await tx.supplyCatalog.deleteMany();
+  await tx.shiftCatalog.deleteMany();
+  await tx.medicalLock.deleteMany();
+  await tx.injuryLog.deleteMany();
+  await tx.medicalRecord.deleteMany();
+  await tx.preventiveSchedule.deleteMany();
+  await tx.preventiveTypeCatalog.deleteMany();
+  await tx.stallAllocation.deleteMany();
+  await tx.stall.deleteMany();
+  await tx.stallZone.deleteMany();
+  await tx.horse.deleteMany();
+  await tx.horseCatalogItem.deleteMany();
+  await tx.permissionRequest.deleteMany();
+  await tx.refreshToken.deleteMany();
+  await tx.resetToken.deleteMany();
+  await tx.loginAttempt.deleteMany();
+  await tx.otpCode.deleteMany();
+  await tx.googleIdentity.deleteMany();
+  await tx.counter.deleteMany();
+  await tx.user.deleteMany();
+}
+
+interface HorseSpec {
+  id: string;
+  horseCode: string;
+  name: string;
+  microchip: string;
+  breed: string;
+  dob: Date;
+  gender: 'Stallion' | 'Mare' | 'Gelding';
+  color: string;
+  weightKg: number;
+  status: HorseStatus;
+  ownerId: string;
+  stallId: string | null;
+  groomId?: string;
+  isMedicalLocked?: boolean;
+  isDebtImpounded?: boolean;
+  debtImpoundReason?: string;
+  retireReason?: RetireReason;
+}
+
+const HORSES: HorseSpec[] = [
+  {
+    id: horseIds[0],
+    horseCode: 'HR-000001',
+    name: 'Bạch Long Mã',
+    microchip: '985000000000001',
+    breed: 'Thoroughbred',
+    dob: new Date('2021-03-14T00:00:00Z'),
+    gender: 'Stallion',
+    color: 'Bay',
+    weightKg: 495,
+    status: HorseStatus.ACTIVE,
+    ownerId: userIds.owners[0],
+    stallId: stallIds.A[0],
+    groomId: userIds.grooms[0],
+  },
+  {
+    id: horseIds[1],
+    horseCode: 'HR-000002',
+    name: 'Xích Thố',
+    microchip: '985000000000002',
+    breed: 'Thoroughbred',
+    dob: new Date('2021-05-20T00:00:00Z'),
+    gender: 'Stallion',
+    color: 'Chestnut',
+    weightKg: 502,
+    status: HorseStatus.UNDER_OBSERVATION,
+    ownerId: userIds.owners[0],
+    stallId: stallIds.A[1],
+    groomId: userIds.grooms[3],
+    isMedicalLocked: true,
+  },
+  {
+    id: horseIds[2],
+    horseCode: 'HR-000003',
+    name: 'Kim Long',
+    microchip: '985000000000003',
+    breed: 'Warmblood',
+    dob: new Date('2022-02-10T00:00:00Z'),
+    gender: 'Stallion',
+    color: 'Palomino',
+    weightKg: 510,
+    status: HorseStatus.IN_TRAINING,
+    ownerId: userIds.owners[0],
+    stallId: stallIds.A[2],
+    groomId: userIds.grooms[0],
+  },
+  {
+    id: horseIds[3],
+    horseCode: 'HR-000004',
+    name: 'Vân Tiêu',
+    microchip: '985000000000004',
+    breed: 'Arabian Cross',
+    dob: new Date('2022-07-08T00:00:00Z'),
+    gender: 'Mare',
+    color: 'Grey',
+    weightKg: 448,
+    status: HorseStatus.ACTIVE,
+    ownerId: userIds.owners[0],
+    stallId: stallIds.A[3],
+    groomId: userIds.grooms[3],
+  },
+  {
+    id: horseIds[4],
+    horseCode: 'HR-000005',
+    name: 'Thần Phong',
+    microchip: '985000000000005',
+    breed: 'Arabian',
+    dob: new Date('2021-11-01T00:00:00Z'),
+    gender: 'Stallion',
+    color: 'Bay Dark',
+    weightKg: 460,
+    status: HorseStatus.ACTIVE,
+    ownerId: userIds.owners[1],
+    stallId: stallIds.A[4],
+    groomId: userIds.grooms[4],
+  },
+  {
+    id: horseIds[5],
+    horseCode: 'HR-000006',
+    name: 'Hắc Báo',
+    microchip: '985000000000006',
+    breed: 'Standardbred',
+    dob: new Date('2020-09-18T00:00:00Z'),
+    gender: 'Gelding',
+    color: 'Black',
+    weightKg: 490,
+    status: HorseStatus.ACTIVE,
+    ownerId: userIds.owners[2],
+    stallId: stallIds.A[5],
+    groomId: userIds.grooms[0],
+  },
+  {
+    id: horseIds[6],
+    horseCode: 'HR-000007',
+    name: 'Hồng Kỳ',
+    microchip: '985000000000007',
+    breed: 'Quarter Horse',
+    dob: new Date('2021-08-22T00:00:00Z'),
+    gender: 'Mare',
+    color: 'Chestnut',
+    weightKg: 478,
+    status: HorseStatus.IN_TRAINING,
+    ownerId: userIds.owners[2],
+    stallId: stallIds.A[6],
+    groomId: userIds.grooms[4],
+  },
+  {
+    id: horseIds[7],
+    horseCode: 'HR-000008',
+    name: 'Phi Vũ',
+    microchip: '985000000000008',
+    breed: 'Appaloosa',
+    dob: new Date('2022-04-19T00:00:00Z'),
+    gender: 'Mare',
+    color: 'Roan',
+    weightKg: 456,
+    status: HorseStatus.IN_TRAINING,
+    ownerId: userIds.owners[1],
+    stallId: stallIds.B[0],
+    groomId: userIds.grooms[1],
+  },
+  {
+    id: horseIds[8],
+    horseCode: 'HR-000009',
+    name: 'Tử Điện',
+    microchip: '985000000000009',
+    breed: 'Paint',
+    dob: new Date('2022-09-05T00:00:00Z'),
+    gender: 'Stallion',
+    color: 'Bay',
+    weightKg: 486,
+    status: HorseStatus.IN_TRAINING,
+    ownerId: userIds.owners[4],
+    stallId: stallIds.B[1],
+    groomId: userIds.grooms[5],
+  },
+  {
+    id: horseIds[9],
+    horseCode: 'HR-000010',
+    name: 'Thanh Loan',
+    microchip: '985000000000010',
+    breed: 'Arabian Cross',
+    dob: new Date('2021-06-30T00:00:00Z'),
+    gender: 'Mare',
+    color: 'Gray Roaming',
+    weightKg: 452,
+    status: HorseStatus.ACTIVE,
+    ownerId: userIds.owners[3],
+    stallId: stallIds.B[2],
+    groomId: userIds.grooms[1],
+  },
+  {
+    id: horseIds[10],
+    horseCode: 'HR-000011',
+    name: 'Ngàn Hoa',
+    microchip: '985000000000011',
+    breed: 'Paint',
+    dob: new Date('2023-01-17T00:00:00Z'),
+    gender: 'Mare',
+    color: 'Palomino',
+    weightKg: 440,
+    status: HorseStatus.IN_TRAINING,
+    ownerId: userIds.owners[3],
+    stallId: stallIds.B[3],
+    groomId: userIds.grooms[5],
+  },
+  {
+    id: horseIds[11],
+    horseCode: 'HR-000012',
+    name: 'Thiên Mã',
+    microchip: '985000000000012',
+    breed: 'Warmblood',
+    dob: new Date('2020-12-12T00:00:00Z'),
+    gender: 'Gelding',
+    color: 'Bay Dark',
+    weightKg: 518,
+    status: HorseStatus.ACTIVE,
+    ownerId: userIds.owners[4],
+    stallId: stallIds.B[4],
+    groomId: userIds.grooms[6],
+  },
+  {
+    id: horseIds[12],
+    horseCode: 'HR-000013',
+    name: 'Hỏa Phụng',
+    microchip: '985000000000013',
+    breed: 'Thoroughbred',
+    dob: new Date('2022-05-11T00:00:00Z'),
+    gender: 'Mare',
+    color: 'Chestnut',
+    weightKg: 465,
+    status: HorseStatus.UNDER_OBSERVATION,
+    ownerId: userIds.owners[5],
+    stallId: stallIds.B[5],
+    groomId: userIds.grooms[6],
+  },
+  {
+    id: horseIds[13],
+    horseCode: 'HR-000014',
+    name: 'Phong Lôi',
+    microchip: '985000000000014',
+    breed: 'Quarter Horse',
+    dob: new Date('2021-01-25T00:00:00Z'),
+    gender: 'Gelding',
+    color: 'Black',
+    weightKg: 498,
+    status: HorseStatus.RESTING,
+    ownerId: userIds.owners[5],
+    stallId: stallIds.B[6],
+    groomId: userIds.grooms[9],
+  },
+  {
+    id: horseIds[14],
+    horseCode: 'HR-000015',
+    name: 'Tuyết Ảnh',
+    microchip: '985000000000015',
+    breed: 'Arabian',
+    dob: new Date('2021-10-03T00:00:00Z'),
+    gender: 'Mare',
+    color: 'Grey',
+    weightKg: 445,
+    status: HorseStatus.ISOLATED,
+    ownerId: userIds.owners[1],
+    stallId: stallIds.C[0],
+    groomId: userIds.grooms[2],
+    isMedicalLocked: true,
+  },
+  {
+    id: horseIds[15],
+    horseCode: 'HR-000016',
+    name: 'Lôi Chấn',
+    microchip: '985000000000016',
+    breed: 'Standardbred',
+    dob: new Date('2020-08-14T00:00:00Z'),
+    gender: 'Stallion',
+    color: 'Roan',
+    weightKg: 505,
+    status: HorseStatus.INJURED,
+    ownerId: userIds.owners[1],
+    stallId: stallIds.C[1],
+    groomId: userIds.grooms[7],
+    isMedicalLocked: true,
+  },
+  {
+    id: horseIds[16],
+    horseCode: 'HR-000017',
+    name: 'Dạ Nguyệt',
+    microchip: '985000000000017',
+    breed: 'Appaloosa',
+    dob: new Date('2021-04-09T00:00:00Z'),
+    gender: 'Mare',
+    color: 'Black',
+    weightKg: 458,
+    status: HorseStatus.RESTING,
+    ownerId: userIds.owners[3],
+    stallId: stallIds.H[0],
+    groomId: userIds.grooms[8],
+    isDebtImpounded: true,
+    debtImpoundReason: 'Quá hạn thanh toán chi phí lưu chuồng & điều trị T8-T10/2026',
+  },
+  {
+    id: horseIds[17],
+    horseCode: 'HR-000018',
+    name: 'Lão Tướng',
+    microchip: '985000000000018',
+    breed: 'Thoroughbred',
+    dob: new Date('2016-05-02T00:00:00Z'),
+    gender: 'Gelding',
+    color: 'Bay Dark',
+    weightKg: 492,
+    status: HorseStatus.RETIRED,
+    ownerId: userIds.owners[1],
+    stallId: null,
+    retireReason: RetireReason.RETIRED,
+  },
+  {
+    id: horseIds[18],
+    horseCode: 'HR-000019',
+    name: 'Huyền Vũ',
+    microchip: '985000000000019',
+    breed: 'Warmblood',
+    dob: new Date('2017-03-19T00:00:00Z'),
+    gender: 'Stallion',
+    color: 'Black',
+    weightKg: 515,
+    status: HorseStatus.RETIRED,
+    ownerId: userIds.owners[2],
+    stallId: null,
+    retireReason: RetireReason.TRANSFERRED,
+  },
+];
+
+async function seedClub(tx: Tx, passwordHash: string) {
+  const createdBase = days(-150);
+
+  const users: Prisma.UserCreateManyInput[] = [
+    // 2 Managers
+    {
+      id: userIds.manager,
+      email: 'manager@gmail.com',
+      passwordHash,
+      fullName: 'Trần Quang Minh',
+      phoneNumber: '0901000001',
+      role: Role.CLUB_MANAGER,
+      status: UserStatus.ACTIVE,
+      createdAt: createdBase,
+      lastActive: days(-1, 9),
+    },
+    {
+      id: userIds.manager2,
+      email: 'manager2@gmail.com',
+      passwordHash,
+      fullName: 'Nguyễn Hải Đăng',
+      phoneNumber: '0901000002',
+      role: Role.CLUB_MANAGER,
+      status: UserStatus.ACTIVE,
+      createdAt: createdBase,
+      lastActive: days(-2, 16),
+    },
+    // 4 Head Trainers
+    {
+      id: userIds.trainer,
+      email: 'trainer@gmail.com',
+      passwordHash,
+      fullName: 'Nguyễn Văn Tuấn',
+      phoneNumber: '0902000001',
+      role: Role.HEAD_TRAINER,
+      status: UserStatus.ACTIVE,
+      createdAt: createdBase,
+      lastActive: days(0, 7),
+    },
+    {
+      id: userIds.trainer2,
+      email: 'trainer2@gmail.com',
+      passwordHash,
+      fullName: 'Lê Hoàng Nam',
+      phoneNumber: '0902000002',
+      role: Role.HEAD_TRAINER,
+      status: UserStatus.ACTIVE,
+      createdAt: createdBase,
+      lastActive: days(0, 8),
+    },
+    {
+      id: userIds.trainer3,
+      email: 'trainer3@gmail.com',
+      passwordHash,
+      fullName: 'Phạm Quốc Trung',
+      phoneNumber: '0902000003',
+      role: Role.HEAD_TRAINER,
+      status: UserStatus.ACTIVE,
+      createdAt: days(-120),
+      lastActive: days(-1, 17),
+    },
+    {
+      id: userIds.trainer4,
+      email: 'trainer4@gmail.com',
+      passwordHash,
+      fullName: 'Vũ Thành Long',
+      phoneNumber: '0902000004',
+      role: Role.HEAD_TRAINER,
+      status: UserStatus.ACTIVE,
+      createdAt: days(-90),
+      lastActive: days(-1, 15),
+    },
+    // 4 Veterinarians (> 2)
+    {
+      id: userIds.vet,
+      email: 'vet@gmail.com',
+      passwordHash,
+      fullName: 'BS. Phạm Minh Trí',
+      phoneNumber: '0903000001',
+      role: Role.VETERINARIAN,
+      status: UserStatus.ACTIVE,
+      createdAt: createdBase,
+      lastActive: days(0, 9),
+    },
+    {
+      id: userIds.vet2,
+      email: 'vet2@gmail.com',
+      passwordHash,
+      fullName: 'BS. Nguyễn Thảo Vy',
+      phoneNumber: '0903000002',
+      role: Role.VETERINARIAN,
+      status: UserStatus.ACTIVE,
+      createdAt: createdBase,
+      lastActive: days(-1, 11),
+    },
+    {
+      id: userIds.vet3,
+      email: 'vet3@gmail.com',
+      passwordHash,
+      fullName: 'BS. Trần Đình Khôi',
+      phoneNumber: '0903000003',
+      role: Role.VETERINARIAN,
+      status: UserStatus.ACTIVE,
+      createdAt: days(-110),
+      lastActive: days(0, 8),
+    },
+    {
+      id: userIds.vet4,
+      email: 'vet4@gmail.com',
+      passwordHash,
+      fullName: 'BS. Lê Phương Anh',
+      phoneNumber: '0903000004',
+      role: Role.VETERINARIAN,
+      status: UserStatus.ACTIVE,
+      createdAt: days(-95),
+      lastActive: days(-1, 14),
+    },
+    // 10 Active Grooms
+    ...[
+      'Lê Văn Bình',
+      'Hoàng Văn Phúc',
+      'Đỗ Thị Mai',
+      'Nguyễn Hữu Tài',
+      'Trần Minh Khoa',
+      'Võ Ngọc Hân',
+      'Bùi Quang Huy',
+      'Lý Thanh Tâm',
+      'Đinh Công Thành',
+      'Phan Thị Thu Hà',
+    ].map((fullName, idx) => ({
+      id: userIds.grooms[idx],
+      email: `groom${idx === 0 ? '' : idx + 1}@gmail.com`,
+      passwordHash,
+      fullName,
+      phoneNumber: `09040000${String(idx + 1).padStart(2, '0')}`,
+      role: Role.GROOM,
+      status: UserStatus.ACTIVE,
+      createdAt: createdBase,
+      lastActive: days(0, 6 + (idx % 4)),
+    })),
+    // 6 Horse Owners
+    ...[
+      { fullName: 'Phạm Gia Bảo', debt: false },
+      { fullName: 'Đặng Hoàng Yến', debt: false },
+      { fullName: 'Vũ Quốc Hưng', debt: false },
+      {
+        fullName: 'Trịnh Bích Ngọc',
+        debt: true,
+        debtReason: 'Có hóa đơn quá hạn liên tục từ T8–T10/2026',
+      },
+      { fullName: 'Lương Minh Đức', debt: false },
+      { fullName: 'Tống Khánh Linh', debt: false },
+    ].map((o, idx) => ({
+      id: userIds.owners[idx],
+      email: `owner${idx === 0 ? '' : idx + 1}@gmail.com`,
+      passwordHash,
+      fullName: o.fullName,
+      phoneNumber: `09050000${String(idx + 1).padStart(2, '0')}`,
+      role: Role.HORSE_OWNER,
+      status: UserStatus.ACTIVE,
+      createdAt: createdBase,
+      lastActive: days(-idx, 10),
+      isBadDebtFlagged: o.debt,
+      badDebtFlaggedAt: o.debt ? days(-20) : null,
+      badDebtReason: o.debtReason ?? null,
+    })),
+    // Lifecycle coverage across all remaining 6 UserStatus values
+    {
+      id: userIds.pendingEmail,
+      email: 'applicant.email@gmail.com',
+      passwordHash,
+      fullName: 'Ngô Minh Châu',
+      phoneNumber: '0906000001',
+      role: Role.HORSE_OWNER,
+      status: UserStatus.PENDING_EMAIL,
+      requestedAt: days(-2),
+      requestCode: `REQ-${yymm()}-001`,
+      createdAt: days(-2),
+    },
+    {
+      id: userIds.pendingApproval,
+      email: 'applicant.approval@gmail.com',
+      passwordHash,
+      fullName: 'Trương Quốc Khánh',
+      phoneNumber: '0906000002',
+      role: Role.GROOM,
+      status: UserStatus.PENDING_APPROVAL,
+      requestedAt: days(-1),
+      requestCode: `REQ-${yymm()}-002`,
+      createdAt: days(-1),
+    },
+    {
+      id: userIds.invited,
+      email: 'invited.vet@gmail.com',
+      fullName: 'BS. Đặng Hải Lâm',
+      phoneNumber: '0906000003',
+      role: Role.VETERINARIAN,
+      status: UserStatus.INVITED,
+      invitedBy: userIds.manager,
+      requestCode: `REQ-${yymm()}-003`,
+      createdAt: days(-3),
+    },
+    {
+      id: userIds.inactive,
+      email: 'inactive.groom@gmail.com',
+      passwordHash,
+      fullName: 'Huỳnh Tấn Phát',
+      phoneNumber: '0906000004',
+      role: Role.GROOM,
+      status: UserStatus.INACTIVE,
+      statusReason: 'Nghỉ phép dài hạn theo đơn cá nhân',
+      statusChangedAt: days(-30),
+      statusChangedBy: userIds.manager,
+      createdAt: createdBase,
+    },
+    {
+      id: userIds.rejected,
+      email: 'rejected.trainer@gmail.com',
+      passwordHash,
+      fullName: 'Dương Quang Vinh',
+      phoneNumber: '0906000005',
+      role: Role.HEAD_TRAINER,
+      status: UserStatus.REJECTED,
+      requestedAt: days(-14),
+      requestCode: `REQ-${yymm()}-004`,
+      statusReason: 'Hồ sơ chưa bổ sung chứng chỉ huấn luyện cấp quốc gia',
+      statusChangedAt: days(-12),
+      statusChangedBy: userIds.manager,
+      createdAt: days(-14),
+    },
+    {
+      id: userIds.locked,
+      email: 'equiflow-expired-fixture@gmail.com',
+      passwordHash,
+      fullName: 'Tài khoản bị khóa kiểm thử',
+      phoneNumber: '0906000006',
+      role: Role.HORSE_OWNER,
+      status: UserStatus.LOCKED,
+      lockedAt: days(-5),
+      statusReason: 'Đăng nhập sai mật khẩu quá 5 lần liên tiếp',
+      statusChangedAt: days(-5),
+      statusChangedBy: userIds.manager,
+      createdAt: days(-60),
+    },
+  ];
+  await tx.user.createMany({ data: users, skipDuplicates: true });
+
+  // Reconcile IDs if the database already contains rows from an earlier seed or live users
+  const dbUsers = await tx.user.findMany({
+    where: { email: { in: users.map((u) => u.email) } },
+    select: { id: true, email: true },
+  });
+  const byEmail = new Map(dbUsers.map((u) => [u.email, u.id]));
+  const remapped = new Map<string, string>();
+  for (const u of users) {
+    const actualId = byEmail.get(u.email);
+    if (actualId && u.id && actualId !== u.id) {
+      remapped.set(u.id, actualId);
     }
   }
-  return configured;
-}
-
-async function clearFixtures(tx: Prisma.TransactionClient) {
-  await tx.simulatorSession.deleteMany({});
-  await tx.dailyCareTask.deleteMany({});
-  await tx.shiftRoster.deleteMany({});
-  await tx.dailyGroomingLog.deleteMany({});
-  await tx.tournamentResult.deleteMany({});
-  await tx.tournamentRegistration.deleteMany({});
-  await tx.tournament.deleteMany({});
-  await tx.ownerAiMessage.deleteMany({});
-  await tx.financialInvoice.deleteMany({});
-  await tx.workoutSession.deleteMany({});
-  await tx.trainingPlan.deleteMany({});
-  await tx.medicalLock.deleteMany({});
-  await tx.injuryLog.deleteMany({});
-  await tx.medicalRecord.deleteMany({});
-  await tx.preventiveSchedule.deleteMany({});
-  await tx.nutritionPlan.deleteMany({});
-  await tx.incidentReport.deleteMany({});
-  await tx.restockRequest.deleteMany({});
-  await tx.stockBalance.deleteMany({});
-  await tx.aIInsight.deleteMany({});
-  await tx.permissionRequest.deleteMany({});
-  await tx.notification.deleteMany({});
-  await tx.auditLog.deleteMany({});
-  await tx.refreshToken.deleteMany({});
-  await tx.googleIdentity.deleteMany({});
-  await tx.otpCode.deleteMany({});
-  await tx.loginAttempt.deleteMany({});
-  await tx.resetToken.deleteMany({});
-  await tx.stallAllocation.deleteMany({});
-  await tx.horse.deleteMany({});
-  await tx.stall.deleteMany({});
-  await tx.stallZone.deleteMany({});
-  await tx.horseCatalogItem.deleteMany({});
-  await tx.supplyCatalog.deleteMany({});
-  await tx.preventiveTypeCatalog.deleteMany({});
-  await tx.shiftCatalog.deleteMany({});
-  await tx.user.deleteMany({});
-}
-
-async function seedClub(tx: Prisma.TransactionClient, passwordHash: string) {
-  const passwordVet2 = await bcrypt.hash('EquiFlow@2006', 10);
-  const users: Prisma.UserCreateManyInput[] = [
-    ...staff.map(([key, fullName, role], i) => ({
-      id: user(key),
-      email: `${key}@gmail.com`,
-      fullName,
-      role,
-      status: 'ACTIVE' as const,
-      passwordHash: key === 'vet2' ? passwordVet2 : passwordHash,
-      phoneNumber: `+849012345${pad(60 + i)}`,
-      ...stamp(-90),
-    })),
-    {
-      id: user('expired'),
-      email: expiredEmail,
-      fullName: 'Tài khoản thử nghiệm đã khóa',
-      role: 'HORSE_OWNER',
-      status: 'LOCKED',
-      lockedAt: clubDateTime(-2, 9),
-      ...stamp(-90),
-    },
-  ];
-  // Keep seeded account IDs in place so unrelated sessions and audit references survive.
-  for (const { id: userId, ...data } of users) {
-    if (!userId) throw new Error('Seed account must have a stable ID.');
-    await tx.user.upsert({ where: { id: userId }, create: { id: userId, ...data }, update: data });
+  if (remapped.size > 0) {
+    const r = (cid: string) => remapped.get(cid) ?? cid;
+    userIds.manager = r(userIds.manager);
+    userIds.manager2 = r(userIds.manager2);
+    userIds.trainer = r(userIds.trainer);
+    userIds.trainer2 = r(userIds.trainer2);
+    userIds.trainer3 = r(userIds.trainer3);
+    userIds.trainer4 = r(userIds.trainer4);
+    userIds.vet = r(userIds.vet);
+    userIds.vet2 = r(userIds.vet2);
+    userIds.vet3 = r(userIds.vet3);
+    userIds.vet4 = r(userIds.vet4);
+    userIds.grooms = userIds.grooms.map(r);
+    userIds.owners = userIds.owners.map(r);
+    for (const h of HORSES) {
+      h.ownerId = r(h.ownerId);
+      if (h.groomId) h.groomId = r(h.groomId);
+    }
   }
-  const zones = [
-    { code: 'A', name: 'Barn 1 · Đua', rows: 2, cols: 4, sortOrder: 1 },
-    { code: 'B', name: 'Barn 2 · Huấn luyện & nghỉ', rows: 2, cols: 4, sortOrder: 2 },
-    { code: 'C', name: 'Cách ly', rows: 1, cols: 4, sortOrder: 3 },
-    { code: 'H', name: 'Khu Lưu giữ (Nợ phí)', rows: 1, cols: 4, sortOrder: 4 },
-  ];
-  await tx.stallZone.createMany({
-    data: zones.map((z) => ({ id: zone(z.code), ...z, ...stamp(-90) })),
+
+  await tx.googleIdentity.createMany({
+    data: [
+      { subject: 'google-sub-owner-1001', userId: userIds.owners[0] },
+      { subject: 'google-sub-trainer-2002', userId: userIds.trainer2 },
+    ],
+    skipDuplicates: true,
   });
-  const occupied = new Set<string>(horses.map((h) => h[5]));
-  await tx.stall.createMany({
-    data: zones.flatMap((z) =>
-      Array.from({ length: z.rows * z.cols }, (_, i) => {
-        const key = z.code + pad(i + 1);
-        return {
-          id: stall(key),
-          code: `STALL-${key}`,
-          zone: z.name,
-          zoneId: zone(z.code),
-          row: Math.floor(i / z.cols) + 1,
-          col: (i % z.cols) + 1,
-          status: occupied.has(key)
-            ? ('OCCUPIED' as const)
-            : key === 'B04'
-              ? ('MAINTENANCE' as const)
-              : ('AVAILABLE' as const),
-          notes: key === 'B04' ? 'Tạm ngừng sử dụng để sửa chốt cửa.' : null,
-          ...stamp(-90),
-        };
-      }),
-    ),
-  });
-  await tx.horseCatalogItem.createMany({
+
+  await tx.otpCode.createMany({
     data: [
       {
-        id: id('breed/thoroughbred'),
-        type: 'BREED',
-        code: 'THOROUGHBRED',
-        name: 'Thoroughbred',
-        ...stamp(-90),
+        email: 'applicant.email@gmail.com',
+        purpose: OtpPurpose.SIGNUP,
+        codeHash: sha256Hex('654321'),
+        sentAt: days(-2),
+        expiresAt: days(1),
+        resendAt: days(-2, 1),
+        attempts: 1,
       },
-      ...[...new Set(horses.map((h) => h[2]))].map((name, i) => ({
-        id: id(`color/${name}`),
-        type: 'COLOR' as const,
-        code: name.toUpperCase().replaceAll(' ', '_'),
+      {
+        email: 'owner2@gmail.com',
+        purpose: OtpPurpose.RESET,
+        codeHash: sha256Hex('246810'),
+        sentAt: days(-3),
+        expiresAt: days(-2),
+        resendAt: days(-3, 1),
+        attempts: 0,
+      },
+      {
+        email: 'invited.vet@gmail.com',
+        purpose: OtpPurpose.INVITE,
+        codeHash: sha256Hex('112233'),
+        sentAt: days(-3),
+        expiresAt: days(4),
+        resendAt: days(-3, 1),
+        attempts: 0,
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  await tx.loginAttempt.createMany({
+    data: [
+      {
+        email: 'equiflow-expired-fixture@gmail.com',
+        fails: 5,
+        lockedUntil: days(1),
+        windowStart: days(-5),
+      },
+      {
+        email: 'owner@gmail.com',
+        fails: 0,
+        lockedUntil: null,
+        windowStart: days(-1),
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  await tx.resetToken.createMany({
+    data: [
+      {
+        tokenHash: sha256Hex('canonical-reset-active-token'),
+        email: 'owner2@gmail.com',
+        expiresAt: days(2),
+      },
+      {
+        tokenHash: sha256Hex('canonical-reset-expired-token'),
+        email: 'equiflow-expired-fixture@gmail.com',
+        expiresAt: days(-4),
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  await tx.refreshToken.createMany({
+    data: [
+      {
+        id: id('refresh:owner1'),
+        tokenHash: sha256Hex('canonical-refresh-owner1'),
+        userId: userIds.owners[0],
+        revoked: false,
+        expiresAt: days(7),
+        createdAt: days(-1),
+      },
+      {
+        id: id('refresh:trainer1-revoked'),
+        tokenHash: sha256Hex('canonical-refresh-trainer1-revoked'),
+        userId: userIds.trainer,
+        revoked: true,
+        rotatedAt: days(-2),
+        expiresAt: days(5),
+        createdAt: days(-8),
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  const permRequests = [
+    {
+      at: days(-1),
+      userId: userIds.grooms[0],
+      screen: 'financial-invoices',
+      reference: `403-${yymm()}-0001`,
+      status: PermissionRequestStatus.OPEN,
+    },
+    {
+      at: days(-6),
+      userId: userIds.trainer3,
+      screen: 'medical-lock-override',
+      reference: `403-${yymm()}-0002`,
+      status: PermissionRequestStatus.GRANTED,
+      resolvedAt: days(-5),
+      resolvedBy: userIds.manager,
+    },
+    {
+      at: days(-12),
+      userId: userIds.grooms[4],
+      screen: 'user-management',
+      reference: `403-${yymm()}-0003`,
+      status: PermissionRequestStatus.DISMISSED,
+      resolvedAt: days(-11),
+      resolvedBy: userIds.manager2,
+    },
+  ];
+  for (const req of permRequests) {
+    const exists = await tx.permissionRequest.findFirst({ where: { reference: req.reference } });
+    if (!exists) {
+      await tx.permissionRequest.create({ data: req });
+    }
+  }
+
+  // Horse Catalog: 8 active breeds (+ 1 inactive breed) + 8 colors
+  const breeds: Array<[string, string, boolean]> = [
+    ['THOROUGHBRED', 'Thoroughbred', true],
+    ['ARABIAN', 'Arabian', true],
+    ['ARABIAN_CROSS', 'Arabian Cross', true],
+    ['QUARTER_HORSE', 'Quarter Horse', true],
+    ['WARMBLOOD', 'Warmblood', true],
+    ['STANDARDBRED', 'Standardbred', true],
+    ['APPALOOSA', 'Appaloosa', true],
+    ['PAINT', 'Paint', true],
+    ['MORGAN', 'Morgan', false],
+  ];
+  const colors: Array<[string, string]> = [
+    ['BAY', 'Bay'],
+    ['BAY_DARK', 'Bay Dark'],
+    ['CHESTNUT', 'Chestnut'],
+    ['BLACK', 'Black'],
+    ['GREY', 'Grey'],
+    ['GRAY_ROAMING', 'Gray Roaming'],
+    ['ROAN', 'Roan'],
+    ['PALOMINO', 'Palomino'],
+  ];
+  await tx.horseCatalogItem.createMany({
+    data: [
+      ...breeds.map(([code, name, isActive], idx) => ({
+        id: id(`catalog:BREED:${code}`),
+        type: HorseCatalogType.BREED,
+        code,
         name,
-        sortOrder: i + 1,
-        ...stamp(-90),
+        description: `Giống ngựa ${name}`,
+        sortOrder: idx + 1,
+        isActive,
+      })),
+      ...colors.map(([code, name], idx) => ({
+        id: id(`catalog:COLOR:${code}`),
+        type: HorseCatalogType.COLOR,
+        code,
+        name,
+        description: `Màu lông ${name}`,
+        sortOrder: idx + 1,
+        isActive: true,
       })),
     ],
+    skipDuplicates: true,
   });
+
+  // 4 StallZones (rows 1..4, cols 1..4) -> 32 Stalls
+  await tx.stallZone.createMany({
+    data: [
+      {
+        id: zoneIds.A,
+        code: 'A',
+        name: 'Khu Chuồng A - Đua Chính',
+        rows: 3,
+        cols: 4,
+        description: 'Khu chuồng tiêu chuẩn thi đấu dành cho chiến mã chủ lực',
+        sortOrder: 1,
+        isActive: true,
+      },
+      {
+        id: zoneIds.B,
+        code: 'B',
+        name: 'Khu Chuồng B - Huấn Luyện',
+        rows: 3,
+        cols: 4,
+        description: 'Khu chuồng huấn luyện thể lực, phục hồi và ngựa trẻ',
+        sortOrder: 2,
+        isActive: true,
+      },
+      {
+        id: zoneIds.C,
+        code: 'C',
+        name: 'Khu Cách Ly Y Tế',
+        rows: 2,
+        cols: 2,
+        description: 'Khu điều trị y tế chuyên sâu & cách ly kiểm dịch',
+        sortOrder: 3,
+        isActive: true,
+      },
+      {
+        id: zoneIds.H,
+        code: 'H',
+        name: 'Khu Lưu Giữ Nợ Phí',
+        rows: 2,
+        cols: 2,
+        description: 'Khu lưu giữ tạm thời ngựa có hóa đơn quá hạn nhiều kỳ',
+        sortOrder: 4,
+        isActive: true,
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  const occupiedStallSet = new Set(HORSES.map((h) => h.stallId).filter(Boolean) as string[]);
+  const makeZoneStalls = (
+    zoneCode: 'A' | 'B' | 'C' | 'H',
+    zoneId: string,
+    rows: number,
+    cols: number,
+  ): Prisma.StallCreateManyInput[] => {
+    const out: Prisma.StallCreateManyInput[] = [];
+    for (let idx = 0; idx < rows * cols; idx++) {
+      const sid = stallIds[zoneCode][idx];
+      const code = `STALL-${zoneCode}${String(idx + 1).padStart(2, '0')}`;
+      let status: StallStatus = StallStatus.AVAILABLE;
+      let notes: string | null = null;
+      if (occupiedStallSet.has(sid)) {
+        status = StallStatus.OCCUPIED;
+      } else if (code === 'STALL-A11' || code === 'STALL-B11') {
+        status = StallStatus.MAINTENANCE;
+        notes = 'Đang bảo trì sàn cao su chống trượt và van nước tự động';
+      } else if (code === 'STALL-A12') {
+        status = StallStatus.INACTIVE;
+        notes = 'Ô dự phòng đang nâng cấp hệ thống thông gió';
+      }
+      out.push({
+        id: sid,
+        code,
+        zone: zoneCode,
+        zoneId,
+        row: Math.floor(idx / cols) + 1,
+        col: (idx % cols) + 1,
+        status,
+        notes,
+      });
+    }
+    return out;
+  };
+
+  await tx.stall.createMany({
+    data: [
+      ...makeZoneStalls('A', zoneIds.A, 3, 4),
+      ...makeZoneStalls('B', zoneIds.B, 3, 4),
+      ...makeZoneStalls('C', zoneIds.C, 2, 2),
+      ...makeZoneStalls('H', zoneIds.H, 2, 2),
+    ],
+    skipDuplicates: true,
+  });
+
+  // 19 Horses
   await tx.horse.createMany({
-    data: horses.map(([name, gender, color, weightKg, status, , owner, , arrival, years], i) => ({
-      id: horse(i + 1),
-      horseCode: `HR-${pad(i + 1, 6)}`,
-      name,
-      gender,
-      color,
-      weightKg,
-      microchip: `985141002341${pad(i + 1, 3)}`,
-      microchipRfid: `985141002341${pad(i + 1, 3)}`,
-      breed: 'Thoroughbred',
-      dob: dateOnly(-years * 365 - i * 11),
-      status,
-      isMedicalLocked: i === 1,
-      ownerId: user(owner),
-      retireReason: status === 'RETIRED' ? 'RETIRED' : null,
-      deleteReason: status === 'RETIRED' ? 'Giải nghệ vì tuổi tác; vẫn lưu trú tại CLB.' : null,
-      createdAt: clubDateTime(arrival, 0),
-      updatedAt: now,
+    data: HORSES.map((h) => ({
+      id: h.id,
+      horseCode: h.horseCode,
+      name: h.name,
+      microchip: h.microchip,
+      microchipRfid: `RFID-${h.microchip}`,
+      breed: h.breed,
+      dob: h.dob,
+      gender: h.gender,
+      color: h.color,
+      weightKg: h.weightKg,
+      status: h.status,
+      ownerId: h.ownerId,
+      isMedicalLocked: Boolean(h.isMedicalLocked),
+      isDebtImpounded: Boolean(h.isDebtImpounded),
+      debtImpoundedAt: h.isDebtImpounded ? days(-20) : null,
+      debtImpoundReason: h.debtImpoundReason ?? null,
+      retireReason: h.retireReason ?? null,
+      createdAt: createdBase,
     })),
+    skipDuplicates: true,
   });
-  await tx.stallAllocation.createMany({
-    data: horses.map((h, i) => ({
-      id: id(`allocation/${i + 1}`),
-      horseId: horse(i + 1),
-      stallId: stall(h[5]),
-      assignedGroomUserId: groomOf(h[5]),
-      ...allocation(i + 1),
-      createdAt: allocation(i + 1).startDate,
-      updatedAt: now,
+
+  // Stall Allocations (17 active + 3 historical/released for BR-STL-07 & relocation trace)
+  const stayStart = new Date('2026-06-01T00:00:00+07:00');
+  const allocations: Prisma.StallAllocationCreateManyInput[] = [
+    ...HORSES.filter((h) => h.stallId !== null).map((h) => ({
+      id: id(`alloc:active:${h.id}`),
+      stallId: h.stallId!,
+      horseId: h.id,
+      assignedGroomUserId: h.groomId ?? userIds.grooms[0],
+      startDate: h.id === horseIds[16] ? days(-20) : stayStart,
+      endDate: null,
+      isActive: true,
     })),
-  });
-}
-
-const activeHorses = [1, 2, 3, 4, 7, 8, 9, 10, 11, 12];
-const history = [
-  {
-    key: 'bach-early',
-    n: 1,
-    name: 'Bạch Long Mã · Nhập trại & Thể lực',
-    from: -115,
-    to: -61,
-    type: 'BASE',
-    skip: [-110, -85],
-  },
-  {
-    key: 'thanphong-base',
-    n: 4,
-    name: 'Thần Phong · Xây dựng nền tảng',
-    from: -115,
-    to: -61,
-    type: 'BASE',
-    skip: [-110, -85],
-  },
-  {
-    key: 'bach-base',
-    n: 1,
-    name: 'Bạch Long Mã · Nền tảng',
-    from: -60,
-    to: -42,
-    type: 'BASE',
-    skip: [-45],
-  },
-  {
-    key: 'bach-speed',
-    n: 1,
-    name: 'Bạch Long Mã · Tốc độ',
-    from: -41,
-    to: -20,
-    type: 'SPEED',
-    skip: [-31, -30, -20],
-  },
-  {
-    key: 'legend',
-    n: 5,
-    name: 'Lão Tướng · Mùa giải cuối',
-    from: -60,
-    to: -2,
-    type: 'SPEED',
-    skip: [-54, -46, -36, -26, -20],
-  },
-  {
-    key: 'sprint',
-    n: 10,
-    name: 'Lôi Chấn · Bứt tốc',
-    from: -60,
-    to: -22,
-    type: 'SPEED',
-    skip: [-45],
-  },
-] as const;
-const activeKey = (n: number) => `active/${n}`;
-const phase = (key: string) => id(`phase/${key}`);
-const workout = (key: string) => id(`workout/${key}`);
-
-async function seedTraining(tx: Prisma.TransactionClient) {
-  const active = activeHorses.map((n) => ({
-    key: activeKey(n),
-    n,
-    name: `${horses[n - 1][0]} · ${n === 9 ? 'Phục hồi' : n === 8 ? 'Nền tảng' : n === 7 ? 'Duy trì thể lực' : 'Chuẩn bị thi đấu'}`,
-    from: n === 8 ? -24 : n === 11 ? -18 : -12,
-    to: n === 2 ? 12 : 28,
-    type: [2, 7, 9].includes(n) ? 'RECOVERY' : n === 8 ? 'BASE' : 'PRE_RACE',
-  }));
-  const definitions = [...history, ...active];
-  await tx.trainingPlan.createMany({
-    data: definitions.map(({ key, n, name, from, to, type }, i) => {
-      const complete = i < history.length;
-      const surface = n === 3 || n === 8 ? 'DIRT' : 'TURF';
-      return {
-        id: plan(key),
-        planCode: `GA-${pad(i + 1, 6)}`,
-        horseId: horse(n),
-        trainerUserId: trainerOf(n),
-        phaseName: name,
-        objective: complete
-          ? 'Ổn định phong độ trong mùa giải.'
-          : 'Duy trì tiến độ và theo dõi hồi phục sau tập.',
-        phases: [
-          {
-            id: phase(key),
-            name:
-              type === 'RECOVERY'
-                ? 'Phục hồi'
-                : type === 'BASE'
-                  ? 'Nền tảng'
-                  : type === 'SPEED'
-                    ? 'Tốc độ'
-                    : 'Chuẩn bị thi đấu',
-            type,
-            startDate: clubDay(from),
-            endDate: clubDay(to),
-            sessionsPerWeek: 6,
-            maxWeeklyDistance: 10000,
-            targetSpeedKmh: type === 'RECOVERY' ? 8 : 62,
-            surface,
-          },
-        ],
-        startDate: clubDateTime(from, 0),
-        endDate: clubDateTime(to, 23, 59),
-        trackSurface: surface,
-        targetDistance: type === 'RECOVERY' ? 600 : 1600,
-        targetSpeed: type === 'RECOVERY' ? 8 : 62,
-        status: complete ? ('COMPLETED' as const) : ('ACTIVE' as const),
-        completionSummary: complete
-          ? 'Hoàn thành đầy đủ các buổi tập; chỉ số hồi phục ổn định.'
-          : null,
-        createdAt: clubDateTime(from - 1, 9),
-        updatedAt: complete ? clubDateTime(to + 1, 9) : n === 1 ? now : clubDateTime(from, 10),
-      };
-    }),
-  });
-
-  const scheduled = (
-    key: string,
-    planKey: string,
-    n: number,
-    day: number,
-    hour: number,
-    minute: number,
-    workoutType: string,
-    trackSurface: string,
-    distanceMeters: number,
-    extra: Partial<Prisma.WorkoutSessionCreateManyInput> = {},
-  ): Prisma.WorkoutSessionCreateManyInput => ({
-    id: workout(key),
-    trainingPlanId: plan(planKey),
-    phaseId: phase(planKey),
-    horseId: horse(n),
-    assignedStaffUserId: groomOf(horses[n - 1][5]),
-    scheduledDate: clubDateTime(day, hour, minute),
-    distanceMeters,
-    repetitions: 1,
-    workoutType,
-    trackSurface,
-    intensity: ['TRIAL', 'BREEZE'].includes(workoutType)
-      ? 'HEAVY'
-      : ['WALK', 'SWIM'].includes(workoutType)
-        ? 'LIGHT'
-        : 'MEDIUM',
-    status: 'SCHEDULED',
-    ...stamp(Math.min(day - 1, -1)),
-    ...extra,
-  });
-  const result = (
-    n: number,
-    day: number,
-    distance: number,
-    surface: string,
-    speed: number,
-    hr: number,
-  ) => ({
-    status: 'COMPLETED' as const,
-    actualDistanceMeters: distance,
-    actualSurface: surface,
-    trackCondition: 'DRY',
-    averageSpeedKmh: speed,
-    topSpeedKmh: Math.min(64, speed + 2),
-    heartRatePeak: hr,
-    heartRateRecovery: 58 + Math.abs(day % 9),
-    actualTimeSeconds: Math.round(((distance * 3.6) / speed) * 10) / 10,
-    completionLevel: 'ACHIEVED',
-    performanceScore: 7 + Math.abs(day % 4),
-    recoveryTimeMinutes: 9 + Math.abs(day % 4),
-    trainerNotes: 'Giữ nhịp đều, đáp ứng mục tiêu tốc độ và hồi phục tốt sau buổi tập.',
-    resultRecordedById: trainerOf(n),
-  });
-  const completed: Prisma.WorkoutSessionCreateManyInput[] = history.flatMap(
-    ({ key, n, from, to, skip }) =>
-      Array.from({ length: to - from + 1 }, (_, i) => from + i)
-        .filter((d) => !(skip as readonly number[]).includes(d))
-        .map((d) => {
-          const distance = 1200 + Math.abs(d % 4) * 100;
-          const speed = n === 1 ? 58 + Math.abs(d % 5) : 46 + Math.abs(d % 15);
-          const hr = n === 1 ? 140 + Math.abs(d % 26) : 132 + Math.abs(d % 38);
-          return scheduled(
-            `history/${key}/${d}`,
-            key,
-            n,
-            d,
-            7,
-            15,
-            key === 'bach-base' ? 'CANTER' : 'BREEZE',
-            'TURF',
-            distance,
-            {
-              ...result(n, d, distance, 'TURF', speed, hr),
-              resultRecordedAt: clubDateTime(d, 8),
-              updatedAt: clubDateTime(d, 8),
-            },
-          );
-        }),
-  );
-  for (let i = 0; i < 15; i++) {
-    const d = -22 + i,
-      distance = 800 + i * 20;
-    completed.push(
-      scheduled(
-        `young/${i}`,
-        activeKey(8),
-        8,
-        d,
-        8,
-        40,
-        i % 2 ? 'CANTER' : 'TROT',
-        'DIRT',
-        distance,
-        {
-          ...result(8, d, distance, 'DIRT', 24 + i, 111 + i),
-          resultRecordedAt: clubDateTime(d, 9),
-          updatedAt: clubDateTime(d, 9),
-        },
-      ),
-    );
-  }
-  for (const d of [-16, -12, -8]) {
-    completed.push(
-      scheduled(`trial-history/${d}`, activeKey(11), 11, d, 10, 15, 'TRIAL', 'TURF', 1000, {
-        ...result(11, d, 1000, 'TURF', 57, 151),
-        targetSpeedKmh: 60,
-        jockeyName: 'Nguyễn Văn An',
-        resultRecordedAt: clubDateTime(d, 11),
-        updatedAt: clubDateTime(d, 11),
-      }),
-    );
-  }
-
-  const today = [
-    scheduled('today/bach', activeKey(1), 1, 0, 8, 0, 'TRIAL', 'TURF', 1400, {
-      targetSpeedKmh: 62,
-      jockeyName: 'Nguyễn Văn An',
-    }),
-    scheduled('today/phong', activeKey(4), 4, 0, 8, 15, 'TRIAL', 'TURF', 1400, {
-      targetSpeedKmh: 60,
-      jockeyName: 'Trần Đình Trọng',
-      assignedStaffUserId: user('groom2'),
-    }),
-    scheduled('today/bao', activeKey(3), 3, 0, 9, 30, 'CANTER', 'DIRT', 1600, {
-      targetSpeedKmh: 42,
-    }),
-    scheduled('today/nguyet', activeKey(9), 9, 0, 14, 0, 'SWIM', 'NONE', 300, {
-      targetDurationSeconds: 1200,
-      medicalOverride: true,
-      assignedStaffUserId: user('groom3'),
-    }),
-    scheduled('today/kim', activeKey(7), 7, 0, 16, 30, 'WALK', 'TURF', 500),
-    scheduled('locked/xich', activeKey(2), 2, 2, 7, 30, 'BREEZE', 'TURF', 1200, {
-      status: 'BLOCKED',
-      statusReason: 'Khóa y tế KH-000001: viêm gân cấp tính chân trước bên phải.',
-      targetSpeedKmh: 55,
-    }),
+    // Dạ Nguyệt lived at B10 until impounded to H01
+    {
+      id: id(`alloc:hist:${horseIds[16]}`),
+      stallId: stallIds.B[9],
+      horseId: horseIds[16],
+      assignedGroomUserId: userIds.grooms[1],
+      startDate: stayStart,
+      endDate: days(-20),
+      isActive: false,
+    },
+    // RETIRED horses released stalls per BR-STL-07
+    {
+      id: id(`alloc:retired:${horseIds[17]}`),
+      stallId: stallIds.B[7],
+      horseId: horseIds[17],
+      assignedGroomUserId: userIds.grooms[1],
+      startDate: stayStart,
+      endDate: days(-18),
+      isActive: false,
+    },
+    {
+      id: id(`alloc:retired:${horseIds[18]}`),
+      stallId: stallIds.B[8],
+      horseId: horseIds[18],
+      assignedGroomUserId: userIds.grooms[5],
+      startDate: stayStart,
+      endDate: days(-32),
+      isActive: false,
+    },
   ];
-  const rotation = [1, 3, 4, 8, 9, 10, 11, 12];
-  const future = Array.from({ length: 14 }, (_, i) => {
-    const d = i + 1,
-      n = rotation[i % rotation.length];
-    const type = n === 9 ? 'SWIM' : n === 10 ? 'BREEZE' : n === 8 ? 'TROT' : 'CANTER';
-    return [
-      scheduled(
-        `future/${d}/main`,
-        activeKey(n),
-        n,
-        d,
-        6,
-        30,
-        type,
-        n === 9 ? 'NONE' : n === 3 || n === 8 ? 'DIRT' : 'TURF',
-        n === 9 ? 300 : 1200,
-        n === 9
-          ? { targetDurationSeconds: 1200, medicalOverride: true }
-          : n === 10
-            ? { targetSpeedKmh: 62 }
-            : {},
-      ),
-      scheduled(`future/${d}/walk`, activeKey(7), 7, d, 16, 30, 'WALK', 'TURF', 500),
-    ];
-  }).flat();
-  await tx.workoutSession.createMany({ data: [...completed, ...today, ...future] });
-  await tx.counter.upsert({
-    where: { name: 'horse_code' },
-    create: { name: 'horse_code', value: horses.length },
-    update: {},
+  await tx.stallAllocation.createMany({ data: allocations, skipDuplicates: true });
+}
+
+async function seedTraining(tx: Tx) {
+  const planSpecs: Array<{
+    key: string;
+    code: string;
+    horseId: string;
+    trainerId: string;
+    phaseName: string;
+    objective: string;
+    surface: TrackSurface;
+    status: PlanStatus;
+    targetSpeed: number;
+    targetDistance: number;
+    startOffset: number;
+    endOffset: number;
+    cancelReason?: string;
+    completionSummary?: string;
+  }> = [
+    {
+      key: 'tp-h1-active',
+      code: 'GA-000001',
+      horseId: horseIds[0],
+      trainerId: userIds.trainer,
+      phaseName: 'Nước rút & Bứt tốc Cúp Mùa Đông',
+      objective: 'Tối ưu pha nước rút 400m cuối cho Cúp Mùa Đông',
+      surface: TrackSurface.TURF,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 64,
+      targetDistance: 1600,
+      startOffset: -40,
+      endOffset: 30,
+    },
+    {
+      key: 'tp-h1-completed',
+      code: 'GA-000002',
+      horseId: horseIds[0],
+      trainerId: userIds.trainer,
+      phaseName: 'Nền tảng Mùa Hè – Thu 2026',
+      objective: 'Xây dựng sức bền tim mạch & duy trì ACWR vùng an toàn',
+      surface: TrackSurface.TURF,
+      status: PlanStatus.COMPLETED,
+      targetSpeed: 58,
+      targetDistance: 2000,
+      startOffset: -135,
+      endOffset: -42,
+      completionSummary: 'Đạt chuẩn vô địch Cúp Mùa Thu, nhịp tim hồi phục đạt 44 bpm.',
+    },
+    {
+      key: 'tp-h2-active',
+      code: 'GA-000003',
+      horseId: horseIds[1],
+      trainerId: userIds.trainer,
+      phaseName: 'Tập nhẹ dưới Khóa Y Tế',
+      objective: 'Giữ nhịp vận động nhẹ tránh teo cơ trong lúc theo dõi gân khoeo',
+      surface: TrackSurface.DIRT,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 18,
+      targetDistance: 800,
+      startOffset: -20,
+      endOffset: 20,
+    },
+    {
+      key: 'tp-h3-active',
+      code: 'GA-000004',
+      horseId: horseIds[2],
+      trainerId: userIds.trainer,
+      phaseName: 'Nâng tải Sân Cỏ 1800m',
+      objective: 'Chuẩn bị bước vào giải hạng A cự ly trung bình',
+      surface: TrackSurface.TURF,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 60,
+      targetDistance: 1800,
+      startOffset: -35,
+      endOffset: 25,
+    },
+    {
+      key: 'tp-h4-active',
+      code: 'GA-000005',
+      horseId: horseIds[3],
+      trainerId: userIds.trainer2,
+      phaseName: 'Ổn định nhịp bước Sân Tổng Hợp',
+      objective: 'Cân bằng sức bền & kỹ năng đổi chân trong khúc cua',
+      surface: TrackSurface.SYNTHETIC,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 57,
+      targetDistance: 1400,
+      startOffset: -30,
+      endOffset: 30,
+    },
+    {
+      key: 'tp-h5-active',
+      code: 'GA-000006',
+      horseId: horseIds[4],
+      trainerId: userIds.trainer2,
+      phaseName: 'Tốc độ Cự ly Trung bình 1600m',
+      objective: 'Hoàn thiện xuất phát hộp & tăng tốc giữa đường đua',
+      surface: TrackSurface.DIRT,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 62,
+      targetDistance: 1600,
+      startOffset: -35,
+      endOffset: 25,
+    },
+    {
+      key: 'tp-h6-active',
+      code: 'GA-000007',
+      horseId: horseIds[5],
+      trainerId: userIds.trainer2,
+      phaseName: 'Bền bỉ Đường trường 2200m',
+      objective: 'Chuẩn bị thể lực cho Cúp Quốc Gia Mùa Đông',
+      surface: TrackSurface.DIRT,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 59,
+      targetDistance: 2200,
+      startOffset: -30,
+      endOffset: 30,
+    },
+    {
+      key: 'tp-h7-active',
+      code: 'GA-000008',
+      horseId: horseIds[6],
+      trainerId: userIds.trainer3,
+      phaseName: 'Tăng tốc Khởi động 1200m',
+      objective: 'Nâng tốc độ tối đa trên 300m đầu tiên',
+      surface: TrackSurface.SYNTHETIC,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 63,
+      targetDistance: 1200,
+      startOffset: -28,
+      endOffset: 28,
+    },
+    {
+      key: 'tp-h8-draft',
+      code: 'GA-000009',
+      horseId: horseIds[7],
+      trainerId: userIds.trainer3,
+      phaseName: 'Dự thảo Giáo án Chạy Thử Mùa Đông',
+      objective: 'Chờ HLV trưởng chốt lịch sau kiểm tra thể lực tuần tới',
+      surface: TrackSurface.TURF,
+      status: PlanStatus.DRAFT,
+      targetSpeed: 56,
+      targetDistance: 1500,
+      startOffset: 3,
+      endOffset: 45,
+    },
+    {
+      key: 'tp-h9-active',
+      code: 'GA-000010',
+      horseId: horseIds[8],
+      trainerId: userIds.trainer3,
+      phaseName: 'Huấn luyện Chuyển tiếp 1400m',
+      objective: 'Chuyển từ đi bộ & nước kiệu sang chạy nước đại tốc độ',
+      surface: TrackSurface.SYNTHETIC,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 55,
+      targetDistance: 1400,
+      startOffset: -25,
+      endOffset: 35,
+    },
+    {
+      key: 'tp-h10-active',
+      code: 'GA-000011',
+      horseId: horseIds[9],
+      trainerId: userIds.trainer4,
+      phaseName: 'Duy trì Phong độ Sân Cỏ',
+      objective: 'Duy trì điểm thể trạng >= 8.5/10 và kiểm soát nhịp tim',
+      surface: TrackSurface.TURF,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 60,
+      targetDistance: 1600,
+      startOffset: -32,
+      endOffset: 28,
+    },
+    {
+      key: 'tp-h12-active',
+      code: 'GA-000012',
+      horseId: horseIds[11],
+      trainerId: userIds.trainer4,
+      phaseName: 'Tập Sức mạnh Cơ Lưng & Đùi Sau',
+      objective: 'Củng cố sức bật hộp xuất phát cho ngựa đường trường',
+      surface: TrackSurface.DIRT,
+      status: PlanStatus.ACTIVE,
+      targetSpeed: 58,
+      targetDistance: 1800,
+      startOffset: -26,
+      endOffset: 34,
+    },
+    {
+      key: 'tp-h16-cancelled',
+      code: 'GA-000013',
+      horseId: horseIds[15],
+      trainerId: userIds.trainer4,
+      phaseName: 'Giáo án Tốc độ Cũ (Đã hủy do chấn thương)',
+      objective: 'Tạm dừng hoàn toàn để điều trị tổn thương khớp cổ chân',
+      surface: TrackSurface.DIRT,
+      status: PlanStatus.CANCELLED,
+      targetSpeed: 61,
+      targetDistance: 1600,
+      startOffset: -55,
+      endOffset: -10,
+      cancelReason: 'Chuyển sang điều trị chấn thương & Khóa Y Tế dài ngày',
+    },
+  ];
+
+  await tx.trainingPlan.createMany({
+    data: planSpecs.map((p) => ({
+      id: id(p.key),
+      horseId: p.horseId,
+      trainerUserId: p.trainerId,
+      planCode: p.code,
+      phaseName: p.phaseName,
+      objective: p.objective,
+      trackSurface: p.surface,
+      targetSpeed: p.targetSpeed,
+      targetDistance: p.targetDistance,
+      startDate: days(p.startOffset),
+      endDate: days(p.endOffset),
+      status: p.status,
+      cancelReason: p.cancelReason ?? null,
+      completionSummary: p.completionSummary ?? null,
+      phases: [
+        {
+          id: `${p.code}-PH1`,
+          name: 'Giai đoạn Nền tảng',
+          focus: 'FOUNDATION',
+          durationDays: 14,
+          targetSpeedKmh: Math.max(12, Math.round(p.targetSpeed * 0.72)),
+          targetDistanceM: Math.max(400, Math.round(p.targetDistance * 0.8)),
+        },
+        {
+          id: `${p.code}-PH2`,
+          name: 'Giai đoạn Tốc độ & Bứt tốc',
+          focus: 'SPEED',
+          durationDays: 14,
+          targetSpeedKmh: p.targetSpeed,
+          targetDistanceM: p.targetDistance,
+        },
+        {
+          id: `${p.code}-PH3`,
+          name: 'Giai đoạn Thả lỏng Phục hồi',
+          focus: 'RECOVERY',
+          durationDays: 7,
+          targetSpeedKmh: 15,
+          targetDistanceM: 600,
+        },
+      ],
+    })),
+    skipDuplicates: true,
   });
-  await tx.counter.upsert({
-    where: { name: 'training_plan' },
-    create: { name: 'training_plan', value: definitions.length },
-    update: {},
+
+  // Build rich WorkoutSessions spanning T7–today + upcoming 5 days
+  const workouts: Prisma.WorkoutSessionCreateManyInput[] = [];
+  const activeRunners = [
+    {
+      horseIdx: 0,
+      planKey: 'tp-h1-active',
+      trainerId: userIds.trainer,
+      baseSpeed: 61,
+      dist: 1600,
+      jockey: 'Trần Văn Kiên',
+    },
+    {
+      horseIdx: 2,
+      planKey: 'tp-h3-active',
+      trainerId: userIds.trainer,
+      baseSpeed: 57,
+      dist: 1600,
+      jockey: 'Lê Minh Quân',
+    },
+    {
+      horseIdx: 3,
+      planKey: 'tp-h4-active',
+      trainerId: userIds.trainer2,
+      baseSpeed: 55,
+      dist: 1400,
+      jockey: 'Nguyễn Tấn Lộc',
+    },
+    {
+      horseIdx: 4,
+      planKey: 'tp-h5-active',
+      trainerId: userIds.trainer2,
+      baseSpeed: 60,
+      dist: 1600,
+      jockey: 'Trần Văn Kiên',
+    },
+    {
+      horseIdx: 5,
+      planKey: 'tp-h6-active',
+      trainerId: userIds.trainer2,
+      baseSpeed: 58,
+      dist: 2000,
+      jockey: 'Phạm Hữu Đạt',
+    },
+    {
+      horseIdx: 6,
+      planKey: 'tp-h7-active',
+      trainerId: userIds.trainer3,
+      baseSpeed: 62,
+      dist: 1200,
+      jockey: 'Lê Minh Quân',
+    },
+    {
+      horseIdx: 8,
+      planKey: 'tp-h9-active',
+      trainerId: userIds.trainer3,
+      baseSpeed: 54,
+      dist: 1400,
+      jockey: 'Nguyễn Tấn Lộc',
+    },
+    {
+      horseIdx: 9,
+      planKey: 'tp-h10-active',
+      trainerId: userIds.trainer4,
+      baseSpeed: 58,
+      dist: 1600,
+      jockey: 'Phạm Hữu Đạt',
+    },
+    {
+      horseIdx: 11,
+      planKey: 'tp-h12-active',
+      trainerId: userIds.trainer4,
+      baseSpeed: 56,
+      dist: 1800,
+      jockey: 'Trần Văn Kiên',
+    },
+  ];
+
+  // Completed sessions over last 35 days (provides >= 5 completed sessions/horse for ACWR & tournament eligibility)
+  const pastOffsets = [-34, -27, -20, -14, -9, -4, -1];
+  for (const runner of activeRunners) {
+    pastOffsets.forEach((off, idx) => {
+      const isTrial = idx % 3 === 2;
+      const wType = isTrial ? 'TRIAL' : idx % 2 === 0 ? 'BREEZE' : 'CANTER';
+      const intensity = wType === 'CANTER' ? 'MEDIUM' : 'HEAVY';
+      const speed = Number((runner.baseSpeed - (isTrial ? 0 : 3) + (idx % 3) * 1.1).toFixed(1));
+      const dist = wType === 'CANTER' ? Math.max(800, runner.dist - 200) : runner.dist;
+      const duration = Number(((dist / 1000 / speed) * 3600).toFixed(1));
+      const isAbnormalSample = runner.horseIdx === 6 && off === -4;
+      workouts.push({
+        id: id(`workout:hist:${runner.horseIdx}:${off}`),
+        trainingPlanId: id(runner.planKey),
+        horseId: horseIds[runner.horseIdx],
+        assignedStaffUserId: runner.trainerId,
+        scheduledDate: days(off, 6 + (runner.horseIdx % 3), 0),
+        phaseId: `${runner.planKey.toUpperCase()}-PH2`,
+        distanceMeters: dist,
+        repetitions: 1,
+        targetSpeedKmh: speed,
+        targetDurationSeconds: Math.round(duration),
+        actualTimeSeconds: duration,
+        actualDistanceMeters: dist,
+        averageSpeedKmh: speed,
+        topSpeedKmh: Number((speed + 4.5).toFixed(1)),
+        heartRatePeak: isAbnormalSample ? 228 : 184 + (idx % 12),
+        heartRateRecovery: isAbnormalSample ? 132 : 44 + (idx % 8),
+        recoveryTimeMinutes: isAbnormalSample ? 16 : 7.5,
+        staminaScore: isAbnormalSample ? 6.4 : 8.4 + ((idx + runner.horseIdx) % 12) * 0.1,
+        performanceScore: isAbnormalSample ? 6.8 : 8.2 + ((idx + runner.horseIdx) % 14) * 0.1,
+        injuryRiskLevel: isAbnormalSample ? 'MEDIUM' : 'LOW',
+        status: WorkoutStatus.COMPLETED,
+        workoutType: wType,
+        intensity,
+        trackSurface: runner.horseIdx % 2 === 0 ? 'TURF' : 'DIRT',
+        actualSurface: runner.horseIdx % 2 === 0 ? 'TURF' : 'DIRT',
+        trackCondition: 'GOOD',
+        completionLevel: 'FULL',
+        jockeyName: runner.jockey,
+        gateNumber: (runner.horseIdx % 8) + 1,
+        resultRecordedAt: days(off, 8, 15),
+        resultRecordedById: runner.trainerId,
+        abnormalSigns: isAbnormalSample,
+        abnormalSignTypes: isAbnormalSample ? ['SLOW_RECOVERY', 'ELEVATED_HR'] : [],
+        abnormalNotes: isAbnormalSample
+          ? 'Nhịp tim hồi phục sau 10 phút còn cao (132 bpm), đã báo bác sĩ thú y kiểm tra.'
+          : null,
+        vetAcknowledgedAt: isAbnormalSample ? days(-3, 10, 0) : null,
+        vetNotes: isAbnormalSample ? 'Đã bổ sung điện giải & giảm tải 2 ngày tới.' : null,
+      });
+    });
+
+    // Scheduled sessions for today & next 4 days
+    [0, 2, 4].forEach((off, idx) => {
+      const hour = 6 + ((runner.horseIdx + idx) % 4);
+      const wType = idx === 0 ? 'BREEZE' : idx === 1 ? 'TROT' : 'TRIAL';
+      workouts.push({
+        id: id(`workout:sched:${runner.horseIdx}:${off}`),
+        trainingPlanId: id(runner.planKey),
+        horseId: horseIds[runner.horseIdx],
+        assignedStaffUserId: runner.trainerId,
+        scheduledDate: days(off, hour, 0),
+        phaseId: `${runner.planKey.toUpperCase()}-PH2`,
+        distanceMeters: wType === 'TROT' ? 800 : runner.dist,
+        repetitions: 1,
+        targetSpeedKmh: wType === 'TROT' ? 24 : runner.baseSpeed,
+        targetDurationSeconds: wType === 'TROT' ? 120 : 95,
+        status: WorkoutStatus.SCHEDULED,
+        workoutType: wType,
+        intensity: wType === 'TROT' ? 'LIGHT' : 'HEAVY',
+        trackSurface: runner.horseIdx % 2 === 0 ? 'TURF' : 'DIRT',
+        jockeyName: runner.jockey,
+        gateNumber: (runner.horseIdx % 8) + 1,
+        trainerNotes: 'Kiểm tra nhịp tim trước và sau khi về đích.',
+      });
+    });
+  }
+
+  // Light rehab/walk + BLOCKED/MISSED/CANCELLED coverage
+  workouts.push(
+    {
+      id: id('workout:h2-walk-today'),
+      trainingPlanId: id('tp-h2-active'),
+      horseId: horseIds[1],
+      assignedStaffUserId: userIds.trainer,
+      scheduledDate: days(0, 7, 30),
+      distanceMeters: 600,
+      repetitions: 1,
+      status: WorkoutStatus.SCHEDULED,
+      workoutType: 'WALK',
+      intensity: 'LIGHT',
+      trackSurface: 'DIRT',
+      trainerNotes: 'Dắt đi bộ nhẹ 15 phút theo phác đồ khóa y tế.',
+    },
+    {
+      id: id('workout:h2-blocked-breeze'),
+      trainingPlanId: id('tp-h2-active'),
+      horseId: horseIds[1],
+      assignedStaffUserId: userIds.trainer,
+      scheduledDate: days(-1, 6, 30),
+      distanceMeters: 1200,
+      repetitions: 1,
+      targetSpeedKmh: 58,
+      targetDurationSeconds: 75,
+      status: WorkoutStatus.BLOCKED,
+      workoutType: 'BREEZE',
+      intensity: 'HEAVY',
+      trackSurface: 'TURF',
+      statusReason: 'Tự động khóa do Xích Thố đang có Khóa Y Tế (MLK-2026-002).',
+    },
+    {
+      id: id('workout:h12-missed'),
+      trainingPlanId: id('tp-h12-active'),
+      horseId: horseIds[11],
+      assignedStaffUserId: userIds.trainer4,
+      scheduledDate: days(-2, 16, 0),
+      distanceMeters: 1200,
+      repetitions: 1,
+      targetSpeedKmh: 50,
+      targetDurationSeconds: 86,
+      status: WorkoutStatus.MISSED,
+      workoutType: 'CANTER',
+      intensity: 'MEDIUM',
+      trackSurface: 'DIRT',
+      statusReason: 'Bỏ lỡ do mưa lớn làm trơn mặt sân đất buổi chiều.',
+    },
+    {
+      id: id('workout:h16-cancelled'),
+      trainingPlanId: id('tp-h16-cancelled'),
+      horseId: horseIds[15],
+      assignedStaffUserId: userIds.trainer4,
+      scheduledDate: days(-12, 7, 0),
+      distanceMeters: 1600,
+      repetitions: 1,
+      targetSpeedKmh: 60,
+      targetDurationSeconds: 96,
+      status: WorkoutStatus.CANCELLED,
+      workoutType: 'TRIAL',
+      intensity: 'HEAVY',
+      trackSurface: 'DIRT',
+      statusReason: 'Hủy giáo án sau khi ghi nhận chấn thương khớp cổ chân trái.',
+    },
+    // Long-horizon T7 & T8 workouts for 6-month continuous chart
+    {
+      id: id('workout:t7-h1'),
+      trainingPlanId: id('tp-h1-completed'),
+      horseId: horseIds[0],
+      assignedStaffUserId: userIds.trainer,
+      scheduledDate: days(-120, 6, 0),
+      distanceMeters: 1600,
+      repetitions: 1,
+      targetSpeedKmh: 60,
+      actualTimeSeconds: 94.5,
+      actualDistanceMeters: 1600,
+      averageSpeedKmh: 60.9,
+      heartRatePeak: 192,
+      heartRateRecovery: 48,
+      performanceScore: 8.7,
+      status: WorkoutStatus.COMPLETED,
+      workoutType: 'TRIAL',
+      intensity: 'HEAVY',
+      trackSurface: 'TURF',
+      resultRecordedAt: days(-120, 7, 0),
+      resultRecordedById: userIds.trainer,
+    },
+  );
+
+  await tx.workoutSession.createMany({ data: workouts, skipDuplicates: true });
+
+  // SimulatorSessions (covering WORKOUT, RACE, EXAM + COMPLETED, RUNNING, PENDING, ABORTED_INJURY)
+  await tx.simulatorSession.createMany({
+    data: [
+      {
+        id: id('sim:workout-h1-completed'),
+        type: SimulatorSessionType.WORKOUT,
+        status: SimulatorSessionStatus.COMPLETED,
+        horseIds: [horseIds[0]],
+        actorUserId: userIds.trainer,
+        workoutSessionId: id('workout:hist:0:-1'),
+        startedAt: days(-1, 6, 0),
+        finishedAt: days(-1, 6, 5),
+        lastSnapshot: { distanceM: 1600, speedKmh: 62.4, heartRate: 186, stamina: 88 },
+        result: { finishTimeSeconds: 92.3, avgSpeedKmh: 62.4, peakHeartRate: 190 },
+      },
+      {
+        id: id('sim:workout-h3-running'),
+        type: SimulatorSessionType.WORKOUT,
+        status: SimulatorSessionStatus.RUNNING,
+        horseIds: [horseIds[2]],
+        actorUserId: userIds.trainer,
+        workoutSessionId: id('workout:sched:2:0'),
+        startedAt: days(0, 6, 15),
+        lastSnapshot: { distanceM: 940, speedKmh: 58.1, heartRate: 179, stamina: 76 },
+      },
+      {
+        id: id('sim:race-cup-t11-pending'),
+        type: SimulatorSessionType.RACE,
+        status: SimulatorSessionStatus.PENDING,
+        horseIds: [horseIds[0], horseIds[2], horseIds[4], horseIds[5]],
+        actorUserId: userIds.trainer2,
+        startedAt: days(0, 9, 0),
+        lastSnapshot: { stage: 'STARTING_GATE', distanceM: 1600, fieldSize: 4 },
+      },
+      {
+        id: id('sim:exam-h2-aborted'),
+        type: SimulatorSessionType.EXAM,
+        status: SimulatorSessionStatus.ABORTED_INJURY,
+        horseIds: [horseIds[1]],
+        actorUserId: userIds.vet,
+        medicalRecordId: id('medrec:open:h2'),
+        startedAt: days(-10, 8, 30),
+        finishedAt: days(-10, 8, 34),
+        lastSnapshot: { distanceM: 420, anomaly: 'GAIT_ASYMMETRY', heartRate: 196 },
+        result: { abortedReason: 'Phát hiện lệch bước nhẹ chân trước phải lúc chạy kiểm tra' },
+      },
+    ],
+    skipDuplicates: true,
   });
 }
 
-const injuryReason = 'Viêm gân cấp tính chân trước bên phải';
-const preventive = (key: string) => id(`preventive/${key}`);
-async function seedMedical(tx: Prisma.TransactionClient) {
-  const vet = user('vet');
-  const cases = [
+async function seedMedical(tx: Tx) {
+  const fromStr = pastIso(-14);
+  const toStr = pastIso(14);
+
+  // Strictly at most 1 OPEN MedicalRecord per horse (PR #153)
+  const medicalRecords: Prisma.MedicalRecordCreateManyInput[] = [
     {
-      key: 'med-t7-kham',
-      n: 1,
-      day: -115,
-      status: 'CLOSED',
-      diagnosis: 'Khám sức khỏe nhập trại định kỳ & tiêm vaccine cúm ngựa.',
-      symptoms: 'Thể trạng tốt, lông bóng mượt, niêm mạc hồng.',
-      protocol: 'Tiêm phòng vaccine cúm, bổ sung men vi sinh và điện giải sau buổi chạy.',
-      follow: null,
-      closed: -114,
-      severity: 'MILD',
+      id: id('medrec:open:h2'),
+      recordNumber: 'MED-2026-005',
+      horseId: horseIds[1],
+      veterinarianUserId: userIds.vet,
+      status: MedicalRecordStatus.OPEN,
+      examinationDate: days(-10, 9, 0),
+      examinationType: 'CLINICAL',
+      discoverySource: 'IN_WORKOUT',
+      severity: SeverityLevel.MODERATE,
+      recommendedHorseStatus: HorseStatus.UNDER_OBSERVATION,
+      examinationReason: 'Căng gân khoeo chân trước phải sau buổi tập tốc độ',
+      temperature: 38.1,
+      restingHeartRate: 44,
+      respiratoryRate: 18,
+      weightKg: 500,
+      symptoms: 'Nhạy cảm nhẹ khi ấn vùng gân gấp nông chân trước phải, không sưng nóng lan tỏa.',
+      clinicalDiagnosis: 'Viêm nhẹ bao gân gấp nông chân trước phải (Grade II)',
+      treatmentProtocol: 'Chườm lạnh 2 lần/ngày, băng ép nhẹ, nghỉ chạy nặng 14 ngày.',
+      requiresFollowUp: true,
+      followUpDate: days(3, 9, 0),
+      treatmentPhases: JSON.stringify([
+        {
+          phaseName: 'Giảm viêm cấp tính',
+          startDate: fromStr,
+          endDate: toStr,
+          allowedActivity: 'Nghỉ tuyệt đối, chỉ dắt đi bộ nhẹ 15 phút',
+          careInstructions: [
+            {
+              activity: 'Chườm đá cổ chân trước phải 15 phút',
+              frequencyPerDay: 2,
+              notes: 'Dùng túi gel lạnh',
+            },
+          ],
+        },
+      ]),
+      prescriptions: JSON.stringify([
+        {
+          status: 'ACTIVE',
+          startDate: fromStr,
+          endDate: toStr,
+          medicationName: 'Thuốc chống viêm thú y',
+          dosage: '1',
+          unit: 'VIAL',
+          route: 'Tiêm bắp',
+          supplyId: supplyIds.antiInflam,
+          frequencyPerDay: 2,
+          notes: 'Theo dõi sau tiêm sáng & tối',
+        },
+      ]),
     },
     {
-      key: 'med-t8-rang',
-      n: 9,
-      day: -80,
-      status: 'CLOSED',
-      diagnosis: 'Viêm nướu và mài góc răng sắc.',
-      symptoms: 'Nhai chậm, rơi vãi cỏ khi ăn cám.',
-      protocol: 'Mài chỉnh nha khoa ngựa, bôi gel sát khuẩn nướu thảo dược.',
-      follow: null,
-      closed: -78,
-      severity: 'MODERATE',
+      id: id('medrec:open:h15'),
+      recordNumber: 'MED-2026-006',
+      horseId: horseIds[14],
+      veterinarianUserId: userIds.vet4,
+      status: MedicalRecordStatus.OPEN,
+      examinationDate: days(-7, 10, 0),
+      examinationType: 'CLINICAL',
+      discoverySource: 'DAILY_CARE',
+      severity: SeverityLevel.SEVERE,
+      recommendedHorseStatus: HorseStatus.ISOLATED,
+      examinationReason: 'Sốt nhẹ kèm ho khan đường hô hấp trên',
+      temperature: 39.2,
+      restingHeartRate: 52,
+      respiratoryRate: 26,
+      weightKg: 442,
+      symptoms: 'Ho khan từng cơn vào sáng sớm, dịch mũi trong, ăn kém 20%.',
+      clinicalDiagnosis: 'Viêm đường hô hấp trên do thay đổi thời tiết (cách ly theo dõi)',
+      treatmentProtocol: 'Cách ly tại STALL-C01, xịt sát khuẩn & siro hỗ trợ hô hấp.',
+      requiresFollowUp: true,
+      followUpDate: days(2, 10, 0),
+      treatmentPhases: JSON.stringify([
+        {
+          phaseName: 'Cách ly & Hồi phục hô hấp',
+          startDate: fromStr,
+          endDate: toStr,
+          allowedActivity: 'Strict stall rest - nghỉ tại chuồng cách ly',
+          careInstructions: [
+            {
+              activity: 'Theo dõi thân nhiệt & dịch mũi',
+              frequencyPerDay: 2,
+              notes: 'Báo bác sĩ nếu > 39.5°C',
+            },
+          ],
+        },
+      ]),
+      prescriptions: JSON.stringify([
+        {
+          status: 'ACTIVE',
+          startDate: fromStr,
+          endDate: toStr,
+          medicationName: 'Thuốc chống viêm thú y',
+          dosage: '1',
+          unit: 'VIAL',
+          route: 'Tiêm bắp',
+          supplyId: supplyIds.antiInflam,
+          frequencyPerDay: 2,
+          notes: 'Lắc kỹ trước khi dùng',
+        },
+      ]),
     },
     {
-      key: 'xich-old',
-      n: 2,
-      day: -70,
-      status: 'CLOSED',
-      diagnosis: 'Căng cơ khớp gối sau chạy nước rút.',
-      symptoms: 'Hơi cứng chân sau bên phải sau bài tập tốc độ.',
-      protocol: 'Chườm đá lạnh, thoa gel giảm đau, nghỉ tập nặng 5 ngày.',
-      follow: -65,
-      closed: -64,
-      severity: 'MODERATE',
+      id: id('medrec:open:h16'),
+      recordNumber: 'MED-2026-007',
+      horseId: horseIds[15],
+      veterinarianUserId: userIds.vet2,
+      status: MedicalRecordStatus.OPEN,
+      examinationDate: days(-12, 11, 0),
+      examinationType: 'EMERGENCY',
+      discoverySource: 'IN_WORKOUT',
+      severity: SeverityLevel.CRITICAL,
+      recommendedHorseStatus: HorseStatus.INJURED,
+      examinationReason: 'Khập khiễng rõ chân sau trái sau pha vào cua tốc độ cao',
+      temperature: 38.4,
+      restingHeartRate: 50,
+      respiratoryRate: 22,
+      weightKg: 503,
+      symptoms: 'Sưng khớp cổ chân sau trái, phản ứng đau khi gập khớp.',
+      clinicalDiagnosis: 'Bong gân dây chằng bên khớp cổ chân sau trái',
+      treatmentProtocol: 'Cố định băng ép y tế, chườm lạnh 3 lần/ngày, khóa mọi hoạt động chạy.',
+      requiresFollowUp: true,
+      followUpDate: days(5, 9, 0),
+      treatmentPhases: JSON.stringify([
+        {
+          phaseName: 'Cố định chấn thương cấp',
+          startDate: fromStr,
+          endDate: toStr,
+          allowedActivity: 'Strict stall rest - không dắt đi bộ',
+          careInstructions: [
+            {
+              activity: 'Chườm lạnh Ice-boot khớp cổ chân sau trái',
+              frequencyPerDay: 3,
+              notes: '20 phút/lần',
+            },
+          ],
+        },
+      ]),
+      prescriptions: JSON.stringify([
+        {
+          status: 'ACTIVE',
+          startDate: fromStr,
+          endDate: toStr,
+          medicationName: 'Thuốc chống viêm thú y',
+          dosage: '2',
+          unit: 'VIAL',
+          route: 'Tiêm bắp',
+          supplyId: supplyIds.antiInflam,
+          frequencyPerDay: 1,
+        },
+      ]),
     },
     {
-      key: 'xich',
-      n: 2,
-      day: -2,
-      status: 'OPEN',
-      diagnosis: injuryReason,
-      symptoms: 'Sưng nóng gân gấp và khập khiễng khi bước.',
-      protocol: 'Nghỉ tuyệt đối, chườm lạnh, tái khám siêu âm sau 7 ngày.',
-      follow: 7,
-      closed: null,
-      severity: 'SEVERE',
-    },
-    {
-      key: 'bach',
-      n: 1,
-      day: -31,
-      status: 'CLOSED',
-      diagnosis: 'Căng cơ nhẹ sau tập.',
-      symptoms: 'Đau cơ nhẹ, không sưng.',
-      protocol: 'Nghỉ một ngày, khám lại trước khi trở về lịch tập.',
-      follow: null,
-      closed: -30,
-      severity: 'MILD',
-    },
-    {
-      key: 'nguyet',
-      n: 9,
-      day: -25,
-      status: 'CLOSED',
-      diagnosis: 'Bong gân nhẹ đã bình phục.',
-      symptoms: 'Sưng nhẹ cổ chân trái.',
-      protocol: 'Chườm lạnh, sau khi bình phục tập bơi nhẹ có giám sát.',
-      follow: 9,
-      closed: -6,
-      severity: 'MODERATE',
-    },
-    {
-      key: 'tuyet',
-      n: 6,
-      day: 0,
-      status: 'OPEN',
-      diagnosis: 'Kiểm tra nhập đàn, chưa ghi nhận dấu hiệu lây nhiễm.',
-      symptoms: 'Thể trạng ổn định khi nhập chuồng cách ly.',
-      protocol: 'Cách ly đủ 14 ngày, ghi nhiệt độ hằng ngày và khám lại trước khi nhập đàn.',
-      follow: 14,
-      closed: null,
-      severity: 'MILD',
-    },
-  ] as const;
-  await tx.medicalRecord.createMany({
-    data: cases.map((c, i) => ({
-      id: med(c.key),
-      recordNumber: `BA-${clubDay(c.day).slice(2, 7).replace('-', '')}-${pad(i + 1, 3)}`,
-      horseId: horse(c.n),
-      veterinarianUserId: vet,
-      status: c.status,
-      examinationDate: c.day === 0 ? now : clubDateTime(c.day, 9),
-      examinationType: c.key === 'tuyet' ? 'Routine Clinical' : 'Injury Examination',
-      symptoms: c.symptoms,
-      clinicalDiagnosis: c.diagnosis,
-      treatmentProtocol: c.protocol,
-      severity: c.severity,
-      temperature: 37.8,
-      restingHeartRate: c.n === 2 ? 48 : 36,
+      id: id('medrec:open:h13'),
+      recordNumber: 'MED-2026-008',
+      horseId: horseIds[12],
+      veterinarianUserId: userIds.vet3,
+      status: MedicalRecordStatus.OPEN,
+      examinationDate: days(-3, 14, 0),
+      examinationType: 'CLINICAL',
+      discoverySource: 'DAILY_CARE',
+      severity: SeverityLevel.MILD,
+      recommendedHorseStatus: HorseStatus.UNDER_OBSERVATION,
+      examinationReason: 'Giảm ăn nhẹ và phân hơi lỏng sau đổi lô cỏ',
+      temperature: 37.9,
+      restingHeartRate: 40,
       respiratoryRate: 14,
-      weightKg: horses[c.n - 1][3],
-      requiresFollowUp: c.follow !== null,
-      followUpDate: c.follow === null ? null : clubDateTime(c.follow, 9),
-      closedAt: c.closed === null ? null : clubDateTime(c.closed, 9),
-      treatmentResult:
-        c.closed === null ? null : 'Đã bình phục, tiếp tục theo dõi trong buổi tập nhẹ.',
-      ...stamp(c.day),
-      updatedAt: c.closed === null ? now : clubDateTime(c.closed, 9),
-    })),
-  });
+      weightKg: 464,
+      symptoms: 'Ăn hết 70% khẩu phần tối, nhu động ruột bình thường.',
+      clinicalDiagnosis: 'Rối loạn tiêu hóa nhẹ do thay đổi khẩu phần thô',
+      treatmentProtocol: 'Bổ sung men vi sinh và chia nhỏ khẩu phần 4 ngày.',
+      requiresFollowUp: true,
+      followUpDate: days(1, 14, 0),
+    },
+    // Closed historical records
+    {
+      id: id('medrec:closed:h1'),
+      recordNumber: 'MED-2026-001',
+      horseId: horseIds[0],
+      veterinarianUserId: userIds.vet,
+      status: MedicalRecordStatus.CLOSED,
+      examinationDate: days(-75, 9, 0),
+      closedAt: days(-62, 16, 0),
+      examinationType: 'CLINICAL',
+      discoverySource: 'DAILY_CARE',
+      severity: SeverityLevel.MILD,
+      recommendedHorseStatus: HorseStatus.ACTIVE,
+      symptoms: 'Trầy xước nông cẳng chân trước trái.',
+      clinicalDiagnosis: 'Xây xát mô mềm ngoài da',
+      treatmentProtocol: 'Sát khuẩn bằng dung dịch Povidone-Iodine 5 ngày.',
+      conclusion: 'Vết thương khô hoàn toàn, đủ điều kiện thi đấu lại.',
+      treatmentResult: 'CURED',
+    },
+    {
+      id: id('medrec:closed:h4'),
+      recordNumber: 'MED-2026-002',
+      horseId: horseIds[3],
+      veterinarianUserId: userIds.vet2,
+      status: MedicalRecordStatus.CLOSED,
+      examinationDate: days(-50, 10, 0),
+      closedAt: days(-42, 15, 0),
+      examinationType: 'PREVENTIVE',
+      discoverySource: 'DAILY_CARE',
+      severity: SeverityLevel.MILD,
+      recommendedHorseStatus: HorseStatus.ACTIVE,
+      symptoms: 'Mòn cạnh móng ngoài chân trước trái.',
+      clinicalDiagnosis: 'Mất cân bằng góc móng nhẹ',
+      treatmentProtocol: 'Gọt chỉnh móng và đóng móng hợp kim chuyên dụng.',
+      conclusion: 'Dáng chạy cân bằng trở lại.',
+      treatmentResult: 'CURED',
+    },
+    // DRAFT clinical record
+    {
+      id: id('medrec:draft:h14'),
+      recordNumber: 'MED-2026-009',
+      horseId: horseIds[13],
+      veterinarianUserId: userIds.vet3,
+      status: MedicalRecordStatus.DRAFT,
+      examinationDate: days(0, 8, 30),
+      examinationType: 'ROUTINE',
+      discoverySource: 'DAILY_CARE',
+      severity: SeverityLevel.MILD,
+      symptoms: 'Khám tổng quát định kỳ trước khi mở tập lại cho Phong Lôi.',
+      clinicalDiagnosis: 'Đang chờ kết quả xét nghiệm công thức máu',
+      treatmentProtocol: 'Cập nhật ngay sau khi có chỉ số huyết học chiều nay.',
+    },
+  ];
+  await tx.medicalRecord.createMany({ data: medicalRecords, skipDuplicates: true });
+
+  // InjuryLogs across LEFT / RIGHT / BILATERAL and ACTIVE / HEALING / RESOLVED
   await tx.injuryLog.createMany({
     data: [
       {
-        id: id('injury/xich'),
-        horseId: horse(2),
-        medicalRecordId: med('xich'),
-        coordinateX: 0.72,
-        coordinateY: 0.76,
-        viewSide: 'RIGHT',
-        bodySide: 'RIGHT',
-        anatomicalZone: 'Cẳng trước phải',
-        layer: 'MUSCLE',
-        injuryType: injuryReason,
-        severity: 'SEVERE',
-        stage: 'ACUTE',
-        status: 'ACTIVE',
-        discoveryDate: clubDateTime(-2, 8),
-        ...stamp(-2),
+        id: id('injury:h2-tendon'),
+        medicalRecordId: id('medrec:open:h2'),
+        horseId: horseIds[1],
+        coordinateX: 62.5,
+        coordinateY: 74.0,
+        viewSide: 'RIGHT_PROFILE',
+        layer: 'TENDON',
+        anatomicalZone: 'Gân gấp nông chân trước phải',
+        bodySide: BodySide.RIGHT,
+        injuryType: 'Tendonitis',
+        severity: SeverityLevel.MODERATE,
+        stage: 'SUBACUTE',
+        status: InjuryStatus.HEALING,
+        description: 'Đáp ứng tốt sau 10 ngày chườm lạnh, giảm nhạy cảm 60%.',
+        discoveryDate: days(-10),
       },
       {
-        id: id('injury/nguyet'),
-        horseId: horse(9),
-        medicalRecordId: med('nguyet'),
-        coordinateX: 0.65,
-        coordinateY: 0.81,
-        viewSide: 'LEFT',
-        bodySide: 'LEFT',
-        anatomicalZone: 'Cổ chân trước trái',
-        injuryType: 'Bong gân nhẹ',
-        severity: 'MODERATE',
-        stage: 'HEALED',
-        status: 'RESOLVED',
-        discoveryDate: clubDateTime(-25, 8),
-        recoveryHistory: [
-          {
-            id: id('recovery/nguyet'),
-            stage: 'HEALED',
-            severity: 'MILD',
-            evaluationDate: clubDateTime(-6, 9).toISOString(),
-            notes: 'Không còn đau khi vận động nhẹ.',
-            updatedByName: 'BS. Phạm Minh Trí',
-          },
-        ],
-        ...stamp(-25),
-        updatedAt: clubDateTime(-6, 9),
+        id: id('injury:h16-hock'),
+        medicalRecordId: id('medrec:open:h16'),
+        horseId: horseIds[15],
+        coordinateX: 28.0,
+        coordinateY: 68.5,
+        viewSide: 'LEFT_PROFILE',
+        layer: 'JOINT',
+        anatomicalZone: 'Khớp cổ chân sau trái',
+        bodySide: BodySide.LEFT,
+        injuryType: 'Joint Sprain',
+        severity: SeverityLevel.CRITICAL,
+        stage: 'ACUTE',
+        status: InjuryStatus.ACTIVE,
+        description: 'Sưng mô mềm quanh dây chằng bên khớp cổ chân sau trái.',
+        discoveryDate: days(-12),
+      },
+      {
+        id: id('injury:h1-resolved'),
+        medicalRecordId: id('medrec:closed:h1'),
+        horseId: horseIds[0],
+        coordinateX: 59.0,
+        coordinateY: 78.0,
+        viewSide: 'LEFT_PROFILE',
+        layer: 'SKIN',
+        anatomicalZone: 'Ống chân trước trái',
+        bodySide: BodySide.LEFT,
+        injuryType: 'Abrasion',
+        severity: SeverityLevel.MILD,
+        stage: 'RESOLVED',
+        status: InjuryStatus.RESOLVED,
+        description: 'Xây xát ngoài da đã liền sẹo hoàn toàn.',
+        discoveryDate: days(-75),
+      },
+      {
+        id: id('injury:h4-bilateral'),
+        medicalRecordId: id('medrec:closed:h4'),
+        horseId: horseIds[3],
+        coordinateX: 61.0,
+        coordinateY: 89.0,
+        viewSide: 'FRONT',
+        layer: 'HOOF',
+        anatomicalZone: 'Móng trước hai bên',
+        bodySide: BodySide.BILATERAL,
+        injuryType: 'Hoof Balance',
+        severity: SeverityLevel.MILD,
+        stage: 'RESOLVED',
+        status: InjuryStatus.RESOLVED,
+        description: 'Đã cân chỉnh độ nghiêng móng đều hai bên.',
+        discoveryDate: days(-50),
       },
     ],
+    skipDuplicates: true,
   });
+
+  // MedicalLocks (active locks + 1 unlocked history)
   await tx.medicalLock.createMany({
     data: [
       {
-        id: id('lock/xich'),
-        lockCode: 'KH-000001',
-        horseId: horse(2),
-        medicalRecordId: med('xich'),
-        veterinarianUserId: vet,
-        lockedAt: clubDateTime(-2, 9),
-        expectedRestDays: 9,
-        recheckDate: clubDateTime(7, 9),
-        lockReason: injuryReason,
-        unlockConditions: 'Siêu âm xác nhận gân không còn viêm và hết khập khiễng.',
-        isLocked: true,
-        ...stamp(-2),
+        id: id('lock:h1-hist'),
+        lockCode: 'MLK-2026-001',
+        horseId: horseIds[0],
+        medicalRecordId: id('medrec:closed:h1'),
+        veterinarianUserId: userIds.vet,
+        lockedAt: days(-75),
+        expectedRestDays: 10,
+        recheckDate: days(-65),
+        appliedMedicalStatus: HorseStatus.UNDER_OBSERVATION,
+        lockReason: 'Theo dõi hồi phục xây xát ống chân trước trái',
+        unlockConditions: 'Vết thương khô, không đau khi phi nước đại thử',
+        isLocked: false,
+        unlockedAt: days(-62),
+        unlockVetUserId: userIds.vet,
+        unlockReason: 'Đạt chuẩn thể lực quay lại tập luyện',
       },
       {
-        id: id('lock/bach'),
-        lockCode: 'KH-000002',
-        horseId: horse(1),
-        medicalRecordId: med('bach'),
-        veterinarianUserId: vet,
-        lockedAt: clubDateTime(-31, 9),
-        expectedRestDays: 1,
-        recheckDate: clubDateTime(-30, 9),
-        lockReason: 'Căng cơ nhẹ sau buổi tập.',
-        isLocked: false,
-        unlockedAt: clubDateTime(-30, 9),
-        unlockVetUserId: vet,
-        unlockReason: 'Hồi phục hoàn toàn sau điều trị',
-        ...stamp(-31),
-        updatedAt: clubDateTime(-30, 9),
+        id: id('lock:h2-active'),
+        lockCode: 'MLK-2026-002',
+        horseId: horseIds[1],
+        medicalRecordId: id('medrec:open:h2'),
+        veterinarianUserId: userIds.vet,
+        lockedAt: days(-10),
+        expectedRestDays: 14,
+        recheckDate: days(4),
+        appliedMedicalStatus: HorseStatus.UNDER_OBSERVATION,
+        lockReason: 'Viêm nhẹ gân gấp nông chân trước phải — cấm bài tập nặng',
+        unlockConditions: 'Siêu âm kiểm tra gân bình thường sau ngày tái khám',
+        isLocked: true,
+      },
+      {
+        id: id('lock:h15-active'),
+        lockCode: 'MLK-2026-003',
+        horseId: horseIds[14],
+        medicalRecordId: id('medrec:open:h15'),
+        veterinarianUserId: userIds.vet4,
+        lockedAt: days(-7),
+        expectedRestDays: 14,
+        recheckDate: days(2),
+        appliedMedicalStatus: HorseStatus.ISOLATED,
+        lockReason: 'Cách ly viêm đường hô hấp trên — ngăn lây lan khu chuồng chính',
+        unlockConditions: 'Hết sốt & hết ho liên tục 72 giờ',
+        isLocked: true,
+      },
+      {
+        id: id('lock:h16-active'),
+        lockCode: 'MLK-2026-004',
+        horseId: horseIds[15],
+        medicalRecordId: id('medrec:open:h16'),
+        veterinarianUserId: userIds.vet2,
+        lockedAt: days(-12),
+        expectedRestDays: 21,
+        recheckDate: days(5),
+        appliedMedicalStatus: HorseStatus.INJURED,
+        lockReason: 'Bong gân khớp cổ chân sau trái độ III',
+        unlockConditions: 'Giảm sưng hoàn toàn và đi lại không khập khiễng',
+        isLocked: true,
       },
     ],
+    skipDuplicates: true,
   });
-  const vaccines = [
-    ['TETANUS', 'Uốn ván'],
-    ['INFLUENZA', 'Cúm ngựa'],
-    ['RABIES', 'Bệnh dại'],
-  ] as const;
+
+  // All 4 PreventiveTypeCatalog items
   await tx.preventiveTypeCatalog.createMany({
     data: [
-      ...vaccines.map(([code, name]) => ({
-        id: preventive(code),
-        code: `VAC_${code}`,
-        name: `Tiêm phòng ${name}`,
-        intervalDays: 365,
-        ...stamp(-90),
-      })),
       {
-        id: preventive('DEWORM'),
-        code: 'DEWORM',
-        name: 'Tẩy giun định kỳ',
-        category: 'DEWORMING',
-        intervalDays: 90,
-        ...stamp(-90),
-      },
-      {
-        id: preventive('DENTAL'),
-        code: 'DENTAL',
-        name: 'Kiểm tra răng',
-        category: 'DENTAL',
+        id: preventiveTypeIds.VACCINATION,
+        code: 'VACCINATION',
+        name: 'Tiêm phòng Cúm & Uốn ván định kỳ',
+        category: PreventiveType.VACCINATION,
         intervalDays: 180,
-        ...stamp(-90),
+        advanceNoticeDays: 14,
+        applyToNewHorses: true,
+        description: 'Vaccine EIV + Tetanus bắt buộc theo quy chuẩn thi đấu',
+      },
+      {
+        id: preventiveTypeIds.DEWORMING,
+        code: 'DEWORMING',
+        name: 'Tẩy giun sán định kỳ',
+        category: PreventiveType.DEWORMING,
+        intervalDays: 90,
+        advanceNoticeDays: 7,
+        applyToNewHorses: true,
+        description: 'Kiểm soát ký sinh trùng đường ruột bằng Ivermectin',
+      },
+      {
+        id: preventiveTypeIds.FARRIER_HOOF_CARE,
+        code: 'FARRIER_HOOF_CARE',
+        name: 'Gọt móng & Đóng móng chuyên dụng',
+        category: PreventiveType.FARRIER_HOOF_CARE,
+        intervalDays: 42,
+        advanceNoticeDays: 5,
+        applyToNewHorses: true,
+        description: 'Bảo dưỡng góc móng, thăng bằng bước chạy và thay đế hợp kim',
+      },
+      {
+        id: preventiveTypeIds.DENTAL,
+        code: 'DENTAL',
+        name: 'Chăm sóc & Mài răng định kỳ',
+        category: PreventiveType.DENTAL,
+        intervalDays: 180,
+        advanceNoticeDays: 14,
+        applyToNewHorses: true,
+        description: 'Kiểm tra răng hàm, tránh cọ xát hàm thiếc khi chạy tốc độ',
       },
     ],
+    skipDuplicates: true,
   });
-  await tx.preventiveSchedule.createMany({
-    data: [
-      ...horses.flatMap((_, i) =>
-        vaccines.map(([code, product], j) => {
-          const d = -76 + i * 2 + j;
-          const date = clubDateTime(d, 9);
-          return {
-            id: id(`vaccine/${i + 1}/${code}`),
-            horseId: horse(i + 1),
-            typeCatalogId: preventive(code),
-            veterinarianUserId: i === 5 ? null : vet,
-            dueDate: date,
-            completedDate: date,
-            lastCompletedDate: date,
-            status: 'COMPLETED' as const,
-            productAdministered: product,
-            batchNumber: `DEMO-${code}-${i + 1}`,
-            performedByMode: i === 5 || i === 7 ? 'EXTERNAL' : 'SELF',
-            performedByName: i === 5 || i === 7 ? 'Thú y cơ sở bàn giao' : 'BS. Phạm Minh Trí',
-            ...stamp(d),
-          };
-        }),
-      ),
-      ...(
-        [
-          [3, 'DEWORM', 'DEWORMING', -5, 'OVERDUE'],
-          [6, 'DEWORM', 'DEWORMING', 3, 'PENDING'],
-          [9, 'DENTAL', 'DENTAL', 6, 'PENDING'],
-          [12, 'DEWORM', 'DEWORMING', 10, 'PENDING'],
-          [12, 'INFLUENZA', 'VACCINATION', 12, 'PENDING'],
-        ] as const
-      ).map(([n, key, scheduleType, day, status]) => ({
-        id: id(`preventive-due/${n}/${key}`),
-        horseId: horse(n),
-        typeCatalogId: preventive(key),
-        veterinarianUserId: vet,
-        scheduleType,
-        dueDate: clubDateTime(day, 9),
+
+  const schedules: Prisma.PreventiveScheduleCreateManyInput[] = [];
+  HORSES.filter((h) => h.status !== HorseStatus.RETIRED).forEach((h, idx) => {
+    const types: Array<[PreventiveType, string, PreventiveStatus, number]> = [
+      [PreventiveType.VACCINATION, preventiveTypeIds.VACCINATION, PreventiveStatus.COMPLETED, -90],
+      [
+        PreventiveType.FARRIER_HOOF_CARE,
+        preventiveTypeIds.FARRIER_HOOF_CARE,
+        idx % 5 === 0
+          ? PreventiveStatus.OVERDUE
+          : idx % 3 === 0
+            ? PreventiveStatus.PENDING
+            : PreventiveStatus.COMPLETED,
+        idx % 5 === 0 ? -3 : idx % 3 === 0 ? 5 : -18,
+      ],
+      [
+        PreventiveType.DEWORMING,
+        preventiveTypeIds.DEWORMING,
+        idx % 4 === 0 ? PreventiveStatus.PENDING : PreventiveStatus.COMPLETED,
+        idx % 4 === 0 ? 7 : -35,
+      ],
+      [
+        PreventiveType.DENTAL,
+        preventiveTypeIds.DENTAL,
+        idx % 6 === 0 ? PreventiveStatus.OVERDUE : PreventiveStatus.PENDING,
+        idx % 6 === 0 ? -5 : 18,
+      ],
+    ];
+    for (const [pType, typeCatalogId, status, off] of types) {
+      schedules.push({
+        id: id(`prev:${h.id}:${pType}`),
+        horseId: h.id,
+        typeCatalogId,
+        veterinarianUserId: userIds.vet3,
+        scheduleType: pType,
+        dueDate: days(off, 9, 0),
+        completedDate: status === PreventiveStatus.COMPLETED ? days(off, 10, 30) : null,
+        lastCompletedDate:
+          status === PreventiveStatus.COMPLETED ? days(off, 10, 30) : days(off - 90),
+        productAdministered:
+          pType === PreventiveType.VACCINATION
+            ? 'Fluvac Innovator EHV-4/1'
+            : pType === PreventiveType.DEWORMING
+              ? 'Eqvalan Ivermectin Paste'
+              : 'Quy trình chuẩn CLB EquiFlow',
+        batchNumber: `LOT-2026-${String(idx + 10).padStart(3, '0')}`,
+        performedByMode: 'INTERNAL',
+        performedByName: 'BS. Trần Đình Khôi',
         status,
-        ...stamp(-15),
-      })),
-    ],
+      });
+    }
   });
+  await tx.preventiveSchedule.createMany({ data: schedules, skipDuplicates: true });
 }
 
-const shift = (key: string) => id(`shift/${key}`);
-const food = [
-  ['TIMOTHY', 'Cỏ khô Timothy', 'FEED_HAY', 'KG', 20000],
-  ['OATS', 'Cám yến mạch', 'FEED_GRAIN', 'KG', 24000],
-  ['ELECTROLYTE', 'Điện giải cho ngựa', 'SUPPLEMENT_ELECTROLYTE', 'PACKET', 45000],
-  ['ANTI_INFLAM', 'Thuốc chống viêm thú y', 'MEDICINE', 'VIAL', 180000],
-] as const;
-const nutrition = (horseId: string) => id(`nutrition/${horseId}`);
+async function seedStableCare(tx: Tx) {
+  // Original 4 sample supplies (matching origin/dev)
+  const supplies: Array<Prisma.SupplyCatalogCreateManyInput & { id: string }> = [
+    {
+      id: supplyIds.timothyHay,
+      code: 'TIMOTHY',
+      name: 'Cỏ khô Timothy',
+      category: SupplyCategory.FEED_HAY,
+      unit: SupplyUnit.KG,
+      unitPrice: 20000,
+    },
+    {
+      id: supplyIds.oatGrain,
+      code: 'OATS',
+      name: 'Cám yến mạch',
+      category: SupplyCategory.FEED_GRAIN,
+      unit: SupplyUnit.KG,
+      unitPrice: 24000,
+    },
+    {
+      id: supplyIds.electrolyte,
+      code: 'ELECTROLYTE',
+      name: 'Điện giải cho ngựa',
+      category: SupplyCategory.SUPPLEMENT_ELECTROLYTE,
+      unit: SupplyUnit.PACKET,
+      unitPrice: 45000,
+    },
+    {
+      id: supplyIds.antiInflam,
+      code: 'ANTI_INFLAM',
+      name: 'Thuốc chống viêm thú y',
+      category: SupplyCategory.MEDICINE,
+      unit: SupplyUnit.VIAL,
+      unitPrice: 180000,
+      withdrawalDays: 7,
+    },
+  ];
+  await tx.supplyCatalog.createMany({ data: supplies, skipDuplicates: true });
 
-function mealsFor(resting: boolean) {
-  return (
-    [
-      ['MORNING', 3, resting ? 0.4 : 0.9],
-      ['NOON', 2.5, 0],
-      ['EVENING', 3, resting ? 0.4 : 1],
-    ] as const
-  ).map(([mealType, hay, grain]) => ({
-    mealType,
-    items: [
+  // StockBalances across Zones A, B, C, H (mix of healthy and low-stock triggers)
+  const stockRows: Prisma.StockBalanceCreateManyInput[] = [];
+  const allZones = [zoneIds.A, zoneIds.B, zoneIds.C, zoneIds.H];
+  allZones.forEach((zId, zIdx) => {
+    supplies.forEach((s, sIdx) => {
+      const isLow = (zIdx === 0 && sIdx === 0) || (zIdx === 1 && sIdx === 2);
+      const minT = s.code === 'TIMOTHY' ? 30 : 10;
+      const qty = isLow ? (s.code === 'TIMOTHY' ? 18 : 4) : 55 + sIdx * 9;
+      stockRows.push({
+        id: id(`stock:${zId}:${s.id}`),
+        zoneId: zId,
+        supplyId: s.id,
+        quantity: qty,
+        minThreshold: minT,
+        capacity: s.code === 'TIMOTHY' ? 300 : 180,
+        lastInventoryDate: days(-1),
+        lastAdjustedById: userIds.grooms[zIdx],
+      });
+    });
+  });
+  await tx.stockBalance.createMany({ data: stockRows, skipDuplicates: true });
+
+  // NutritionPlans (all 5 NutritionPlanStatus + MealDto-compliant mealsJson)
+  const makeMeals = (hayKg: number, grainKg: number, withElectrolyte: boolean) => [
+    {
+      mealType: 'MORNING',
+      time: '05:30',
+      items: [
+        {
+          supplyId: supplyIds.timothyHay,
+          supplyCode: 'TIMOTHY',
+          supplyName: 'Cỏ khô Timothy',
+          category: 'FEED_HAY',
+          amount: Number((hayKg * 0.4).toFixed(1)),
+          unit: 'KG',
+        },
+        {
+          supplyId: supplyIds.oatGrain,
+          supplyCode: 'OATS',
+          supplyName: 'Cám yến mạch',
+          category: 'FEED_GRAIN',
+          amount: Number((grainKg * 0.5).toFixed(1)),
+          unit: 'KG',
+        },
+      ],
+    },
+    {
+      mealType: 'NOON',
+      time: '11:30',
+      items: [
+        {
+          supplyId: supplyIds.timothyHay,
+          supplyCode: 'TIMOTHY',
+          supplyName: 'Cỏ khô Timothy',
+          category: 'FEED_HAY',
+          amount: Number((hayKg * 0.25).toFixed(1)),
+          unit: 'KG',
+        },
+        ...(withElectrolyte
+          ? [
+              {
+                supplyId: supplyIds.electrolyte,
+                supplyCode: 'ELECTROLYTE',
+                supplyName: 'Điện giải cho ngựa',
+                category: 'SUPPLEMENT_ELECTROLYTE',
+                amount: 1,
+                unit: 'PACKET',
+              },
+            ]
+          : []),
+      ],
+    },
+    {
+      mealType: 'EVENING',
+      time: '18:00',
+      items: [
+        {
+          supplyId: supplyIds.timothyHay,
+          supplyCode: 'TIMOTHY',
+          supplyName: 'Cỏ khô Timothy',
+          category: 'FEED_HAY',
+          amount: Number((hayKg * 0.35).toFixed(1)),
+          unit: 'KG',
+        },
+        {
+          supplyId: supplyIds.oatGrain,
+          supplyCode: 'OATS',
+          supplyName: 'Cám yến mạch',
+          category: 'FEED_GRAIN',
+          amount: Number((grainKg * 0.5).toFixed(1)),
+          unit: 'KG',
+        },
+      ],
+    },
+  ];
+
+  const nutritionPlans: Prisma.NutritionPlanCreateManyInput[] = [];
+  HORSES.filter((h) => h.status !== HorseStatus.RETIRED).forEach((h, idx) => {
+    const hayKg = h.status === HorseStatus.ISOLATED || h.status === HorseStatus.INJURED ? 6.5 : 8.5;
+    const grainKg =
+      h.status === HorseStatus.ISOLATED || h.status === HorseStatus.INJURED ? 1.5 : 3.2;
+    nutritionPlans.push({
+      id: id(`nutri:approved:${h.id}`),
+      planCode: `NP-2026-${String(idx + 1).padStart(3, '0')}`,
+      horseId: h.id,
+      status: NutritionPlanStatus.APPROVED,
+      dailyFeedWeightKg: Number((hayKg + grainKg).toFixed(1)),
+      targetWeightRatioPct: Number((((hayKg + grainKg) / h.weightKg) * 100).toFixed(2)),
+      horseWeightSnapshot: h.weightKg,
+      hayFeedKg: hayKg,
+      grainFeedKg: grainKg,
+      mealsJson: makeMeals(
+        hayKg,
+        grainKg,
+        h.status === HorseStatus.ACTIVE || h.status === HorseStatus.IN_TRAINING,
+      ),
+      supplementsJson: JSON.stringify([{ name: 'Vitamin E + Selenium', dosage: '1 gói/ngày' }]),
+      specialInstructions: 'Ngâm nhẹ cỏ khô 5 phút trước bữa tối để giảm bụi hô hấp.',
+      createdById: userIds.vet4,
+      approvedById: userIds.vet,
+      approvedAt: days(-25),
+      validFrom: days(-25),
+      validTo: days(35),
+    });
+  });
+  // Add PENDING_APPROVAL, DRAFT, REJECTED, ARCHIVED samples
+  nutritionPlans.push(
+    {
+      id: id('nutri:pending:h3'),
+      planCode: 'NP-2026-101',
+      horseId: horseIds[2],
+      status: NutritionPlanStatus.PENDING_APPROVAL,
+      dailyFeedWeightKg: 12.2,
+      targetWeightRatioPct: 2.39,
+      horseWeightSnapshot: 510,
+      hayFeedKg: 8.7,
+      grainFeedKg: 3.5,
+      mealsJson: makeMeals(8.7, 3.5, true),
+      specialInstructions: 'Tăng 0.3kg yến mạch chuẩn bị giai đoạn tăng tải sân cỏ.',
+      createdById: userIds.trainer,
+      validFrom: days(1),
+      validTo: days(31),
+    },
+    {
+      id: id('nutri:draft:h8'),
+      planCode: 'NP-2026-102',
+      horseId: horseIds[7],
+      status: NutritionPlanStatus.DRAFT,
+      dailyFeedWeightKg: 10.5,
+      targetWeightRatioPct: 2.3,
+      horseWeightSnapshot: 456,
+      hayFeedKg: 7.5,
+      grainFeedKg: 3.0,
+      mealsJson: makeMeals(7.5, 3.0, false),
+      createdById: userIds.vet4,
+    },
+    {
+      id: id('nutri:rejected:h13'),
+      planCode: 'NP-2026-103',
+      horseId: horseIds[12],
+      status: NutritionPlanStatus.REJECTED,
+      dailyFeedWeightKg: 12.0,
+      targetWeightRatioPct: 2.58,
+      horseWeightSnapshot: 465,
+      hayFeedKg: 7.0,
+      grainFeedKg: 5.0,
+      mealsJson: makeMeals(7.0, 5.0, false),
+      createdById: userIds.trainer3,
+      rejectionReason:
+        'Tỉ lệ tinh bột cao vượt ngưỡng khuyến nghị khi ngựa đang rối loạn tiêu hóa.',
+      vetNotes: 'Giữ tinh bột <= 2.0kg/ngày đến khi phân ổn định.',
+    },
+    {
+      id: id('nutri:archived:h1'),
+      planCode: 'NP-2026-104',
+      horseId: horseIds[0],
+      status: NutritionPlanStatus.ARCHIVED,
+      dailyFeedWeightKg: 11.0,
+      targetWeightRatioPct: 2.22,
+      horseWeightSnapshot: 495,
+      hayFeedKg: 8.0,
+      grainFeedKg: 3.0,
+      mealsJson: makeMeals(8.0, 3.0, true),
+      createdById: userIds.vet4,
+      approvedById: userIds.vet,
+      approvedAt: days(-90),
+      validFrom: days(-90),
+      validTo: days(-26),
+    },
+  );
+  await tx.nutritionPlan.createMany({ data: nutritionPlans, skipDuplicates: true });
+
+  // Shifts: Morning, Afternoon, Night
+  await tx.shiftCatalog.createMany({
+    data: [
       {
-        supplyId: supply('TIMOTHY'),
-        supplyName: 'Cỏ khô Timothy',
-        supplyCode: 'TIMOTHY',
-        amount: hay,
-        unit: 'KG',
+        id: shiftIds.MORNING,
+        code: 'MORNING',
+        name: 'Ca Sáng (05:00 - 13:00)',
+        startTime: '05:00',
+        endTime: '13:00',
+        isOvernight: false,
+        sortOrder: 1,
+        description: 'Cho ăn sáng, dọn chuồng, tắm chải và hỗ trợ tập buổi sáng',
       },
-      ...(grain > 0
+      {
+        id: shiftIds.AFTERNOON,
+        code: 'AFTERNOON',
+        name: 'Ca Chiều (13:00 - 21:00)',
+        startTime: '13:00',
+        endTime: '21:00',
+        isOvernight: false,
+        sortOrder: 2,
+        description: 'Dắt đi bộ, chườm lạnh, cho ăn bữa tối và kiểm tra chuồng',
+      },
+      {
+        id: shiftIds.NIGHT,
+        code: 'NIGHT',
+        name: 'Ca Đêm (21:00 - 05:00)',
+        startTime: '21:00',
+        endTime: '05:00',
+        isOvernight: true,
+        sortOrder: 3,
+        description: 'Trực đêm an toàn chuồng trại, theo dõi ngựa bệnh & cách ly',
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // ShiftRoster covering ALL 10 Active Grooms over a 7-day rolling window (-1..+5)
+  const rosterAssignments: Array<[string, string, string]> = [
+    [zoneIds.A, shiftIds.MORNING, userIds.grooms[0]],
+    [zoneIds.A, shiftIds.MORNING, userIds.grooms[3]],
+    [zoneIds.A, shiftIds.AFTERNOON, userIds.grooms[9]],
+    [zoneIds.A, shiftIds.NIGHT, userIds.grooms[4]],
+    [zoneIds.B, shiftIds.MORNING, userIds.grooms[1]],
+    [zoneIds.B, shiftIds.AFTERNOON, userIds.grooms[5]],
+    [zoneIds.B, shiftIds.NIGHT, userIds.grooms[6]],
+    [zoneIds.C, shiftIds.MORNING, userIds.grooms[2]],
+    [zoneIds.C, shiftIds.AFTERNOON, userIds.grooms[7]],
+    [zoneIds.H, shiftIds.MORNING, userIds.grooms[8]],
+  ];
+  const rosters: Prisma.ShiftRosterCreateManyInput[] = [];
+  for (let d = -1; d <= 5; d++) {
+    const rDate = days(d, 0, 0);
+    rosterAssignments.forEach(([zoneId, shiftId, groomUserId], idx) => {
+      rosters.push({
+        id: id(`roster:d${d}:${idx}`),
+        date: rDate,
+        shiftId,
+        zoneId,
+        groomUserId,
+        createdById: userIds.manager,
+      });
+    });
+  }
+  await tx.shiftRoster.createMany({ data: rosters, skipDuplicates: true });
+
+  // DailyCareTasks for today (d=0) excluding RETIRED horses (BR-STL-07)
+  const activeHorses = HORSES.filter((h) => h.status !== HorseStatus.RETIRED);
+  const scheduleHorses: ScheduleHorse[] = activeHorses.map((h) => {
+    const zCode: 'A' | 'B' | 'C' | 'H' =
+      h.stallId === stallIds.C[0] || h.stallId === stallIds.C[1]
+        ? 'C'
+        : h.stallId === stallIds.H[0]
+          ? 'H'
+          : stallIds.B.includes(h.stallId!)
+            ? 'B'
+            : 'A';
+    const meds =
+      h.id === horseIds[1]
         ? [
             {
-              supplyId: supply('OATS'),
-              supplyName: 'Cám yến mạch',
-              supplyCode: 'OATS',
-              amount: grain,
-              unit: 'KG',
+              name: 'Thuốc chống viêm thú y',
+              dosage: '1',
+              unit: 'VIAL',
+              route: 'Tiêm bắp',
+              supplyId: supplyIds.antiInflam,
+              frequencyPerDay: 2,
             },
           ]
-        : []),
-    ],
-  }));
-}
-async function seedStableCare(tx: Prisma.TransactionClient) {
-  const manager = user('manager'),
-    vet = user('vet');
-  await tx.supplyCatalog.createMany({
-    data: food.map(([code, name, category, unit, unitPrice]) => ({
-      id: supply(code),
-      code,
-      name,
-      category,
-      unit,
-      unitPrice,
-      withdrawalDays: code === 'ANTI_INFLAM' ? 7 : null,
-      ...stamp(-90),
+        : h.id === horseIds[14]
+          ? [
+              {
+                name: 'Thuốc chống viêm thú y',
+                dosage: '1',
+                unit: 'VIAL',
+                route: 'Tiêm bắp',
+                supplyId: supplyIds.antiInflam,
+                frequencyPerDay: 2,
+              },
+            ]
+          : undefined;
+    const careInstructions =
+      h.id === horseIds[1] || h.id === horseIds[15]
+        ? [
+            {
+              activity: 'Chườm lạnh Ice-boot & băng ép vùng chấn thương',
+              frequencyPerDay: 2,
+              notes: 'Theo dõi độ sưng trước và sau chườm',
+              phaseName: 'Điều trị cấp',
+            },
+          ]
+        : undefined;
+    return {
+      id: h.id,
+      zoneId: zoneIds[zCode],
+      stallId: h.stallId!,
+      stallCode: h.horseCode,
+      allocationGroomId: h.groomId,
+      isLocked: Boolean(h.isMedicalLocked),
+      allowedActivityLevel:
+        h.id === horseIds[14] || h.id === horseIds[15] ? 'Strict stall rest' : undefined,
+      mealsJson: makeMeals(8, 3, true),
+      medications: meds,
+      careInstructions,
+    };
+  });
+
+  const shiftMeta: Record<string, { startTime: string; endTime: string; isOvernight: boolean }> = {
+    [shiftIds.MORNING]: { startTime: '05:00', endTime: '13:00', isOvernight: false },
+    [shiftIds.AFTERNOON]: { startTime: '13:00', endTime: '21:00', isOvernight: false },
+    [shiftIds.NIGHT]: { startTime: '21:00', endTime: '05:00', isOvernight: true },
+  };
+  const todayPlanned = planDailyTasks(
+    scheduleHorses,
+    rosterAssignments.map(([zoneId, shiftId, groomUserId]) => ({
+      zoneId,
+      shiftId,
+      groomUserId,
+      ...shiftMeta[shiftId],
     })),
+  );
+  const todayDate = days(0, 0, 0);
+  const dailyTasks: Prisma.DailyCareTaskCreateManyInput[] = todayPlanned.map((t, idx) => {
+    const done = t.scheduledTime < '09:00';
+    return {
+      id: id(`task:d0:${t.horseId}:${t.taskType}:${t.mealType ?? 'none'}:${t.scheduledTime}`),
+      taskCode: `TSK-${yymm()}-${String(idx + 1).padStart(4, '0')}`,
+      date: todayDate,
+      horseId: t.horseId,
+      stallZoneId: t.zoneId ?? null,
+      stallId: t.stallId ?? null,
+      taskType: t.taskType,
+      title: t.title,
+      description: t.description,
+      mealType: t.mealType ?? null,
+      scheduledTime: t.scheduledTime,
+      shiftId: t.shiftId ?? null,
+      nutritionPlanId: id(`nutri:approved:${t.horseId}`),
+      isMedicalLocked: Boolean(activeHorses.find((h) => h.id === t.horseId)?.isMedicalLocked),
+      itemsSnapshotJson: (t.itemsSnapshotJson as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+      isCompleted: done,
+      completedAt: done ? days(0, 8, 45) : null,
+      completedById: done ? (t.assignedGroomUserId ?? userIds.grooms[0]) : null,
+      assignedGroomUserId: t.assignedGroomUserId ?? userIds.grooms[0],
+    };
   });
-  await tx.stockBalance.createMany({
-    data: ['A', 'B', 'C'].flatMap((key) =>
-      food.map(([code], i) => ({
-        id: id(`stock/${key}/${code}`),
-        zoneId: zone(key),
-        supplyId: supply(code),
-        quantity:
-          key === 'A' && code === 'TIMOTHY'
-            ? 18
-            : key === 'B' && code === 'ELECTROLYTE'
-              ? 4
-              : 55 + i * 9,
-        minThreshold: code === 'TIMOTHY' ? 30 : 10,
-        capacity: code === 'TIMOTHY' ? 300 : 180,
-        lastAdjustedById: manager,
-        lastInventoryDate: clubDateTime(-1, 16),
-        ...stamp(-40),
-      })),
-    ),
+  // Explicit DailyTaskType.OTHER night temperature check to ensure all 7 DailyTaskTypes are covered
+  dailyTasks.push({
+    id: id('task:d0:other:h15-temp'),
+    taskCode: `TSK-${yymm()}-9901`,
+    date: todayDate,
+    horseId: horseIds[14],
+    stallZoneId: zoneIds.C,
+    stallId: stallIds.C[0],
+    taskType: DailyTaskType.OTHER,
+    title: 'Đo thân nhiệt & kiểm tra chuồng cách ly ban đêm',
+    description: 'Kiểm tra nhiệt độ trực tràng và lượng nước uống khu C.',
+    scheduledTime: '21:30',
+    shiftId: shiftIds.NIGHT,
+    isMedicalLocked: true,
+    isCompleted: false,
+    assignedGroomUserId: userIds.grooms[4],
   });
+  await tx.dailyCareTask.createMany({ data: dailyTasks, skipDuplicates: true });
+
+  // DailyGroomingLog across MORNING / AFTERNOON / EVENING
+  await tx.dailyGroomingLog.createMany({
+    data: [
+      {
+        id: id('groomlog:h1-m'),
+        horseId: horseIds[0],
+        groomUserId: userIds.grooms[0],
+        shiftDate: days(0, 6, 30),
+        shiftType: ShiftType.MORNING,
+        feedCompleted: true,
+        cleaningCompleted: true,
+        groomingCompleted: true,
+        iceBootCompleted: false,
+        healthObservations: 'Ăn hết sạch cỏ khô và ngũ cốc, tinh thần hưng phấn.',
+      },
+      {
+        id: id('groomlog:h2-a'),
+        horseId: horseIds[1],
+        groomUserId: userIds.grooms[3],
+        shiftDate: days(-1, 14, 0),
+        shiftType: ShiftType.AFTERNOON,
+        feedCompleted: true,
+        cleaningCompleted: true,
+        groomingCompleted: true,
+        iceBootCompleted: true,
+        healthObservations: 'Đã chườm đá chân phải 15 phút, vùng gân mát và đỡ sưng.',
+      },
+      {
+        id: id('groomlog:h15-e'),
+        horseId: horseIds[14],
+        groomUserId: userIds.grooms[2],
+        shiftDate: days(-1, 19, 0),
+        shiftType: ShiftType.EVENING,
+        feedCompleted: true,
+        cleaningCompleted: true,
+        groomingCompleted: false,
+        iceBootCompleted: false,
+        healthObservations: 'Thân nhiệt tối 38.6°C, uống nước tốt hơn hôm qua.',
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // RestockRequests covering all 5 RestockStatus
   await tx.restockRequest.createMany({
     data: [
       {
-        id: id('restock/delivered'),
-        requestNumber: `REQ-${clubDay(-32).replaceAll('-', '')}-0001`,
-        zoneId: zone('A'),
-        supplyId: supply('OATS'),
+        id: id('restock:pending'),
+        requestNumber: 'REQ-SUP-001',
+        zoneId: zoneIds.A,
+        supplyId: supplyIds.electrolyte,
         requestedQuantity: 60,
-        approvedQuantity: 60,
-        status: 'DELIVERED',
-        requestedById: user('groom'),
-        reviewedById: manager,
-        reviewedAt: clubDateTime(-31, 9),
-        deliveredById: manager,
-        deliveredAt: clubDateTime(-30, 11),
-        urgencyReason: 'Bổ sung ngũ cốc cho đợt tập mùa thu.',
-        ...stamp(-32),
-        updatedAt: clubDateTime(-30, 11),
+        status: RestockStatus.PENDING,
+        urgencyReason: 'Tồn kho điện giải khu A sắp xuống dưới ngưỡng tối thiểu trước giải T11',
+        requestedById: userIds.grooms[0],
       },
       {
-        id: id('restock/pending'),
-        requestNumber: `REQ-${clubDay(-1).replaceAll('-', '')}-0001`,
-        zoneId: zone('A'),
-        supplyId: supply('TIMOTHY'),
+        id: id('restock:approved'),
+        requestNumber: 'REQ-SUP-002',
+        zoneId: zoneIds.B,
+        supplyId: supplyIds.timothyHay,
+        requestedQuantity: 400,
+        approvedQuantity: 400,
+        status: RestockStatus.APPROVED,
+        urgencyReason: 'Bổ sung định kỳ cỏ Timothy cho 7 ngựa khu B',
+        requestedById: userIds.grooms[1],
+        reviewedById: userIds.manager,
+        reviewedAt: days(-2),
+      },
+      {
+        id: id('restock:delivering'),
+        requestNumber: 'REQ-SUP-003',
+        zoneId: zoneIds.C,
+        supplyId: supplyIds.antiInflam,
+        requestedQuantity: 15,
+        approvedQuantity: 15,
+        status: RestockStatus.DELIVERING,
+        urgencyReason: 'Bổ sung thuốc chống viêm thú y cho khu cách ly C01',
+        requestedById: userIds.grooms[2],
+        reviewedById: userIds.manager,
+        reviewedAt: days(-3),
+      },
+      {
+        id: id('restock:delivered'),
+        requestNumber: 'REQ-SUP-004',
+        zoneId: zoneIds.A,
+        supplyId: supplyIds.oatGrain,
+        requestedQuantity: 300,
+        approvedQuantity: 300,
+        status: RestockStatus.DELIVERED,
+        urgencyReason: 'Nhập kho cám yến mạch đợt đầu tháng 11',
+        requestedById: userIds.grooms[3],
+        reviewedById: userIds.manager2,
+        reviewedAt: days(-8),
+        deliveredAt: days(-6),
+        deliveredById: userIds.grooms[0],
+      },
+      {
+        id: id('restock:rejected'),
+        requestNumber: 'REQ-SUP-005',
+        zoneId: zoneIds.H,
+        supplyId: supplyIds.timothyHay,
         requestedQuantity: 100,
-        status: 'PENDING',
-        requestedById: user('groom'),
-        urgencyReason: 'Tồn cỏ dưới ngưỡng, cần bổ sung cho đàn ngựa đua.',
-        ...stamp(-1),
-      },
-      {
-        id: id('restock/approved'),
-        requestNumber: `REQ-${clubDay(-3).replaceAll('-', '')}-0001`,
-        zoneId: zone('B'),
-        supplyId: supply('ELECTROLYTE'),
-        requestedQuantity: 30,
-        approvedQuantity: 24,
-        status: 'APPROVED',
-        requestedById: user('groom2'),
-        reviewedById: manager,
-        reviewedAt: clubDateTime(-2, 9),
-        urgencyReason: 'Đã duyệt, chờ nhà cung cấp giao.',
-        ...stamp(-3),
-        updatedAt: clubDateTime(-2, 9),
+        status: RestockStatus.REJECTED,
+        urgencyReason: 'Đề xuất nhập bổ sung cỏ khô Timothy cho khu H',
+        rejectionReason: 'Kho tổng vẫn còn đủ dùng thêm 3 tuần, không cần nhập gấp.',
+        requestedById: userIds.grooms[8],
+        reviewedById: userIds.manager,
+        reviewedAt: days(-4),
       },
     ],
-  });
-  const shifts = [
-    {
-      code: 'MORNING',
-      name: 'Ca sáng',
-      startTime: '05:00',
-      endTime: '13:00',
-      isOvernight: false,
-      sortOrder: 1,
-    },
-    {
-      code: 'AFTERNOON',
-      name: 'Ca chiều',
-      startTime: '13:00',
-      endTime: '21:00',
-      isOvernight: false,
-      sortOrder: 2,
-    },
-    {
-      code: 'NIGHT',
-      name: 'Ca đêm',
-      startTime: '21:00',
-      endTime: '05:00',
-      isOvernight: true,
-      sortOrder: 3,
-    },
-  ];
-  await tx.shiftCatalog.createMany({
-    data: shifts.map((s) => ({ id: shift(s.code), ...s, ...stamp(-90) })),
-  });
-  const roster = ['A', 'B', 'C'].map((key) => ({
-    zoneId: zone(key),
-    groomUserId: groomOf(key),
-    shiftId: shift('MORNING'),
-    startTime: shifts[0].startTime,
-    endTime: shifts[0].endTime,
-    isOvernight: false,
-  }));
-  await tx.shiftRoster.createMany({
-    data: Array.from({ length: 7 }, (_, i) => i - 3).flatMap((day) =>
-      roster.map(({ zoneId, groomUserId, shiftId }, i) => ({
-        id: id(`roster/${day}/${i}`),
-        date: dateOnly(day),
-        zoneId,
-        groomUserId,
-        shiftId,
-        createdById: manager,
-        notes: 'Kiểm tra máng nước, khẩu phần và sức khỏe đầu ca.',
-        ...stamp(-4),
-      })),
-    ),
-  });
-  const care = horses.map((h, i) => ({
-    id: horse(i + 1),
-    zoneId: zone(h[5][0]),
-    stallId: stall(h[5]),
-    stallCode: `STALL-${h[5]}`,
-    allocationGroomId: groomOf(h[5]),
-    isLocked: i === 1,
-    mealsJson: mealsFor(i === 6 || i === 4),
-  }));
-  await tx.nutritionPlan.createMany({
-    data: care.map((h, i) => {
-      const weight = horses[i][3],
-        dailyFeedWeightKg = h.mealsJson
-          .flatMap((m) => m.items)
-          .reduce((sum, item) => sum + item.amount, 0);
-      const start = Math.max(-12, horses[i][8]);
-      const status =
-        i === 0 || i === 6
-          ? ('PENDING_APPROVAL' as const)
-          : i === 4
-            ? ('REJECTED' as const)
-            : ('APPROVED' as const);
-      const isApproved = status === 'APPROVED';
-      return {
-        id: nutrition(h.id),
-        planCode: `DD-${pad(i + 1, 6)}`,
-        horseId: h.id,
-        status,
-        horseWeightSnapshot: weight,
-        dailyFeedWeightKg,
-        targetWeightRatioPct: Number(((dailyFeedWeightKg / weight) * 100).toFixed(2)),
-        mealsJson: h.mealsJson,
-        validFrom: clubDateTime(start, 0),
-        validTo: isApproved ? clubDateTime(28, 18) : null,
-        createdById: trainerOf(i + 1),
-        approvedById: isApproved ? vet : null,
-        approvedAt: isApproved ? clubDateTime(start, 0) : null,
-        rejectionReason:
-          status === 'REJECTED'
-            ? 'Tỷ lệ cỏ thô chưa đáp ứng nhu cầu tiêu hóa. Cần tăng lượng cỏ khô Timothy và giảm cám đậm đặc.'
-            : null,
-        vetNotes:
-          status === 'REJECTED'
-            ? 'Ngựa có tiền sử tiêu hóa nhạy cảm. HLV vui lòng điều chỉnh lại theo khuyến cáo.'
-            : null,
-        specialInstructions: h.isLocked
-          ? 'Theo dõi lượng nước uống; không cho tập nặng.'
-          : 'Chia khẩu phần theo bữa; cung cấp nước sạch liên tục.',
-        ...stamp(start),
-        createdAt: clubDateTime(start, 0),
-      };
-    }),
+    skipDuplicates: true,
   });
 
-  const tasks: Prisma.DailyCareTaskCreateManyInput[] = [-1, 0, 1].flatMap((day) =>
-    planDailyTasks(
-      care.filter((_, i) => horses[i][8] <= day),
-      roster,
-    ).map((task, i) => {
-      const due = new Date(`${clubDay(day)}T${task.scheduledTime}:00+07:00`);
-      const done = day < 0 || (day === 0 && due <= now && i % 3 !== 0);
-      return {
-        id: id(`care/${day}/${task.horseId}/${task.title}`),
-        taskCode: `TSK-${clubDay(day).replaceAll('-', '')}-${pad(i + 1, 3)}`,
-        date: dateOnly(day),
-        horseId: task.horseId,
-        stallZoneId: task.zoneId,
-        stallId: task.stallId,
-        taskType: task.taskType,
-        title: task.title,
-        description: task.description,
-        mealType: task.mealType,
-        scheduledTime: task.scheduledTime,
-        shiftId: task.shiftId,
-        nutritionPlanId: nutrition(task.horseId),
-        assignedGroomUserId: task.assignedGroomUserId,
-        isMedicalLocked: task.horseId === horse(2),
-        medicalLockNotes: task.horseId === horse(2) ? injuryReason : null,
-        itemsSnapshotJson: task.itemsSnapshotJson as Prisma.InputJsonValue | undefined,
-        isCompleted: done,
-        completedAt: done ? due : null,
-        completedById: done ? task.assignedGroomUserId : null,
-        createdAt: clubDateTime(Math.min(day, 0), 0),
-        updatedAt: done ? due : now,
-      };
-    }),
-  );
-  tasks.push({
-    id: id('care/midnight-check'),
-    taskCode: `TSK-${clubDay(0).replaceAll('-', '')}-NIGHT`,
-    date: dateOnly(0),
-    horseId: horse(6),
-    stallZoneId: zone('C'),
-    stallId: stall('C01'),
-    taskType: 'OTHER',
-    title: 'Kiểm tra máng nước chuồng cách ly đầu ngày',
-    scheduledTime: '00:00',
-    assignedGroomUserId: user('groom3'),
-    isCompleted: true,
-    completedAt: now,
-    completedById: user('groom3'),
-    createdAt: clubDateTime(0, 0),
-    updatedAt: now,
-  });
-  await tx.dailyCareTask.createMany({ data: tasks });
-  await tx.dailyGroomingLog.createMany({
-    data: [-7, -3, -1, 0].flatMap((day) =>
-      [1, 2, 3, 7, 9].map((n) => ({
-        id: id(`groom-log/${day}/${n}`),
-        horseId: horse(n),
-        groomUserId: groomOf(horses[n - 1][5]),
-        shiftDate: day === 0 ? now : clubDateTime(day, 9),
-        feedCompleted: day < 0 || now >= clubDateTime(0, 6),
-        cleaningCompleted: day < 0 || now >= clubDateTime(0, 8),
-        groomingCompleted: day < 0,
-        iceBootCompleted: n === 2 && day >= -2,
-        healthObservations:
-          n === 2 && day >= -2
-            ? 'Đang theo dõi sưng gân và chườm lạnh.'
-            : 'Ăn hết khẩu phần; tinh thần và bước đi ổn định.',
-        ...stamp(day),
-      })),
-    ),
-  });
+  // IncidentReports covering all 4 IncidentStatus
   await tx.incidentReport.createMany({
     data: [
       {
-        id: id('incident/scratch'),
-        incidentNumber: `INC-${clubDay(-7).replaceAll('-', '')}-0001`,
-        horseId: horse(9),
-        stallZoneId: zone('A'),
-        reportedById: user('groom'),
-        severity: 'MILD',
-        symptomsJson: ['OTHER'],
-        description: 'Ngựa cọ xước nhẹ thành chuồng',
-        status: 'RESOLVED',
-        reviewedById: vet,
-        reviewedAt: clubDateTime(-6, 8),
-        vetNotes: 'Vết trầy đã sạch và khô, không ảnh hưởng vận động.',
-        ...stamp(-7),
-        updatedAt: clubDateTime(-6, 8),
+        id: id('inc:reported'),
+        sourceEventId: 'evt-inc-001',
+        incidentNumber: 'INC-2026-001',
+        horseId: horseIds[6],
+        stallZoneId: zoneIds.A,
+        reportedById: userIds.grooms[4],
+        severity: SeverityLevel.MODERATE,
+        symptomsJson: ['Bỏ ăn sáng 30%', 'Uể oải nhẹ'],
+        description: 'Hồng Kỳ ăn chậm vào ca sáng nay, cần bác sĩ kiểm tra răng và thân nhiệt.',
+        status: IncidentStatus.REPORTED,
       },
       {
-        id: id('incident/latch'),
-        incidentNumber: `INC-${clubDay(0).replaceAll('-', '')}-0001`,
-        horseId: horse(7),
-        stallZoneId: zone('B'),
-        reportedById: user('groom2'),
-        severity: 'MILD',
-        symptomsJson: ['OTHER'],
-        description: 'Cửa chuồng STALL-B04 bị kẹt chốt',
-        status: 'REPORTED',
-        createdAt: now,
-        updatedAt: now,
+        id: id('inc:review'),
+        sourceEventId: 'evt-inc-002',
+        incidentNumber: 'INC-2026-002',
+        horseId: horseIds[12],
+        stallZoneId: zoneIds.B,
+        reportedById: userIds.grooms[6],
+        severity: SeverityLevel.MILD,
+        symptomsJson: ['Phân lỏng nhẹ'],
+        description: 'Ghi nhận phân lỏng sau buổi chiều đổi lô cỏ mới.',
+        status: IncidentStatus.UNDER_REVIEW,
+        reviewedById: userIds.vet3,
+        reviewedAt: days(-2),
+        vetNotes: 'Đã mở hồ sơ theo dõi MED-2026-008 & bổ sung men vi sinh.',
+        medicalRecordId: id('medrec:open:h13'),
+      },
+      {
+        id: id('inc:resolved'),
+        sourceEventId: 'evt-inc-003',
+        incidentNumber: 'INC-2026-003',
+        horseId: horseIds[0],
+        stallZoneId: zoneIds.A,
+        reportedById: userIds.grooms[0],
+        severity: SeverityLevel.MILD,
+        symptomsJson: ['Trầy da nông'],
+        description: 'Vết xước nhẹ do cọ vào thành cửa chuồng, đã vệ sinh sát khuẩn.',
+        status: IncidentStatus.RESOLVED,
+        reviewedById: userIds.vet,
+        reviewedAt: days(-74),
+        vetNotes: 'Vết thương đã lành hoàn toàn.',
+        medicalRecordId: id('medrec:closed:h1'),
+      },
+      {
+        id: id('inc:dismissed'),
+        sourceEventId: 'evt-inc-004',
+        incidentNumber: 'INC-2026-004',
+        horseId: horseIds[4],
+        stallZoneId: zoneIds.A,
+        reportedById: userIds.grooms[9],
+        severity: SeverityLevel.MILD,
+        symptomsJson: ['Hắt hơi 2 lần'],
+        description: 'Hắt hơi thoáng qua khi vừa rải rơm mới.',
+        status: IncidentStatus.DISMISSED,
+        reviewedById: userIds.vet2,
+        reviewedAt: days(-9),
+        vetNotes: 'Phản ứng bụi rơm bình thường, không có dấu hiệu bệnh lý.',
       },
     ],
+    skipDuplicates: true,
   });
 }
 
-const tournament = (key: string) => id(`tournament/${key}`);
-const invoice = (key: string) => id(`invoice/${key}`);
-const previousMonth = (day: number) => {
-  const first = new Date(`${clubDay(day).slice(0, 7)}-01T00:00:00Z`);
-  first.setUTCDate(0);
-  return first.toISOString().slice(0, 7);
-};
+async function seedRacingAndInvoices(tx: Tx) {
+  // 16 Tournaments covering all 5 TournamentStatus & all 3 TrackSurface (spans 2 pages @ 10/page)
+  const tIds = {
+    may: id('tour:2026-05'),
+    junA: id('tour:2026-06a'),
+    junB: id('tour:2026-06b'),
+    july: id('tour:2026-07'),
+    aug: id('tour:2026-08'),
+    sep: id('tour:2026-09'),
+    oct: id('tour:2026-10'),
+    closedReg: id('tour:2026-11-closed'),
+    closedRegB: id('tour:2026-11-closed-b'),
+    openReg: id('tour:2026-11-open'),
+    openRegB: id('tour:2026-11-open-b'),
+    openRegC: id('tour:2026-11-open-c'),
+    upcoming: id('tour:2026-12-upcoming'),
+    upcomingB: id('tour:2026-12-b'),
+    upcomingC: id('tour:2027-01'),
+    cancelled: id('tour:2026-cancelled'),
+  };
 
-async function seedRacingAndInvoices(tx: Prisma.TransactionClient) {
-  const events = [
-    {
-      key: 'summer-sprint',
-      name: 'Giải Đua Mùa Hè Rực Lửa',
-      day: -110,
-      distance: 1400,
-      status: 'COMPLETED',
-      places: [
-        [1, 1, 40000000],
-        [4, 2, 20000000],
-        [10, 3, 10000000],
-      ],
-    },
-    {
-      key: 'national-cup',
-      name: 'Cúp Đua Ngựa Quốc Gia 2026',
-      day: -85,
-      distance: 1600,
-      status: 'COMPLETED',
-      places: [
-        [4, 1, 50000000],
-        [1, 2, 25000000],
-        [11, 3, 12000000],
-      ],
-    },
-    {
-      key: 'autumn',
-      name: 'Giải Vô Địch Mùa Thu EquiFlow',
-      day: -45,
-      distance: 1600,
-      status: 'COMPLETED',
-      places: [
-        [1, 1, 50000000],
-        [4, 2, 25000000],
-        [10, 3, 10000000],
-      ],
-    },
-    {
-      key: 'open',
-      name: 'Cúp Đua Nước Rút Mở Rộng',
-      day: -20,
-      distance: 1200,
-      status: 'COMPLETED',
-      places: [
-        [5, 1, 20000000],
-        [1, 2, 10000000],
-      ],
-    },
-    {
-      key: 'veteran-classic',
-      name: 'Cúp Cự Ly Kinh Điển',
-      day: -54,
-      distance: 1800,
-      status: 'COMPLETED',
-      places: [
-        [5, 1, 22000000],
-        [4, 2, 11000000],
-      ],
-    },
-    {
-      key: 'veteran-derby',
-      name: 'Derby Danh Dự',
-      day: -46,
-      distance: 1700,
-      status: 'COMPLETED',
-      places: [
-        [5, 1, 24000000],
-        [11, 2, 12000000],
-      ],
-    },
-    {
-      key: 'veteran-turf',
-      name: 'Cúp Đường Cỏ',
-      day: -36,
-      distance: 1600,
-      status: 'COMPLETED',
-      places: [
-        [12, 1, 22000000],
-        [5, 2, 11000000],
-      ],
-    },
-    {
-      key: 'veteran-sprint',
-      name: 'Cúp Tốc Độ CLB',
-      day: -26,
-      distance: 1200,
-      status: 'COMPLETED',
-      places: [
-        [4, 1, 20000000],
-        [5, 2, 10000000],
-      ],
-    },
-    {
-      key: 'winter',
-      name: 'Cúp Mùa Đông Hoàng Gia',
-      day: 20,
-      distance: 1600,
-      status: 'OPEN_REGISTRATION',
-      places: [
-        [1, 0, 0],
-        [4, 0, 0],
-        [10, 0, 0],
-      ],
-    },
-    {
-      key: 'spring',
-      name: 'Cúp Tân Niên CLB',
-      day: 60,
-      distance: 1400,
-      status: 'UPCOMING',
-      places: [],
-    },
-  ] as const;
   await tx.tournament.createMany({
-    data: events.map((e) => ({
-      id: tournament(e.key),
-      code: `TOURN-${e.key.toUpperCase()}`,
-      entryFee: 3000000,
-      trackCondition: 'GOOD',
-      maxFieldSize: 12,
-      minAgeYears: 2,
-      name: `${e.name} ${clubDay(e.day).slice(0, 4)}`,
-      raceDate: clubDateTime(e.day, 15),
-      location: 'Trường đua Thiên Mã',
-      distanceMeters: e.distance,
-      trackType: 'TURF',
-      status: e.status,
-      prizePool:
-        e.day < 0
-          ? (e.places as ReadonlyArray<readonly [number, number, number]>).reduce(
-              (sum, p) => sum + p[2],
-              0,
-            )
-          : 90000000,
-      registrationDeadline: clubDateTime(e.day - 5, 17),
-      ...stamp(Math.min(e.day - 25, -1)),
-    })),
+    data: [
+      {
+        id: tIds.may,
+        code: 'CUP-2026-05',
+        name: 'Giải Đua Mùa Xuân Phương Nam 2026',
+        raceDate: days(-175, 15, 0),
+        location: 'Trường đua Phú Thọ Mở Rộng',
+        distanceMeters: 1400,
+        trackType: TrackSurface.TURF,
+        entryFee: 3000000,
+        prizePool: 75000000,
+        trackCondition: 'GOOD',
+        maxFieldSize: 10,
+        minAgeYears: 3,
+        registrationDeadline: days(-182),
+        status: TournamentStatus.COMPLETED,
+      },
+      {
+        id: tIds.junA,
+        code: 'CUP-2026-06A',
+        name: 'Cúp Tốc Độ Thảo Nguyên Hè 2026',
+        raceDate: days(-152, 16, 0),
+        location: 'Trường đua Thiên Mã Đà Lạt',
+        distanceMeters: 1200,
+        trackType: TrackSurface.DIRT,
+        entryFee: 3500000,
+        prizePool: 90000000,
+        trackCondition: 'FAST',
+        maxFieldSize: 12,
+        minAgeYears: 3,
+        registrationDeadline: days(-159),
+        status: TournamentStatus.COMPLETED,
+      },
+      {
+        id: tIds.junB,
+        code: 'CUP-2026-06B',
+        name: 'Giải Vượt Chặng Miền Đông 2026',
+        raceDate: days(-135, 15, 30),
+        location: 'Trường đua Đại Nam Classic',
+        distanceMeters: 2000,
+        trackType: TrackSurface.SYNTHETIC,
+        entryFee: 4000000,
+        prizePool: 110000000,
+        trackCondition: 'STANDARD',
+        maxFieldSize: 12,
+        minAgeYears: 3,
+        registrationDeadline: days(-142),
+        status: TournamentStatus.COMPLETED,
+      },
+      {
+        id: tIds.july,
+        code: 'CUP-2026-07',
+        name: 'Giải Đua Mùa Hè Rực Lửa 2026',
+        raceDate: days(-115, 15, 0),
+        location: 'Trường đua Phú Thọ Mở Rộng',
+        distanceMeters: 1600,
+        trackType: TrackSurface.TURF,
+        entryFee: 3000000,
+        prizePool: 80000000,
+        trackCondition: 'GOOD',
+        maxFieldSize: 10,
+        minAgeYears: 3,
+        registrationDeadline: days(-122),
+        status: TournamentStatus.COMPLETED,
+      },
+      {
+        id: tIds.aug,
+        code: 'CUP-2026-08',
+        name: 'Cúp Quốc Gia 2026',
+        raceDate: days(-85, 15, 30),
+        location: 'Trường đua Thiên Mã Đà Lạt',
+        distanceMeters: 1800,
+        trackType: TrackSurface.DIRT,
+        entryFee: 5000000,
+        prizePool: 120000000,
+        trackCondition: 'FAST',
+        maxFieldSize: 12,
+        minAgeYears: 3,
+        registrationDeadline: days(-92),
+        status: TournamentStatus.COMPLETED,
+      },
+      {
+        id: tIds.sep,
+        code: 'CUP-2026-09',
+        name: 'Cúp Cự Ly Kinh Điển Mùa Thu',
+        raceDate: days(-55, 16, 0),
+        location: 'Trường đua Phú Thọ Mở Rộng',
+        distanceMeters: 2000,
+        trackType: TrackSurface.TURF,
+        entryFee: 4000000,
+        prizePool: 100000000,
+        trackCondition: 'FIRM',
+        maxFieldSize: 10,
+        minAgeYears: 3,
+        registrationDeadline: days(-62),
+        status: TournamentStatus.COMPLETED,
+      },
+      {
+        id: tIds.oct,
+        code: 'CUP-2026-10',
+        name: 'Giải Vô Địch Mùa Thu 2026',
+        raceDate: days(-22, 15, 0),
+        location: 'Trường đua Đại Nam Classic',
+        distanceMeters: 1600,
+        trackType: TrackSurface.SYNTHETIC,
+        entryFee: 5000000,
+        prizePool: 150000000,
+        trackCondition: 'STANDARD',
+        maxFieldSize: 12,
+        minAgeYears: 3,
+        registrationDeadline: days(-29),
+        status: TournamentStatus.COMPLETED,
+      },
+      {
+        id: tIds.closedReg,
+        code: 'CUP-2026-11A',
+        name: 'Giải Nước Rút Chốt Danh Sách T11',
+        raceDate: days(2, 15, 0),
+        location: 'Trường đua Đại Nam Classic',
+        distanceMeters: 1200,
+        trackType: TrackSurface.DIRT,
+        entryFee: 3500000,
+        prizePool: 70000000,
+        trackCondition: 'FAST',
+        maxFieldSize: 8,
+        minAgeYears: 3,
+        registrationDeadline: days(-1),
+        status: TournamentStatus.CLOSED_REGISTRATION,
+      },
+      {
+        id: tIds.closedRegB,
+        code: 'CUP-2026-11C',
+        name: 'Giải Bán Kết Cỏ Xanh T11',
+        raceDate: days(4, 15, 30),
+        location: 'Trường đua Phú Thọ Mở Rộng',
+        distanceMeters: 1800,
+        trackType: TrackSurface.TURF,
+        entryFee: 4000000,
+        prizePool: 115000000,
+        trackCondition: 'GOOD',
+        maxFieldSize: 10,
+        minAgeYears: 3,
+        registrationDeadline: days(-1),
+        status: TournamentStatus.CLOSED_REGISTRATION,
+      },
+      {
+        id: tIds.openReg,
+        code: 'CUP-2026-11B',
+        name: 'Cúp Mùa Đông EquiFlow 2026',
+        raceDate: days(12, 15, 30),
+        location: 'Trường đua Thiên Mã Đà Lạt',
+        distanceMeters: 1600,
+        trackType: TrackSurface.TURF,
+        entryFee: 5000000,
+        prizePool: 180000000,
+        trackCondition: 'GOOD',
+        maxFieldSize: 12,
+        minAgeYears: 3,
+        registrationDeadline: days(8),
+        status: TournamentStatus.OPEN_REGISTRATION,
+      },
+      {
+        id: tIds.openRegB,
+        code: 'CUP-2026-11D',
+        name: 'Giải Tốc Độ Sân Đất Miền Trung',
+        raceDate: days(16, 15, 0),
+        location: 'Trường đua Đại Nam Classic',
+        distanceMeters: 1200,
+        trackType: TrackSurface.DIRT,
+        entryFee: 3000000,
+        prizePool: 95000000,
+        trackCondition: 'FAST',
+        maxFieldSize: 10,
+        minAgeYears: 3,
+        registrationDeadline: days(11),
+        status: TournamentStatus.OPEN_REGISTRATION,
+      },
+      {
+        id: tIds.openRegC,
+        code: 'CUP-2026-11E',
+        name: 'Giải Bền Bỉ Cự Ly Trung Bình T11',
+        raceDate: days(21, 16, 0),
+        location: 'Trường đua Bình Dương',
+        distanceMeters: 2000,
+        trackType: TrackSurface.SYNTHETIC,
+        entryFee: 4500000,
+        prizePool: 135000000,
+        trackCondition: 'STANDARD',
+        maxFieldSize: 12,
+        minAgeYears: 4,
+        registrationDeadline: days(16),
+        status: TournamentStatus.OPEN_REGISTRATION,
+      },
+      {
+        id: tIds.upcoming,
+        code: 'CUP-2026-12',
+        name: 'Cúp Tân Niên Chung Kết Năm 2026',
+        raceDate: days(35, 16, 0),
+        location: 'Trường đua Phú Thọ Mở Rộng',
+        distanceMeters: 2200,
+        trackType: TrackSurface.TURF,
+        entryFee: 6000000,
+        prizePool: 250000000,
+        trackCondition: 'GOOD',
+        maxFieldSize: 12,
+        minAgeYears: 3,
+        registrationDeadline: days(25),
+        status: TournamentStatus.UPCOMING,
+      },
+      {
+        id: tIds.upcomingB,
+        code: 'CUP-2026-12B',
+        name: 'Giải Vô Địch Đêm Ánh Sáng T12',
+        raceDate: days(44, 18, 0),
+        location: 'Trường đua Đại Nam Classic',
+        distanceMeters: 1600,
+        trackType: TrackSurface.SYNTHETIC,
+        entryFee: 5000000,
+        prizePool: 160000000,
+        trackCondition: 'STANDARD',
+        maxFieldSize: 12,
+        minAgeYears: 3,
+        registrationDeadline: days(34),
+        status: TournamentStatus.UPCOMING,
+      },
+      {
+        id: tIds.upcomingC,
+        code: 'CUP-2027-01',
+        name: 'Cúp Khai Xuân Vạn Lý 2027',
+        raceDate: days(58, 15, 0),
+        location: 'Trường đua Thiên Mã Đà Lạt',
+        distanceMeters: 2400,
+        trackType: TrackSurface.TURF,
+        entryFee: 7000000,
+        prizePool: 300000000,
+        trackCondition: 'GOOD',
+        maxFieldSize: 14,
+        minAgeYears: 4,
+        registrationDeadline: days(48),
+        status: TournamentStatus.UPCOMING,
+      },
+      {
+        id: tIds.cancelled,
+        code: 'CUP-2026-09X',
+        name: 'Giải Giao Hữu Sân Cỏ Phía Nam (Đã hoãn)',
+        raceDate: days(-40, 15, 0),
+        location: 'Trường đua Bình Dương',
+        distanceMeters: 1400,
+        trackType: TrackSurface.TURF,
+        entryFee: 2000000,
+        prizePool: 40000000,
+        maxFieldSize: 8,
+        minAgeYears: 3,
+        registrationDeadline: days(-47),
+        status: TournamentStatus.CANCELLED,
+      },
+    ],
+    skipDuplicates: true,
   });
-  const registration = (key: string, n: number) => id(`entry/${key}/${n}`);
-  await tx.tournamentRegistration.createMany({
-    data: events.flatMap((e) =>
-      (e.places as ReadonlyArray<readonly [number, number, number]>).map(([n]) => {
-        const day = e.day < 0 ? e.day - 12 : -3;
-        return {
-          id: registration(e.key, n),
-          tournamentId: tournament(e.key),
-          horseId: horse(n),
-          registeredByTrainerId: trainerOf(n),
-          status: 'CONFIRMED' as const,
-          entryFeeBilled: 3000000,
-          registrationDate: clubDateTime(day, 9),
-          ...stamp(day),
-        };
-      }),
-    ),
-  });
-  await tx.tournamentResult.createMany({
-    data: events.flatMap((e) =>
-      (e.places as ReadonlyArray<readonly [number, number, number]>)
-        .filter((p) => p[1] > 0)
-        .map(([n, finalRank, prizeMoneyWon]) => {
-          const avgSpeedKmh = 61.5 - finalRank * 1.8;
-          return {
-            id: id(`result/${e.key}/${n}`),
-            registrationId: registration(e.key, n),
-            finalRank,
-            avgSpeedKmh,
-            finishTimeSeconds: Number(((e.distance * 3.6) / avgSpeedKmh).toFixed(2)),
-            prizeMoneyWon,
-            grossPrize: prizeMoneyWon,
-            trainerCut: Math.round(prizeMoneyWon * 0.1),
-            jockeyCut: Math.round(prizeMoneyWon * 0.05),
-            entryFeeDeducted: 3000000,
-            netOwnerPayout: Math.round(prizeMoneyWon * 0.85) - 3000000,
-            settledAt: clubDateTime(e.day, 17),
-            officialNotes: `${['Huy chương vàng', 'Huy chương bạc', 'Huy chương đồng'][finalRank - 1]} · Kết quả chính thức.`,
-            createdAt: clubDateTime(e.day, 16),
-            updatedAt: clubDateTime(e.day, 16),
-          };
-        }),
-    ),
+
+  // Registrations & 85/10/5 Results
+  const reg = (
+    tId: string,
+    hIdx: number,
+    status: RegistrationStatus,
+    fee: number,
+    off: number,
+  ) => ({
+    id: id(`treg:${tId}:${horseIds[hIdx]}`),
+    tournamentId: tId,
+    horseId: horseIds[hIdx],
+    registeredByTrainerId: userIds.trainer,
+    status,
+    entryFeeBilled: fee,
+    registrationDate: days(off),
   });
 
-  interface SeedBill {
-    key: string;
-    n: number;
-    period: string;
-    issueDay: number;
-    status: 'PAID' | 'SENT' | 'DRAFT' | 'OVERDUE' | 'CANCELLED';
-    trainingFee: number;
-    medicalFee: number;
-    prizeCredit?: number;
-    paidDay?: number;
-  }
-
-  const bills: SeedBill[] = [
-    // === THÁNG 07/2026 (Kỳ 2026-07) - Toàn bộ PAID ===
-    {
-      key: '2607-bach',
-      n: 1,
-      period: '2026-07',
-      issueDay: -95,
-      status: 'PAID',
-      trainingFee: 3000000,
-      medicalFee: 1500000,
-      prizeCredit: 34000000,
-      paidDay: -90,
-    },
-    {
-      key: '2607-xich',
-      n: 2,
-      period: '2026-07',
-      issueDay: -95,
-      status: 'PAID',
-      trainingFee: 2500000,
-      medicalFee: 500000,
-      paidDay: -88,
-    },
-    {
-      key: '2607-thanphong',
-      n: 4,
-      period: '2026-07',
-      issueDay: -95,
-      status: 'PAID',
-      trainingFee: 3000000,
-      medicalFee: 0,
-      prizeCredit: 17000000,
-      paidDay: -89,
-    },
-    {
-      key: '2607-laotuong',
-      n: 5,
-      period: '2026-07',
-      issueDay: -95,
-      status: 'PAID',
-      trainingFee: 1500000,
-      medicalFee: 800000,
-      paidDay: -91,
-    },
-    {
-      key: '2607-loichan',
-      n: 10,
-      period: '2026-07',
-      issueDay: -95,
-      status: 'PAID',
-      trainingFee: 3500000,
-      medicalFee: 0,
-      prizeCredit: 8500000,
-      paidDay: -87,
-    },
-
-    // === THÁNG 08/2026 (Kỳ 2026-08) - Đa số PAID, 1 OVERDUE (Dạ Nguyệt nợ > 60 ngày) ===
-    {
-      key: '2608-bach',
-      n: 1,
-      period: '2026-08',
-      issueDay: -65,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 0,
-      prizeCredit: 21250000,
-      paidDay: -60,
-    },
-    {
-      key: '2608-kimlong',
-      n: 7,
-      period: '2026-08',
-      issueDay: -65,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 0,
-      paidDay: -58,
-    },
-    {
-      key: '2608-thanphong',
-      n: 4,
-      period: '2026-08',
-      issueDay: -65,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 0,
-      prizeCredit: 42500000,
-      paidDay: -59,
-    },
-    {
-      key: '2608-hongky',
-      n: 11,
-      period: '2026-08',
-      issueDay: -65,
-      status: 'PAID',
-      trainingFee: 3500000,
-      medicalFee: 0,
-      prizeCredit: 10200000,
-      paidDay: -57,
-    },
-    {
-      key: '2608-nguyet',
-      n: 9,
-      period: '2026-08',
-      issueDay: -65,
-      status: 'OVERDUE',
-      trainingFee: 2000000,
-      medicalFee: 2500000,
-    },
-
-    // === THÁNG 09/2026 (Kỳ 2026-09) - PAID & 2 OVERDUE (Xích Thố chấn thương, Dạ Nguyệt tiếp tục nợ) ===
-    {
-      key: '2609-bach',
-      n: 1,
-      period: '2026-09',
-      issueDay: -35,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 1200000,
-      paidDay: -30,
-    },
-    {
-      key: '2609-kimlong',
-      n: 7,
-      period: '2026-09',
-      issueDay: -35,
-      status: 'PAID',
-      trainingFee: 3500000,
-      medicalFee: 0,
-      paidDay: -28,
-    },
-    {
-      key: '2609-thanphong',
-      n: 4,
-      period: '2026-09',
-      issueDay: -35,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 0,
-      paidDay: -29,
-    },
-    {
-      key: '2609-loichan',
-      n: 10,
-      period: '2026-09',
-      issueDay: -35,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 0,
-      paidDay: -27,
-    },
-    {
-      key: '2609-xich',
-      n: 2,
-      period: '2026-09',
-      issueDay: -35,
-      status: 'OVERDUE',
-      trainingFee: 0,
-      medicalFee: 8500000,
-    },
-    {
-      key: '2609-nguyet',
-      n: 9,
-      period: '2026-09',
-      issueDay: -35,
-      status: 'OVERDUE',
-      trainingFee: 1000000,
-      medicalFee: 1000000,
-    },
-
-    // === THÁNG 10/2026 (Kỳ 2026-10) - Đa dạng PAID & OVERDUE, có giải thưởng Mùa Thu ===
-    {
-      key: 'paid',
-      n: 1,
-      period: '2026-10',
-      issueDay: -7,
-      status: 'PAID',
-      trainingFee: 5000000,
-      medicalFee: 500000,
-      prizeCredit: 37500000,
-      paidDay: -3,
-    },
-    {
-      key: '2610-kimlong',
-      n: 7,
-      period: '2026-10',
-      issueDay: -7,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 0,
-      paidDay: -2,
-    },
-    {
-      key: '2610-hacbao',
-      n: 3,
-      period: '2026-10',
-      issueDay: -7,
-      status: 'PAID',
-      trainingFee: 3000000,
-      medicalFee: 0,
-      paidDay: -4,
-    },
-    {
-      key: '2610-thanphong',
-      n: 4,
-      period: '2026-10',
-      issueDay: -7,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 0,
-      prizeCredit: 18250000,
-      paidDay: -3,
-    },
-    {
-      key: '2610-loichan',
-      n: 10,
-      period: '2026-10',
-      issueDay: -7,
-      status: 'PAID',
-      trainingFee: 4000000,
-      medicalFee: 0,
-      prizeCredit: 8500000,
-      paidDay: -1,
-    },
-    {
-      key: '2610-hongky',
-      n: 11,
-      period: '2026-10',
-      issueDay: -7,
-      status: 'PAID',
-      trainingFee: 4500000,
-      medicalFee: 0,
-      paidDay: -2,
-    },
-    {
-      key: 'overdue',
-      n: 2,
-      period: '2026-10',
-      issueDay: -7,
-      status: 'OVERDUE',
-      trainingFee: 0,
-      medicalFee: 4000000,
-    },
-    {
-      key: '2610-nguyet',
-      n: 9,
-      period: '2026-10',
-      issueDay: -7,
-      status: 'OVERDUE',
-      trainingFee: 0,
-      medicalFee: 0,
-    },
-
-    // === THÁNG 11/2026 (Kỳ 2026-11) - Kỳ hiện tại: SENT (Đã gửi) & DRAFT (Chưa gửi) ===
-    {
-      key: 'sent',
-      n: 1,
-      period: '2026-11',
-      issueDay: -1,
-      status: 'SENT',
-      trainingFee: 4000000,
-      medicalFee: 0,
-    },
-    {
-      key: '2611-thanphong',
-      n: 4,
-      period: '2026-11',
-      issueDay: -1,
-      status: 'SENT',
-      trainingFee: 4000000,
-      medicalFee: 0,
-    },
-    {
-      key: '2611-loichan',
-      n: 10,
-      period: '2026-11',
-      issueDay: -1,
-      status: 'SENT',
-      trainingFee: 4000000,
-      medicalFee: 0,
-    },
-    {
-      key: 'draft',
-      n: 7,
-      period: '2026-11',
-      issueDay: 0,
-      status: 'DRAFT',
-      trainingFee: 4000000,
-      medicalFee: 0,
-    },
-    {
-      key: '2611-vantieu',
-      n: 8,
-      period: '2026-11',
-      issueDay: 0,
-      status: 'DRAFT',
-      trainingFee: 3000000,
-      medicalFee: 500000,
-    },
-
-    // === THÁNG 12/2026 (Kỳ 2026-12) - Kỳ dự kiến: DRAFT (Chưa gửi) ===
-    {
-      key: '2612-bach',
-      n: 1,
-      period: '2026-12',
-      issueDay: 0,
-      status: 'DRAFT',
-      trainingFee: 4000000,
-      medicalFee: 0,
-    },
-    {
-      key: '2612-thanphong',
-      n: 4,
-      period: '2026-12',
-      issueDay: 0,
-      status: 'DRAFT',
-      trainingFee: 4000000,
-      medicalFee: 0,
-    },
+  const registrations: Prisma.TournamentRegistrationCreateManyInput[] = [
+    // T5 Completed
+    reg(tIds.may, 0, RegistrationStatus.CONFIRMED, 3000000, -183),
+    reg(tIds.may, 2, RegistrationStatus.CONFIRMED, 3000000, -183),
+    reg(tIds.may, 4, RegistrationStatus.CONFIRMED, 3000000, -183),
+    // T6A Completed
+    reg(tIds.junA, 3, RegistrationStatus.CONFIRMED, 3500000, -160),
+    reg(tIds.junA, 5, RegistrationStatus.CONFIRMED, 3500000, -160),
+    reg(tIds.junA, 6, RegistrationStatus.CONFIRMED, 3500000, -160),
+    // T6B Completed
+    reg(tIds.junB, 0, RegistrationStatus.CONFIRMED, 4000000, -143),
+    reg(tIds.junB, 4, RegistrationStatus.CONFIRMED, 4000000, -143),
+    reg(tIds.junB, 9, RegistrationStatus.CONFIRMED, 4000000, -143),
+    // T7
+    reg(tIds.july, 0, RegistrationStatus.CONFIRMED, 3000000, -125),
+    reg(tIds.july, 4, RegistrationStatus.CONFIRMED, 3000000, -125),
+    reg(tIds.july, 5, RegistrationStatus.CONFIRMED, 3000000, -125),
+    // T8
+    reg(tIds.aug, 4, RegistrationStatus.CONFIRMED, 5000000, -95),
+    reg(tIds.aug, 0, RegistrationStatus.CONFIRMED, 5000000, -95),
+    reg(tIds.aug, 6, RegistrationStatus.CONFIRMED, 5000000, -95),
+    reg(tIds.aug, 16, RegistrationStatus.DISQUALIFIED, 5000000, -95),
+    // T9
+    reg(tIds.sep, 5, RegistrationStatus.CONFIRMED, 4000000, -65),
+    reg(tIds.sep, 2, RegistrationStatus.CONFIRMED, 4000000, -65),
+    reg(tIds.sep, 9, RegistrationStatus.CONFIRMED, 4000000, -65),
+    // T10
+    reg(tIds.oct, 0, RegistrationStatus.CONFIRMED, 5000000, -32),
+    reg(tIds.oct, 2, RegistrationStatus.CONFIRMED, 5000000, -32),
+    reg(tIds.oct, 3, RegistrationStatus.CONFIRMED, 5000000, -32),
+    reg(tIds.oct, 1, RegistrationStatus.SCRATCHED_MEDICAL, 5000000, -32),
+    // T11 Closed A & B
+    reg(tIds.closedReg, 4, RegistrationStatus.CONFIRMED, 3500000, -3),
+    reg(tIds.closedReg, 6, RegistrationStatus.CONFIRMED, 3500000, -3),
+    reg(tIds.closedReg, 11, RegistrationStatus.CONFIRMED, 3500000, -3),
+    reg(tIds.closedRegB, 0, RegistrationStatus.CONFIRMED, 4000000, -2),
+    reg(tIds.closedRegB, 2, RegistrationStatus.CONFIRMED, 4000000, -2),
+    reg(tIds.closedRegB, 5, RegistrationStatus.CONFIRMED, 4000000, -2),
+    reg(tIds.closedRegB, 9, RegistrationStatus.CONFIRMED, 4000000, -2),
+    // T11 Open B, D, E
+    reg(tIds.openReg, 0, RegistrationStatus.REGISTERED, 5000000, -1),
+    reg(tIds.openReg, 3, RegistrationStatus.REGISTERED, 5000000, -1),
+    reg(tIds.openReg, 5, RegistrationStatus.REGISTERED, 5000000, 0),
+    reg(tIds.openRegB, 2, RegistrationStatus.REGISTERED, 3000000, -1),
+    reg(tIds.openRegB, 4, RegistrationStatus.REGISTERED, 3000000, -1),
+    reg(tIds.openRegB, 6, RegistrationStatus.REGISTERED, 3000000, 0),
+    reg(tIds.openRegC, 9, RegistrationStatus.REGISTERED, 4500000, 0),
+    reg(tIds.openRegC, 11, RegistrationStatus.REGISTERED, 4500000, 0),
   ];
+  await tx.tournamentRegistration.createMany({ data: registrations, skipDuplicates: true });
 
-  await tx.financialInvoice.createMany({
-    data: bills.map((b) => {
-      const billingPeriod = b.period;
-      const { boardingDays, boardingFee } = calculateBoardingFee(billingPeriod, [allocation(b.n)]);
-      const prizeCredit = new Prisma.Decimal(b.prizeCredit ?? 0);
-      const trainingFee = new Prisma.Decimal(b.trainingFee);
-      const medicalFee = new Prisma.Decimal(b.medicalFee);
-      const netAmount = boardingFee.plus(trainingFee).plus(medicalFee).minus(prizeCredit);
-      const issued = b.status !== 'DRAFT';
-      const dueDay =
-        b.status === 'OVERDUE'
-          ? b.issueDay + 7
-          : b.status === 'SENT'
-            ? b.issueDay + 14
-            : b.issueDay + 7;
-      return {
-        id: invoice(b.key),
-        horseId: horse(b.n),
-        ownerId: user(horses[b.n - 1][6]),
-        billingPeriod,
+  const makeResult = (
+    tId: string,
+    hIdx: number,
+    rank: number,
+    timeSec: number,
+    speed: number,
+    gross: number,
+    entryFee: number,
+    settledAt: Date,
+  ): Prisma.TournamentResultCreateManyInput => {
+    const trainerCut = Math.round(gross * 0.1);
+    const jockeyCut = Math.round(gross * 0.05);
+    const netOwnerPayout = Math.max(0, gross - trainerCut - jockeyCut - entryFee);
+    return {
+      id: id(`tres:${tId}:${horseIds[hIdx]}`),
+      registrationId: id(`treg:${tId}:${horseIds[hIdx]}`),
+      finalRank: rank,
+      finishTimeSeconds: timeSec,
+      avgSpeedKmh: speed,
+      prizeMoneyWon: gross,
+      grossPrize: gross,
+      trainerCut,
+      jockeyCut,
+      entryFeeDeducted: entryFee,
+      netOwnerPayout,
+      settledAt,
+      officialNotes: `Xếp hạng ${rank} chính thức từ ban trọng tài`,
+    };
+  };
+
+  await tx.tournamentResult.createMany({
+    data: [
+      makeResult(tIds.may, 0, 1, 82.6, 61.0, 40000000, 3000000, days(-174)),
+      makeResult(tIds.may, 2, 2, 83.4, 60.4, 25000000, 3000000, days(-174)),
+      makeResult(tIds.may, 4, 3, 84.5, 59.6, 10000000, 3000000, days(-174)),
+      makeResult(tIds.junA, 5, 1, 70.8, 61.0, 50000000, 3500000, days(-151)),
+      makeResult(tIds.junA, 3, 2, 71.5, 60.4, 25000000, 3500000, days(-151)),
+      makeResult(tIds.junA, 6, 3, 72.3, 59.8, 15000000, 3500000, days(-151)),
+      makeResult(tIds.junB, 4, 1, 118.2, 60.9, 60000000, 4000000, days(-134)),
+      makeResult(tIds.junB, 0, 2, 119.1, 60.4, 30000000, 4000000, days(-134)),
+      makeResult(tIds.junB, 9, 3, 120.4, 59.8, 20000000, 4000000, days(-134)),
+      makeResult(tIds.july, 0, 1, 93.4, 61.7, 50000000, 3000000, days(-114)),
+      makeResult(tIds.july, 4, 2, 94.2, 61.1, 20000000, 3000000, days(-114)),
+      makeResult(tIds.july, 5, 3, 95.1, 60.5, 10000000, 3000000, days(-114)),
+      makeResult(tIds.aug, 4, 1, 105.6, 61.4, 70000000, 5000000, days(-84)),
+      makeResult(tIds.aug, 0, 2, 106.2, 61.0, 35000000, 5000000, days(-84)),
+      makeResult(tIds.aug, 6, 3, 107.8, 60.1, 15000000, 5000000, days(-84)),
+      makeResult(tIds.sep, 5, 1, 118.4, 60.8, 60000000, 4000000, days(-54)),
+      makeResult(tIds.sep, 2, 2, 119.5, 60.2, 25000000, 4000000, days(-54)),
+      makeResult(tIds.sep, 9, 3, 120.7, 59.6, 15000000, 4000000, days(-54)),
+      makeResult(tIds.oct, 0, 1, 91.9, 62.7, 90000000, 5000000, days(-21)),
+      makeResult(tIds.oct, 2, 2, 93.0, 61.9, 40000000, 5000000, days(-21)),
+      makeResult(tIds.oct, 3, 3, 94.1, 61.2, 20000000, 5000000, days(-21)),
+    ],
+    skipDuplicates: true,
+  });
+
+  // 6-Month Financial Invoices (2026-07 .. 2026-12), using calculateBoardingFee + covering all 5 InvoiceStatus
+  const stayStart = new Date('2026-06-01T00:00:00+07:00');
+  const periods = ['2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'];
+  const invoices: Prisma.FinancialInvoiceCreateManyInput[] = [];
+
+  for (const period of periods) {
+    // Include active showcase horses across owners
+    const billedHorseIndices = [0, 1, 2, 3, 4, 5, 6, 9, 14, 15, 16];
+    for (const hIdx of billedHorseIndices) {
+      const h = HORSES[hIdx];
+      const allocs =
+        hIdx === 16
+          ? [
+              { startDate: stayStart, endDate: days(-20) },
+              { startDate: days(-20), endDate: null },
+            ]
+          : [{ startDate: stayStart, endDate: null }];
+      const { boardingDays, boardingFee } = calculateBoardingFee(period, allocs);
+
+      let status: InvoiceStatus = InvoiceStatus.PAID;
+      let medicalFee = 0;
+      let trainingFee =
+        h.status === HorseStatus.INJURED || h.status === HorseStatus.ISOLATED ? 0 : 2500000;
+      let prizeCredit = 0;
+
+      if (period === '2026-07' && hIdx === 0) prizeCredit = 39500000;
+      if (period === '2026-08' && hIdx === 4) prizeCredit = 54500000;
+      if (period === '2026-09' && hIdx === 5) prizeCredit = 47000000;
+      if (period === '2026-10' && hIdx === 0) prizeCredit = 71500000;
+
+      if (hIdx === 1 && (period === '2026-09' || period === '2026-10')) {
+        status = InvoiceStatus.OVERDUE;
+        medicalFee = 3500000;
+      } else if (
+        hIdx === 16 &&
+        (period === '2026-08' || period === '2026-09' || period === '2026-10')
+      ) {
+        status = InvoiceStatus.OVERDUE;
+        medicalFee = 1500000;
+      } else if (period === '2026-11') {
+        status = hIdx % 2 === 0 ? InvoiceStatus.SENT : InvoiceStatus.PAID;
+      } else if (period === '2026-12') {
+        status = hIdx === 15 ? InvoiceStatus.CANCELLED : InvoiceStatus.DRAFT;
+        trainingFee = status === InvoiceStatus.CANCELLED ? 0 : trainingFee;
+      }
+
+      const netAmount = boardingFee.toNumber() + medicalFee + trainingFee - prizeCredit;
+      invoices.push({
+        id: id(`inv:${period}:${h.id}`),
+        horseId: h.id,
+        ownerId: h.ownerId,
+        billingPeriod: period,
+        boardingFee,
         boardingDays,
         boardingMonthlyRate: BOARDING_MONTHLY_RATE,
-        boardingFee,
-        trainingFee,
+        dueAt: new Date(`${period}-28T17:00:00+07:00`),
         medicalFee,
+        trainingFee,
         prizeCredit,
         netAmount,
-        status: b.status,
-        dueAt: issued ? clubDateTime(dueDay, 8) : null,
-        createdAt: issued ? clubDateTime(b.issueDay, 8) : now,
-        updatedAt:
-          b.status === 'PAID'
-            ? clubDateTime(b.paidDay ?? b.issueDay + 5, 10)
-            : b.status === 'OVERDUE'
-              ? clubDateTime(dueDay + 1, 9)
-              : issued
-                ? clubDateTime(b.issueDay, 8)
-                : now,
-      };
-    }),
+        status,
+      });
+    }
+  }
+  await tx.financialInvoice.createMany({ data: invoices, skipDuplicates: true });
+}
+
+async function seedActivityAndSupport(tx: Tx) {
+  // AIInsights covering all 3 InsightType & all 4 InsightStatus
+  await tx.aIInsight.createMany({
+    data: [
+      {
+        id: id('ai:h1-applied'),
+        horseId: horseIds[0],
+        insightType: InsightType.WORKOUT_RECOMMENDATION,
+        trainingLoadIndex: 1.12,
+        riskScore: 18,
+        status: InsightStatus.APPLIED,
+        recommendationsJson: JSON.stringify({
+          summary:
+            'ACWR đạt vùng tối ưu (1.12). Khuyến nghị giữ cự ly 1600m nước rút tốc độ 62 km/h.',
+          action: 'MAINTAIN_LOAD',
+        }),
+      },
+      {
+        id: id('ai:h2-warning'),
+        horseId: horseIds[1],
+        insightType: InsightType.INJURY_RISK_WARNING,
+        trainingLoadIndex: 1.48,
+        riskScore: 76,
+        status: InsightStatus.ACKNOWLEDGED,
+        recommendationsJson: JSON.stringify({
+          summary:
+            'Tải trọng tập kết hợp dấu hiệu viêm gân chân trước phải. Duy trì Khóa Y Tế 14 ngày.',
+          action: 'HOLD_HEAVY_TRAINING',
+        }),
+      },
+      {
+        id: id('ai:h7-generated'),
+        horseId: horseIds[6],
+        insightType: InsightType.RECOVERY_ADVICE,
+        trainingLoadIndex: 1.24,
+        riskScore: 45,
+        status: InsightStatus.GENERATED,
+        recommendationsJson: JSON.stringify({
+          summary:
+            'Nhịp tim hồi phục sau 10 phút hơi chậm ở buổi gần nhất (132 bpm). Thêm 1 ngày TROT nhẹ.',
+          action: 'LIGHT_RECOVERY',
+        }),
+      },
+      {
+        id: id('ai:h5-dismissed'),
+        horseId: horseIds[4],
+        insightType: InsightType.WORKOUT_RECOMMENDATION,
+        trainingLoadIndex: 1.05,
+        riskScore: 15,
+        status: InsightStatus.DISMISSED,
+        recommendationsJson: JSON.stringify({
+          summary: 'Đề xuất tăng tốc cự ly 1800m; HLV giữ cự ly sở trường 1600m.',
+          action: 'INCREASE_DISTANCE',
+        }),
+      },
+    ],
+    skipDuplicates: true,
   });
-  const sampleOwner = user(horses[0][6]);
+
+  // OwnerAiMessages with deterministic IDs referencing canonical horse names
   await tx.ownerAiMessage.createMany({
     data: [
       {
-        ownerId: sampleOwner,
-        sender: 'USER',
-        content:
-          'Chào em, chiến mã Thunder của tôi tháng này chi phí nuôi dưỡng và giải đua thế nào?',
-        createdAt: clubDateTime(-2, 10),
+        id: id('oai:owner1:1'),
+        ownerId: userIds.owners[0],
+        sender: 'OWNER',
+        content: 'Tình hình tập luyện và giải đấu sắp tới của Bạch Long Mã thế nào?',
+        createdAt: days(-2, 10, 0),
       },
       {
-        ownerId: sampleOwner,
+        id: id('oai:owner1:2'),
+        ownerId: userIds.owners[0],
         sender: 'AI',
         content:
-          'Dạ chào anh! Chiến mã Thunder tháng này có tổng chi phí nuôi dưỡng là 15.500.000 đ và đạt thành tích xuất sắc tại Cúp Mùa Thu với tiền thưởng thực nhận +37.500.000 đ. Dưới đây là thẻ tóm tắt chi phí:',
-        cardType: 'BILLING_CARD',
-        cardData: {
-          period: '2026-10',
-          horseName: 'Thunder',
-          totalBoarding: 7000000,
-          totalFeed: 3500000,
-          totalMedical: 5000000,
-          totalRaceNet: 37500000,
-          finalBalanceDue: -22000000,
-        },
-        createdAt: clubDateTime(-2, 10, 1),
+          'Bạch Long Mã đang ở trạng thái ACTIVE với chỉ số ACWR 1.12 (vùng tối ưu), vừa vô địch Giải Vô Địch Mùa Thu và đã đăng ký Cúp Mùa Đông.',
+        cardType: 'HORSE_SUMMARY',
+        cardData: { horseCode: 'HR-000001', horseName: 'Bạch Long Mã', acwr: 1.12 },
+        createdAt: days(-2, 10, 1),
+      },
+      {
+        id: id('oai:owner1:3'),
+        ownerId: userIds.owners[0],
+        sender: 'OWNER',
+        content: 'Xích Thố khi nào dự kiến được mở Khóa Y Tế?',
+        createdAt: days(-1, 14, 0),
+      },
+      {
+        id: id('oai:owner1:4'),
+        ownerId: userIds.owners[0],
+        sender: 'AI',
+        content:
+          'Xích Thố đang điều trị viêm gân gấp nông chân trước phải (mã MLK-2026-002), lịch tái khám dự kiến sau 4 ngày nữa do BS. Phạm Minh Trí phụ trách.',
+        cardType: 'MEDICAL_STATUS',
+        cardData: { horseCode: 'HR-000002', lockCode: 'MLK-2026-002' },
+        createdAt: days(-1, 14, 1),
+      },
+      {
+        id: id('oai:owner4:1'),
+        ownerId: userIds.owners[3],
+        sender: 'OWNER',
+        content: 'Tổng dư nợ hiện tại của Dạ Nguyệt là bao nhiêu?',
+        createdAt: days(0, 9, 0),
+      },
+      {
+        id: id('oai:owner4:2'),
+        ownerId: userIds.owners[3],
+        sender: 'AI',
+        content:
+          'Dạ Nguyệt hiện có 3 kỳ hóa đơn quá hạn (T8, T9, T10/2026) và đang lưu giữ tại Khu H (STALL-H01). Bạn có thể xem chi tiết ở mục Tài chính.',
+        cardType: 'INVOICE_ALERT',
+        cardData: { horseCode: 'HR-000017', overdueMonths: ['2026-08', '2026-09', '2026-10'] },
+        createdAt: days(0, 9, 1),
       },
     ],
-  });
-}
-
-async function seedActivityAndSupport(tx: Prisma.TransactionClient) {
-  // Nonfunctional auth history: expired/revoked fixtures linked to a locked account only.
-  await tx.googleIdentity.create({ data: { subject: googleSubject, userId: user('expired') } });
-  await tx.otpCode.create({
-    data: {
-      id: permissionId,
-      email: expiredEmail,
-      purpose: 'RESET',
-      codeHash: hash('expired-seed-otp'),
-      sentAt: clubDateTime(-2, 8),
-      expiresAt: clubDateTime(-2, 8, 5),
-      resendAt: clubDateTime(-2, 8, 1),
-      attempts: 2,
-    },
-  });
-  await tx.loginAttempt.create({
-    data: {
-      email: expiredEmail,
-      fails: 5,
-      windowStart: clubDateTime(-2, 8),
-      lockedUntil: clubDateTime(-2, 8, 30),
-    },
-  });
-  await tx.resetToken.create({
-    data: { tokenHash: resetHash, email: expiredEmail, expiresAt: clubDateTime(-2, 9) },
-  });
-  await tx.refreshToken.create({
-    data: {
-      id: id('revoked-refresh'),
-      tokenHash: hash('equiflow-expired-refresh-fixture'),
-      userId: user('expired'),
-      revoked: true,
-      rotatedAt: clubDateTime(-2, 8),
-      expiresAt: clubDateTime(-1, 8),
-      createdAt: clubDateTime(-3, 8),
-    },
-  });
-  await tx.permissionRequest.create({
-    data: {
-      id: permissionId,
-      userId: user('groom'),
-      at: clubDateTime(-1, 9),
-      screen: 'Audit Log',
-      reference: `403-${clubDay(-1).slice(2, 7).replace('-', '')}-0001`,
-      status: 'OPEN',
-    },
+    skipDuplicates: true,
   });
 
-  const notices = [
-    [
-      'trainer',
-      'TRAINING',
-      'WORKOUT_SCHEDULED',
-      'Buổi chạy thử sáng nay',
-      'Bạch Long Mã tập sân cỏ lúc 08:00.',
-      '/training/calendar',
-      0,
-    ],
-    [
-      'trainer2',
-      'LOCK',
-      'MEDICAL_LOCK_CREATED',
-      'Khóa y tế đang áp dụng',
-      'Xích Thố không được tập nặng hoặc tham gia giải.',
-      '/locks',
-      -2,
-    ],
-    [
-      'vet',
-      'MEDICAL',
-      'PREVENTIVE_OVERDUE',
-      'Đã quá hạn tẩy giun',
-      'Hắc Báo cần tẩy giun và ghi kết quả chăm sóc.',
-      '/medical/preventive',
-      -1,
-    ],
-    [
-      'groom',
-      'SYSTEM',
-      'LOW_STOCK',
-      'Cỏ Timothy dưới ngưỡng',
-      'Barn 1 còn 18 kg, dưới mức tối thiểu 30 kg.',
-      '/supplies/inventory',
-      -1,
-    ],
-    [
-      'manager',
-      'SYSTEM',
-      'INCIDENT_REPORTED',
-      'Có sự cố chuồng trại mới',
-      'Cửa chuồng STALL-B04 bị kẹt chốt.',
-      '/incidents',
-      0,
-    ],
-    [
-      'owner',
-      'ACCOUNT',
-      'INVOICE_SENT',
-      'Hóa đơn lưu chuồng cần thanh toán',
-      'Hắc Báo còn công nợ lưu chuồng.',
-      `/owner/financial-reports?highlight=${invoice('overdue')}`,
-      -10,
-    ],
-  ] as const;
+  // Notifications covering all 7 NotificationCategory values
   await tx.notification.createMany({
-    data: notices.map(([recipient, category, type, title, message, link, day]) => ({
-      id: id(`notification/${recipient}/${type}`),
-      userId: user(recipient),
-      category,
-      type,
-      title,
-      message,
-      link,
-      dedupeKey: `seed-lifecycle:${recipient}:${type}`,
-      createdAt: day === 0 ? now : clubDateTime(day, 8),
-    })),
-  });
-  const events = [
-    [
-      'vet',
-      'MEDICAL_LOCK_CREATED',
-      'MedicalLock',
-      id('lock/xich'),
-      -2,
-      9,
-      { horseCode: 'HR-000002', reason: injuryReason },
-    ],
-    [
-      'vet',
-      'MEDICAL_LOCK_RELEASED',
-      'MedicalLock',
-      id('lock/bach'),
-      -30,
-      9,
-      { horseCode: 'HR-000001' },
-    ],
-    [
-      'manager',
-      'INVOICE_STATUS_CHANGED',
-      'FinancialInvoice',
-      invoice('overdue'),
-      -10,
-      8,
-      { status: 'SENT' },
-    ],
-    [
-      'manager',
-      'INVOICE_STATUS_CHANGED',
-      'FinancialInvoice',
-      invoice('sent'),
-      -2,
-      8,
-      { status: 'SENT' },
-    ],
-    [
-      'owner',
-      'INVOICE_PAID',
-      'FinancialInvoice',
-      invoice('paid'),
-      -16,
-      10,
-      { status: 'PAID', method: 'BANK_TRANSFER' },
-    ],
-    [
-      'trainer',
-      'WORKOUT_COMPLETED',
-      'WorkoutSession',
-      workout('history/bach-base/-60'),
-      -60,
-      8,
-      { averageSpeedKmh: 58, heartRatePeak: 148 },
-    ],
-    [
-      'groom2',
-      'INCIDENT_REPORTED',
-      'IncidentReport',
-      id('incident/latch'),
-      0,
-      0,
-      { status: 'REPORTED' },
-    ],
-  ] as const;
-  await tx.auditLog.createMany({
-    data: events.map(([actor, action, entityName, entityId, day, hour, details], i) => ({
-      id: id(`audit/${i}`),
-      userId: user(actor),
-      action,
-      entityName,
-      entityId,
-      newValuesJson: JSON.stringify(details),
-      timestamp: day === 0 ? now : clubDateTime(day, hour),
-    })),
-  });
-  await tx.aIInsight.createMany({
-    data: (
-      [
-        [
-          1,
-          'WORKOUT_RECOMMENDATION',
-          5.8,
-          0.15,
-          'GENERATED',
-          'Duy trì tốc độ mục tiêu 62 km/h và theo dõi nhịp tim hồi phục.',
-        ],
-        [
-          2,
-          'INJURY_RISK_WARNING',
-          0,
-          0.85,
-          'ACKNOWLEDGED',
-          'Tạm dừng bài tập nặng cho đến khi bác sĩ thú y gỡ khóa.',
-        ],
-        [
-          9,
-          'RECOVERY_ADVICE',
-          2.1,
-          0.28,
-          'APPLIED',
-          'Bơi phục hồi 20 phút, đánh giá bước đi sau tập.',
-        ],
-      ] as const
-    ).map(([n, insightType, trainingLoadIndex, riskScore, status, suggestion]) => ({
-      id: id(`insight/${n}`),
-      horseId: horse(n),
-      insightType,
-      trainingLoadIndex,
-      riskScore,
-      status,
-      recommendationsJson: JSON.stringify([suggestion]),
-      ...stamp(-1),
-    })),
-  });
-  await tx.simulatorSession.create({
-    data: {
-      id: id('sim/workout/bach'),
-      type: 'WORKOUT',
-      status: 'COMPLETED',
-      horseIds: [horse(1)],
-      actorUserId: user('trainer'),
-      workoutSessionId: workout('history/bach-base/-60'),
-      startedAt: clubDateTime(-60, 7, 15),
-      finishedAt: clubDateTime(-60, 7, 17),
-      result: {
-        horseId: horse(1),
-        distanceMeters: 1200,
-        averageSpeedKmh: 58,
-        heartRatePeak: 148,
-        finished: true,
+    data: [
+      {
+        id: id('notif:account'),
+        userId: userIds.manager,
+        type: 'ACCOUNT_PENDING',
+        category: NotificationCategory.ACCOUNT,
+        title: 'Hồ sơ tài khoản mới chờ duyệt',
+        message: 'Trương Quốc Khánh (GROOM) vừa xác thực email và đang chờ duyệt.',
+        dedupeKey: `notif:account:${yymm()}`,
       },
-      createdAt: clubDateTime(-60, 7, 15),
-      updatedAt: clubDateTime(-60, 7, 17),
-    },
+      {
+        id: id('notif:horse'),
+        userId: userIds.owners[0],
+        type: 'HORSE_STATUS_UPDATE',
+        category: NotificationCategory.HORSE,
+        title: 'Cập nhật lịch đua Bạch Long Mã',
+        message: 'Bạch Long Mã đã được đăng ký tham gia Cúp Mùa Đông EquiFlow 2026.',
+        dedupeKey: 'notif:horse:h1-cup',
+        readAt: days(-1),
+      },
+      {
+        id: id('notif:training'),
+        userId: userIds.vet,
+        type: 'ABNORMAL_WORKOUT_SIGN',
+        category: NotificationCategory.TRAINING,
+        title: 'Cảnh báo nhịp tim hồi phục Hồng Kỳ',
+        message: 'Hồng Kỳ ghi nhận nhịp tim 10 phút sau tập ở mức 132 bpm.',
+        dedupeKey: 'notif:training:h7-hr',
+      },
+      {
+        id: id('notif:lock'),
+        userId: userIds.trainer,
+        type: 'MEDICAL_LOCK_BLOCKED_SESSION',
+        category: NotificationCategory.LOCK,
+        title: 'Buổi tập tốc độ Xích Thố bị tự động chặn',
+        message: 'Buổi BREEZE bị chặn do chiến mã đang áp dụng Khóa Y Tế MLK-2026-002.',
+        dedupeKey: 'notif:lock:h2-breeze',
+      },
+      {
+        id: id('notif:medical'),
+        userId: userIds.vet2,
+        type: 'PREVENTIVE_OVERDUE',
+        category: NotificationCategory.MEDICAL,
+        title: 'Nhắc lịch gọt móng định kỳ quá hạn',
+        message: 'Chiến mã Bạch Long Mã cần được kiểm tra gọt móng trong tuần này.',
+        dedupeKey: 'notif:medical:farrier-due',
+      },
+      {
+        id: id('notif:nutrition'),
+        userId: userIds.vet,
+        type: 'NUTRITION_PENDING',
+        category: NotificationCategory.NUTRITION,
+        title: 'Thực đơn mới chờ bác sĩ phê duyệt',
+        message: 'Thực đơn NP-2026-101 cho Kim Long đang chờ duyệt.',
+        dedupeKey: 'notif:nutrition:np-101',
+      },
+      {
+        id: id('notif:system'),
+        userId: userIds.owners[3],
+        type: 'INVOICE_OVERDUE',
+        category: NotificationCategory.SYSTEM,
+        title: 'Thông báo hóa đơn lưu chuồng quá hạn',
+        message: 'Tài khoản có hóa đơn quá hạn cho Dạ Nguyệt từ kỳ 2026-08 – 2026-10.',
+        dedupeKey: 'notif:system:debt-owner4',
+      },
+    ],
+    skipDuplicates: true,
   });
+
+  // AuditLogs
+  await tx.auditLog.createMany({
+    data: [
+      {
+        id: id('audit:1'),
+        userId: userIds.vet,
+        action: 'MEDICAL_LOCK_APPLIED',
+        entityName: 'Horse',
+        entityId: horseIds[1],
+        newValuesJson: JSON.stringify({ lockCode: 'MLK-2026-002', status: 'UNDER_OBSERVATION' }),
+        timestamp: days(-10, 9, 15),
+      },
+      {
+        id: id('audit:2'),
+        userId: userIds.manager,
+        action: 'DEBT_IMPOUND_APPLIED',
+        entityName: 'Horse',
+        entityId: horseIds[16],
+        newValuesJson: JSON.stringify({
+          stall: 'STALL-H01',
+          billingPeriods: ['2026-08', '2026-09', '2026-10'],
+        }),
+        timestamp: days(-20, 14, 0),
+      },
+      {
+        id: id('audit:3'),
+        userId: userIds.manager,
+        action: 'HORSE_RETIRED_STALL_RELEASED',
+        entityName: 'StallAllocation',
+        entityId: horseIds[17],
+        newValuesJson: JSON.stringify({ horseName: 'Lão Tướng', releasedStall: 'STALL-B08' }),
+        timestamp: days(-18, 10, 0),
+      },
+      {
+        id: id('audit:4'),
+        userId: userIds.trainer,
+        action: 'TOURNAMENT_SETTLED',
+        entityName: 'Tournament',
+        entityId: id('tour:2026-10'),
+        newValuesJson: JSON.stringify({
+          code: 'CUP-2026-10',
+          winner: 'Bạch Long Mã',
+          grossPrize: 90000000,
+        }),
+        timestamp: days(-21, 17, 0),
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  // Keep Counter service sequences ahead of seeded codes so live creates never collide
+  const counterTargets: Array<[string, number]> = [
+    ['horse_code', 30],
+    ['training_plan', 30],
+    ['request_code', 20],
+    ['forbidden_ref', 10],
+  ];
+  for (const [name, minValue] of counterTargets) {
+    const existing = await tx.counter.findUnique({ where: { name } });
+    if (!existing) {
+      await tx.counter.create({ data: { name, value: minValue } });
+    } else if (existing.value < minValue) {
+      await tx.counter.update({ where: { name }, data: { value: minValue } });
+    }
+  }
 }
 
 async function main() {
-  const prisma = new PrismaClient({ datasourceUrl: demoDatabase() });
+  const prisma = new PrismaClient({ datasourceUrl: resolveDatabaseUrl() });
   try {
     const password = await bcrypt.hash('EquiFlow@2026', 10);
     await prisma.$transaction(
       async (tx) => {
-        await clearFixtures(tx);
+        if (RESET_FLAG) {
+          console.log('[seed] --reset flag detected: clearing existing fixture data...');
+          await clearFixtures(tx);
+        }
         await seedClub(tx, password);
-        await seedTraining(tx);
         await seedMedical(tx);
+        await seedTraining(tx);
         await seedStableCare(tx);
         await seedRacingAndInvoices(tx);
         await seedActivityAndSupport(tx);
       },
-      { isolationLevel: 'Serializable', timeout: 60000 },
+      { timeout: 60000 },
     );
-    console.log(`EquiFlow lifecycle fixtures ready for ${clubDay(0)} (UTC+7).`);
+
+    const modelCount = Prisma.dmmf.datamodel.models.length;
+    console.log(
+      `[seed] Canonical EquiFlow seed completed (${RESET_FLAG ? 'reset+seed' : 'idempotent'}) across all ${modelCount} Prisma models.`,
+    );
+    console.log(
+      `[seed] Period covered: ${monthOf(days(-150))}..2026-12 | 19 horses, 32 stalls, 10 active grooms, 4 vets, 4 trainers, 2 managers, 6 owners.`,
+    );
   } finally {
     await prisma.$disconnect();
   }
 }
 
-main().catch((error: unknown) => {
-  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-    console.error(
-      'Seed keys collide with existing records. Use a fresh disposable local demo database; no changes were committed.',
-    );
-  } else {
-    console.error(error instanceof Error ? error.message : 'Lifecycle seed failed.');
-  }
-  process.exitCode = 1;
+main().catch((err) => {
+  console.error('[seed] Failed:', err);
+  process.exit(1);
 });

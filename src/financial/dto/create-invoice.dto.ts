@@ -17,10 +17,13 @@ export class CreateInvoiceDto {
   @IsNotEmpty()
   horseId: string;
 
-  @ApiProperty({ description: 'ID Chủ sở hữu nhận hóa đơn', example: 'uuid-owner-123' })
+  @ApiPropertyOptional({
+    description: 'ID Chủ sở hữu nhận hóa đơn (tự động lấy từ chủ sở hữu của ngựa nếu bỏ trống)',
+    example: 'uuid-owner-123',
+  })
   @IsUUID()
-  @IsNotEmpty()
-  ownerId: string;
+  @IsOptional()
+  ownerId?: string;
 
   @ApiProperty({ description: 'Kỳ thanh toán định dạng YYYY-MM', example: '2026-10' })
   @IsString()

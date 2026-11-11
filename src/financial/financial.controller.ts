@@ -56,6 +56,15 @@ export class FinancialController {
     return this.financialService.getOwnerSummary(targetOwnerId);
   }
 
+  @Get('club-cashflow')
+  @Roles(UserRole.CLUB_MANAGER)
+  @ApiOperation({
+    summary: 'Tổng hợp Thu – Chi CLB (gồm hóa đơn Chủ ngựa & chi phí nhập vật tư DELIVERED)',
+  })
+  async getClubCashflow(@Query('billingPeriod') billingPeriod?: string) {
+    return this.financialService.getClubCashflow(billingPeriod);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Xem chi tiết một hóa đơn' })
   async findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {

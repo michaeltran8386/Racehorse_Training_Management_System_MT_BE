@@ -3,7 +3,7 @@ import { FinancialService } from './financial.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { InvoiceStatus } from '@prisma/client';
+import { InvoiceStatus, RestockStatus } from '@prisma/client';
 
 describe('FinancialService', () => {
   let service: FinancialService;
@@ -40,6 +40,9 @@ describe('FinancialService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       tournamentResult: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      restockRequest: {
         findMany: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest.fn((arg) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg))),
@@ -183,30 +186,73 @@ describe('FinancialService', () => {
   });
 
   describe('create', () => {
-    it('should correctly calculate netAmount = boarding + medical + training - prizeCredit', async () => {
+    it('should automatically calculate boarding, training, medical, prizeCredit and ignore manual fees', async () => {
+      prisma.medicalRecord = { count: jest.fn().mockResolvedValue(2) };
+      prisma.preventiveSchedule = { count: jest.fn().mockResolvedValue(1) };
+      prisma.trainingPlan = { count: jest.fn().mockResolvedValue(1) };
+      prisma.workoutSession = { count: jest.fn().mockResolvedValue(3) };
+      prisma.tournamentResult.findMany.mockResolvedValue([
+        { netOwnerPayout: 5000000, prizeMoneyWon: 6000000 },
+      ]);
+      prisma.financialInvoice.create.mockImplementation(({ data }: { data: any }) =>
+        Promise.resolve({
+          id: 'inv-1',
+          ...data,
+          horse: { name: 'Thunder' },
+          owner: { fullName: 'Owner A' },
+        }),
+      );
+
       const dto = {
         horseId: 'h-1',
         ownerId: 'o-1',
         billingPeriod: '2026-10',
-        boardingFee: 6000000,
-        medicalFee: 2000000,
-        trainingFee: 4000000,
-        prizeCredit: 5000000,
+        boardingFee: 999,
+        medicalFee: 999,
+        trainingFee: 999,
+        prizeCredit: 999,
       };
       const user = { id: 'u-mgr', name: 'Manager', role: 'CLUB_MANAGER' };
 
-      prisma.financialInvoice.create.mockResolvedValue({
-        id: 'inv-1',
-        ...dto,
-        netAmount: 7000000,
-        status: InvoiceStatus.DRAFT,
-        horse: { name: 'Thunder' },
-        owner: { fullName: 'Owner A' },
-      });
-
       const res = await service.create(dto, user);
-      expect(res.netAmount).toBe(7000000);
+      expect(res.boardingFee).toBe(6000000);
+      expect(res.medicalFee).toBe(1000000);
+      expect(res.trainingFee).toBe(4000000);
+      expect(res.prizeCredit).toBe(5000000);
+      expect(res.netAmount).toBe(6000000);
       expect(audit.record).toHaveBeenCalled();
+    });
+
+    it('should derive ownerId from horse record and default optional fees to zero when horse had no stay or events', async () => {
+      prisma.stallAllocation.findMany.mockResolvedValue([]);
+      prisma.horse.findUnique = jest.fn().mockResolvedValue({
+        id: 'h-1',
+        ownerId: 'o-derived',
+        name: 'Comet',
+        status: 'ACTIVE',
+      });
+      prisma.medicalRecord = { count: jest.fn().mockResolvedValue(0) };
+      prisma.preventiveSchedule = { count: jest.fn().mockResolvedValue(0) };
+      prisma.trainingPlan = { count: jest.fn().mockResolvedValue(0) };
+      prisma.workoutSession = { count: jest.fn().mockResolvedValue(0) };
+      prisma.tournamentResult.findMany.mockResolvedValue([]);
+      prisma.financialInvoice.create.mockImplementation(({ data }: { data: any }) =>
+        Promise.resolve({
+          id: 'inv-2',
+          ...data,
+          horse: { name: 'Comet' },
+          owner: { fullName: 'Owner Derived' },
+        }),
+      );
+
+      const user = { id: 'u-mgr', name: 'Manager', role: 'CLUB_MANAGER' };
+      const res = await service.create({ horseId: 'h-1', billingPeriod: '2026-10' }, user);
+      expect(res.ownerId).toBe('o-derived');
+      expect(res.boardingFee).toBe(0);
+      expect(res.medicalFee).toBe(0);
+      expect(res.trainingFee).toBe(0);
+      expect(res.prizeCredit).toBe(0);
+      expect(res.netAmount).toBe(0);
     });
   });
 
@@ -528,6 +574,205 @@ describe('FinancialService', () => {
         expect.any(String),
         'o-1',
         expect.anything(),
+      );
+    });
+
+    it('should release horse impound and owner bad debt when an OVERDUE invoice is CANCELLED', async () => {
+      const mgr = { id: 'u-mgr', name: 'Manager', role: 'CLUB_MANAGER' };
+      const invoice = {
+        id: 'inv-od-cancel',
+        horseId: 'h-1',
+        ownerId: 'o-1',
+        status: InvoiceStatus.OVERDUE,
+        netAmount: 3000000,
+        boardingFee: 3000000,
+        medicalFee: 0,
+        trainingFee: 0,
+        prizeCredit: 0,
+        billingPeriod: '2026-10',
+        horse: { name: 'Thunder' },
+      };
+
+      prisma.financialInvoice.findUnique.mockResolvedValue(invoice);
+      prisma.financialInvoice.update.mockResolvedValue({
+        ...invoice,
+        status: InvoiceStatus.CANCELLED,
+      });
+      prisma.financialInvoice.count.mockResolvedValue(0);
+
+      const res = await service.changeStatus('inv-od-cancel', InvoiceStatus.CANCELLED, mgr);
+
+      expect(res.status).toBe(InvoiceStatus.CANCELLED);
+      expect(prisma.horse.update).toHaveBeenCalledWith({
+        where: { id: 'h-1' },
+        data: {
+          isDebtImpounded: false,
+          debtImpoundedAt: null,
+          debtImpoundReason: null,
+        },
+      });
+    });
+  });
+
+  describe('invoice workflow guards & club cashflow', () => {
+    it('should reject fee edits on non-DRAFT invoices', async () => {
+      const mgr = { id: 'u-mgr', name: 'Manager', role: 'CLUB_MANAGER' };
+      prisma.financialInvoice.findUnique.mockResolvedValue({
+        id: 'inv-sent',
+        status: InvoiceStatus.SENT,
+        boardingFee: 6000000,
+        medicalFee: 0,
+        trainingFee: 4000000,
+        prizeCredit: 0,
+        billingPeriod: '2026-10',
+      });
+
+      await expect(service.update('inv-sent', { medicalFee: 500000 }, mgr)).rejects.toThrow(
+        'Only DRAFT invoices can have service fees edited.',
+      );
+    });
+
+    it('should reject duplicate manual invoice creation when non-cancelled statement exists for period', async () => {
+      const mgr = { id: 'u-mgr', name: 'Manager', role: 'CLUB_MANAGER' };
+      prisma.financialInvoice.findFirst.mockResolvedValue({ id: 'inv-existing' });
+
+      await expect(
+        service.create(
+          {
+            horseId: '11111111-1111-4111-8111-111111111111',
+            ownerId: '22222222-2222-4222-8222-222222222222',
+            billingPeriod: '2026-10',
+            medicalFee: 500000,
+          },
+          mgr,
+        ),
+      ).rejects.toThrow('An active statement already exists for this horse in period 2026-10.');
+    });
+
+    it('should separate paid revenue, receivables, draft invoices, delivered supply imports, and surplus payouts in getClubCashflow', async () => {
+      prisma.financialInvoice.findMany.mockResolvedValue([
+        {
+          id: 'inv-paid',
+          billingPeriod: '2026-10',
+          boardingFee: 6000000,
+          medicalFee: 1000000,
+          trainingFee: 4000000,
+          prizeCredit: 0,
+          netAmount: 11000000,
+          status: InvoiceStatus.PAID,
+          horse: { id: 'h-1', name: 'A', horseCode: 'HR-01', breed: 'Thoroughbred' },
+          owner: { id: 'o-1', fullName: 'Owner 1', email: 'o1@test.com' },
+        },
+        {
+          id: 'inv-sent',
+          billingPeriod: '2026-10',
+          boardingFee: 6000000,
+          medicalFee: 0,
+          trainingFee: 4000000,
+          prizeCredit: 0,
+          netAmount: 10000000,
+          status: InvoiceStatus.SENT,
+          horse: { id: 'h-2', name: 'B', horseCode: 'HR-02', breed: 'Thoroughbred' },
+          owner: { id: 'o-1', fullName: 'Owner 1', email: 'o1@test.com' },
+        },
+        {
+          id: 'inv-surplus',
+          billingPeriod: '2026-10',
+          boardingFee: 6000000,
+          medicalFee: 0,
+          trainingFee: 4000000,
+          prizeCredit: 15000000,
+          netAmount: -5000000,
+          status: InvoiceStatus.SENT,
+          horse: { id: 'h-3', name: 'C', horseCode: 'HR-03', breed: 'Thoroughbred' },
+          owner: { id: 'o-2', fullName: 'Owner 2', email: 'o2@test.com' },
+        },
+        {
+          id: 'inv-draft',
+          billingPeriod: '2026-10',
+          boardingFee: 6000000,
+          medicalFee: 0,
+          trainingFee: 4000000,
+          prizeCredit: 0,
+          netAmount: 10000000,
+          status: InvoiceStatus.DRAFT,
+          horse: { id: 'h-4', name: 'D', horseCode: 'HR-04', breed: 'Thoroughbred' },
+          owner: { id: 'o-2', fullName: 'Owner 2', email: 'o2@test.com' },
+        },
+        {
+          id: 'inv-cancelled',
+          billingPeriod: '2026-10',
+          boardingFee: 6000000,
+          medicalFee: 0,
+          trainingFee: 4000000,
+          prizeCredit: 0,
+          netAmount: 10000000,
+          status: InvoiceStatus.CANCELLED,
+          horse: { id: 'h-5', name: 'E', horseCode: 'HR-05', breed: 'Thoroughbred' },
+          owner: { id: 'o-2', fullName: 'Owner 2', email: 'o2@test.com' },
+        },
+      ]);
+
+      prisma.restockRequest.findMany.mockResolvedValue([
+        {
+          id: 'req-10',
+          requestNumber: 'REQ-SUP-004',
+          status: RestockStatus.DELIVERED,
+          approvedQuantity: 300,
+          requestedQuantity: 300,
+          deliveredAt: new Date('2026-10-15T10:00:00+07:00'),
+          supplyId: 's-oats',
+          supply: {
+            id: 's-oats',
+            code: 'OATS',
+            name: 'Cám yến mạch',
+            unit: 'KG',
+            category: 'FEED_GRAIN',
+            unitPrice: 24000,
+          },
+          zone: { id: 'z-a', code: 'A', name: 'Khu A' },
+          requestedBy: { id: 'g-1', fullName: 'Groom 1' },
+        },
+        {
+          id: 'req-11',
+          requestNumber: 'REQ-SUP-009',
+          status: RestockStatus.DELIVERED,
+          approvedQuantity: 10,
+          requestedQuantity: 10,
+          deliveredAt: new Date('2026-11-05T10:00:00+07:00'),
+          supplyId: 's-elec',
+          supply: {
+            id: 's-elec',
+            code: 'ELECTROLYTE',
+            name: 'Điện giải',
+            unit: 'PACKET',
+            category: 'SUPPLEMENT_ELECTROLYTE',
+            unitPrice: 45000,
+          },
+          zone: { id: 'z-b', code: 'B', name: 'Khu B' },
+          requestedBy: { id: 'g-2', fullName: 'Groom 2' },
+        },
+      ]);
+
+      const oct = await service.getClubCashflow('2026-10');
+
+      expect(oct.periods).toEqual(['2026-11', '2026-10']);
+      expect(oct.summary.actualRevenuePaid).toBe(11000000);
+      expect(oct.summary.pendingReceivable).toBe(10000000);
+      expect(oct.summary.draftBillingTotal).toBe(10000000);
+      expect(oct.summary.supplyImportExpense).toBe(7200000);
+      expect(oct.summary.ownerSurplusPayoutExpense).toBe(5000000);
+      expect(oct.summary.totalActualExpense).toBe(12200000);
+      expect(oct.summary.netCashflow).toBe(-1200000);
+      expect(oct.summary.deliveredRestockCount).toBe(1);
+      expect(oct.supplyExpenses[0]).toEqual(
+        expect.objectContaining({
+          requestNumber: 'REQ-SUP-004',
+          supplyCode: 'OATS',
+          quantity: 300,
+          unitPrice: 24000,
+          totalCost: 7200000,
+        }),
       );
     });
   });

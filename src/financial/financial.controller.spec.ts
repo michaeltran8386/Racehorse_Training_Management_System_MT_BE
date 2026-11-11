@@ -30,4 +30,14 @@ describe('FinancialController owner summary scope', () => {
       UserRole.HORSE_OWNER,
     ]);
   });
+
+  it('restricts club-cashflow access strictly to CLUB_MANAGER and delegates period filter', async () => {
+    expect(Reflect.getMetadata(ROLES_KEY, FinancialController.prototype.getClubCashflow)).toEqual([
+      UserRole.CLUB_MANAGER,
+    ]);
+    const getClubCashflow = jest.fn().mockResolvedValue({ billingPeriod: '2026-10' });
+    const controller = new FinancialController({ getClubCashflow } as unknown as FinancialService);
+    await controller.getClubCashflow('2026-10');
+    expect(getClubCashflow).toHaveBeenCalledWith('2026-10');
+  });
 });
