@@ -314,73 +314,80 @@ export class PreventiveCareService {
     delete baseWhere.lastCompletedDate;
     delete baseWhere.completedDate;
 
-    const [total, overdueCount, upcoming7DaysCount, upcoming30DaysCount, completedCount, noDataCount, schedules] =
-      await Promise.all([
-        this.prisma.preventiveSchedule.count({ where }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: { lt: startOfTodayClub },
-            status: { not: PreventiveStatus.COMPLETED },
+    const [
+      total,
+      overdueCount,
+      upcoming7DaysCount,
+      upcoming30DaysCount,
+      completedCount,
+      noDataCount,
+      schedules,
+    ] = await Promise.all([
+      this.prisma.preventiveSchedule.count({ where }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: { lt: startOfTodayClub },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: {
+            gte: startOfTodayClub,
+            lte: new Date(endOfTodayClub.getTime() + 7 * 24 * 60 * 60 * 1000),
           },
-        }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: {
-              gte: startOfTodayClub,
-              lte: new Date(endOfTodayClub.getTime() + 7 * 24 * 60 * 60 * 1000),
-            },
-            status: { not: PreventiveStatus.COMPLETED },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          dueDate: {
+            gte: startOfTodayClub,
+            lte: new Date(endOfTodayClub.getTime() + 30 * 24 * 60 * 60 * 1000),
           },
-        }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            dueDate: {
-              gte: startOfTodayClub,
-              lte: new Date(endOfTodayClub.getTime() + 30 * 24 * 60 * 60 * 1000),
-            },
-            status: { not: PreventiveStatus.COMPLETED },
-          },
-        }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            status: PreventiveStatus.COMPLETED,
-          },
-        }),
-        this.prisma.preventiveSchedule.count({
-          where: {
-            ...baseWhere,
-            status: { not: PreventiveStatus.COMPLETED },
-            lastCompletedDate: null,
-            completedDate: null,
-          },
-        }),
-        this.prisma.preventiveSchedule.findMany({
-          where,
-          skip,
-          take,
-          orderBy: { dueDate: 'asc' },
-          include: {
-            horse: {
-              select: {
-                id: true,
-                name: true,
-                microchipRfid: true,
-                status: true,
-                stallAllocations: {
-                  where: { isActive: true },
-                  select: { stall: { select: { code: true, zone: true } } },
-                },
+          status: { not: PreventiveStatus.COMPLETED },
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          status: PreventiveStatus.COMPLETED,
+        },
+      }),
+      this.prisma.preventiveSchedule.count({
+        where: {
+          ...baseWhere,
+          status: { not: PreventiveStatus.COMPLETED },
+          lastCompletedDate: null,
+          completedDate: null,
+        },
+      }),
+      this.prisma.preventiveSchedule.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { dueDate: 'asc' },
+        include: {
+          horse: {
+            select: {
+              id: true,
+              name: true,
+              microchipRfid: true,
+              status: true,
+              stallAllocations: {
+                where: { isActive: true },
+                select: { stall: { select: { code: true, zone: true } } },
               },
             },
-            typeCatalog: true,
-            veterinarian: { select: { id: true, fullName: true, email: true } },
           },
-        }),
-      ]);
+          typeCatalog: true,
+          veterinarian: { select: { id: true, fullName: true, email: true } },
+        },
+      }),
+    ]);
 
     const mapped = schedules.map((sch) => {
       const noticeDays = sch.typeCatalog?.advanceNoticeDays || 7;
