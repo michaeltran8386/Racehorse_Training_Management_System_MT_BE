@@ -57,7 +57,12 @@ describe('HorsesService', () => {
         delete: jest.fn(),
       },
       user: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'owner-1', isBadDebtFlagged: false }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'owner-1',
+          role: Role.HORSE_OWNER,
+          status: UserStatus.ACTIVE,
+          isBadDebtFlagged: false,
+        }),
       },
       stallAllocation: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -264,7 +269,12 @@ describe('HorsesService', () => {
 
     it('should reject creating horse for an owner flagged with bad debt', async () => {
       prisma.horse.findFirst.mockResolvedValue(null);
-      prisma.user.findUnique.mockResolvedValue({ id: 'bad-owner', isBadDebtFlagged: true });
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'bad-owner',
+        role: Role.HORSE_OWNER,
+        status: UserStatus.ACTIVE,
+        isBadDebtFlagged: true,
+      });
 
       await expect(
         service.create(
@@ -282,6 +292,62 @@ describe('HorsesService', () => {
         ),
       ).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'OWNER_BAD_DEBT' }),
+      });
+    });
+
+    it('should reject creating horse if owner has invalid role (INVALID_OWNER_ROLE)', async () => {
+      prisma.horse.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'not-an-owner',
+        role: Role.GROOM,
+        status: UserStatus.ACTIVE,
+        isBadDebtFlagged: false,
+      });
+
+      await expect(
+        service.create(
+          {
+            name: 'New Horse',
+            breed: 'Thoroughbred',
+            dob: '2021-01-01',
+            weightKg: 490,
+            gender: 'Colt',
+            color: 'Bay',
+            microchip: '123456789012346',
+            ownerId: 'not-an-owner',
+          },
+          mockManager,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'INVALID_OWNER_ROLE' }),
+      });
+    });
+
+    it('should reject creating horse if owner is inactive (OWNER_INACTIVE)', async () => {
+      prisma.horse.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'inactive-owner',
+        role: Role.HORSE_OWNER,
+        status: UserStatus.INACTIVE,
+        isBadDebtFlagged: false,
+      });
+
+      await expect(
+        service.create(
+          {
+            name: 'New Horse',
+            breed: 'Thoroughbred',
+            dob: '2021-01-01',
+            weightKg: 490,
+            gender: 'Colt',
+            color: 'Bay',
+            microchip: '123456789012346',
+            ownerId: 'inactive-owner',
+          },
+          mockManager,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'OWNER_INACTIVE' }),
       });
     });
 

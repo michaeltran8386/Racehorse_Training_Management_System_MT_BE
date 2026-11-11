@@ -58,14 +58,14 @@ export class CreateHorseDto {
     description: 'Microchip number (exactly 15 digits ISO standard)',
     example: '985141002341001',
   })
-  @IsNotEmpty({ message: 'Số vi mạch (microchip) là bắt buộc.' })
-  @IsString({ message: 'Số vi mạch phải là chuỗi ký tự.' })
+  @IsNotEmpty({ message: 'Microchip number is required.' })
+  @IsString({ message: 'Microchip number must be a string.' })
   @Matches(/^\d{15}$/, { message: 'Microchip number must consist of exactly 15 digits.' })
   microchip: string;
 
   @ApiProperty({ description: 'Owner User ID' })
-  @IsNotEmpty({ message: 'Vui lòng chọn chủ sở hữu cho ngựa.' })
-  @IsString({ message: 'Mã chủ sở hữu phải là chuỗi.' })
+  @IsNotEmpty({ message: 'Owner ID is required.' })
+  @IsString({ message: 'Owner ID must be a string.' })
   ownerId: string;
 
   @ApiPropertyOptional({ description: 'Avatar URL' })
@@ -74,8 +74,8 @@ export class CreateHorseDto {
   avatarUrl?: string;
 
   @ApiProperty({ description: 'Weight in kg (> 0)', example: 485.5 })
-  @IsNumber({}, { message: 'Cân nặng phải là số.' })
-  @Min(0.01, { message: 'Cân nặng phải lớn hơn 0 kg.' })
+  @IsNumber({}, { message: 'Weight must be a number.' })
+  @Min(0.01, { message: 'Weight must be greater than 0 kg.' })
   weightKg: number;
 
   @ApiPropertyOptional({ description: 'Initial Stall ID' })

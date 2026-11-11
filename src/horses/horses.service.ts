@@ -205,22 +205,32 @@ export class HorsesService {
       throw apiError(
         HttpStatus.BAD_REQUEST,
         'OWNER_REQUIRED',
-        'Vui lòng chọn chủ sở hữu cho ngựa. Hệ thống không tạo ngựa không có người sở hữu.',
+        'Owner is required to register a horse.',
       );
     }
     const owner = await this.prisma.user.findUnique({ where: { id: dto.ownerId } });
     if (!owner) {
+      throw apiError(HttpStatus.NOT_FOUND, 'OWNER_NOT_FOUND', 'Selected owner does not exist.');
+    }
+    if (owner.role !== Role.HORSE_OWNER) {
       throw apiError(
-        HttpStatus.NOT_FOUND,
-        'OWNER_NOT_FOUND',
-        'Không tìm thấy thông tin chủ ngựa đã chọn.',
+        HttpStatus.BAD_REQUEST,
+        'INVALID_OWNER_ROLE',
+        'The specified owner account must have the HORSE_OWNER role.',
+      );
+    }
+    if (owner.status && owner.status !== UserStatus.ACTIVE) {
+      throw apiError(
+        HttpStatus.BAD_REQUEST,
+        'OWNER_INACTIVE',
+        'The selected owner account is not active.',
       );
     }
     if (owner.isBadDebtFlagged) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
         'OWNER_BAD_DEBT',
-        'Chủ ngựa đang bị đánh dấu nợ xấu do quá hạn thanh toán. Không thể đăng ký thêm ngựa mới cho chủ ngựa này.',
+        'The selected owner is flagged with bad debt due to overdue payments. Cannot register new horses for this owner.',
       );
     }
 
