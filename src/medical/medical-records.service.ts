@@ -490,41 +490,84 @@ export class MedicalRecordsService {
       dataToUpdate.labTests = dto.labTests.length > 0 ? JSON.stringify(dto.labTests) : null;
     }
     if (dto.examinationDate) {
-      dataToUpdate.examinationDate = new Date(dto.examinationDate);
+      const examDate = new Date(dto.examinationDate);
+      const now = new Date();
+      if (examDate > now) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'DATE_IN_FUTURE',
+          'The examination date cannot be in the future.',
+        );
+      }
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      if (examDate < thirtyDaysAgo) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'DATE_TOO_OLD',
+          'The examination date cannot be more than 30 days ago.',
+        );
+      }
+      dataToUpdate.examinationDate = examDate;
     }
 
-    const updated = await this.prisma.medicalRecord.update({
-      where: { id },
-      data: dataToUpdate,
-      include: {
-        horse: true,
-        veterinarian: true,
-        injuries: true,
-      },
-    });
+    const updated = await this.prisma.$transaction(async (tx) => {
+      let horseUpdateNeeded = false;
+      let targetHorse: any = null;
 
-    if (record.status === 'OPEN' && dataToUpdate.recommendedHorseStatus) {
-      const horse = await this.prisma.horse.findUnique({
-        where: { id: record.horseId },
-        select: { id: true, name: true, status: true },
+      if (record.status === 'OPEN' && dataToUpdate.recommendedHorseStatus) {
+        targetHorse = await tx.horse.findUnique({
+          where: { id: record.horseId },
+          select: { id: true, name: true, status: true, isMedicalLocked: true },
+        });
+
+        if (targetHorse && targetHorse.status !== dataToUpdate.recommendedHorseStatus) {
+          if (targetHorse.status === HorseStatus.RETIRED) {
+            throw apiError(
+              HttpStatus.BAD_REQUEST,
+              'HORSE_RETIRED',
+              'The horse is no longer managed by the club; its status cannot change.',
+            );
+          }
+
+          assertStatusTransition({
+            role: actor.role,
+            from: targetHorse.status,
+            to: dataToUpdate.recommendedHorseStatus,
+            isMedicalLocked: targetHorse.isMedicalLocked,
+            reason: `Cập nhật từ bệnh án #${record.recordNumber || record.id}`,
+          });
+
+          horseUpdateNeeded = true;
+        }
+      }
+
+      const updatedRecord = await tx.medicalRecord.update({
+        where: { id },
+        data: dataToUpdate,
+        include: {
+          horse: true,
+          veterinarian: true,
+          injuries: true,
+        },
       });
-      if (
-        horse &&
-        horse.status !== dataToUpdate.recommendedHorseStatus &&
-        horse.status !== HorseStatus.RETIRED
-      ) {
-        await this.prisma.horse.update({
+
+      if (horseUpdateNeeded && targetHorse) {
+        await tx.horse.update({
           where: { id: record.horseId },
           data: { status: dataToUpdate.recommendedHorseStatus },
         });
-
-        await this.audit.record(
-          { id: actor.userId, name: actor.fullName },
-          'HORSE_STATUS_CHANGED',
-          `Changed status of horse ${horse.name} from ${horse.status} to ${dataToUpdate.recommendedHorseStatus}. Reason: Cập nhật từ bệnh án #${record.recordNumber || record.id}`,
-          record.horseId,
-        );
       }
+
+      return { updatedRecord, horseUpdateNeeded, targetHorse };
+    });
+
+    if (updated.horseUpdateNeeded && updated.targetHorse) {
+      await this.audit.record(
+        { id: actor.userId, name: actor.fullName },
+        'HORSE_STATUS_CHANGED',
+        `Changed status of horse ${updated.targetHorse.name} from ${updated.targetHorse.status} to ${dataToUpdate.recommendedHorseStatus}. Reason: Cập nhật từ bệnh án #${record.recordNumber || record.id}`,
+        record.horseId,
+      );
     }
 
     await this.audit.record(
@@ -535,7 +578,7 @@ export class MedicalRecordsService {
       { entityName: 'MedicalRecord' },
     );
 
-    return updated;
+    return updated.updatedRecord;
   }
 
   async deleteMedicalRecord(id: string, actor: CurrentUserPayload) {
