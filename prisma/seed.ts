@@ -3334,6 +3334,8 @@ async function seedActivityAndSupport(tx: Tx) {
         category: NotificationCategory.ACCOUNT,
         title: 'Hồ sơ tài khoản mới chờ duyệt',
         message: 'Trương Quốc Khánh (GROOM) vừa xác thực email và đang chờ duyệt.',
+        link: '/accounts?highlight=REQ-GROOM-001',
+        params: { requestCode: 'REQ-GROOM-001' },
         dedupeKey: `notif:account:${yymm()}`,
       },
       {
@@ -3343,6 +3345,8 @@ async function seedActivityAndSupport(tx: Tx) {
         category: NotificationCategory.HORSE,
         title: 'Cập nhật lịch đua Bạch Long Mã',
         message: 'Bạch Long Mã đã được đăng ký tham gia Cúp Mùa Đông EquiFlow 2026.',
+        link: '/horses?highlight=HR-000001',
+        params: { horseCode: 'HR-000001' },
         dedupeKey: 'notif:horse:h1-cup',
         readAt: days(-1),
       },
@@ -3353,6 +3357,8 @@ async function seedActivityAndSupport(tx: Tx) {
         category: NotificationCategory.TRAINING,
         title: 'Cảnh báo nhịp tim hồi phục Hồng Kỳ',
         message: 'Hồng Kỳ ghi nhận nhịp tim 10 phút sau tập ở mức 132 bpm.',
+        link: '/training/overview?highlight=HR-000007',
+        params: { horseCode: 'HR-000007' },
         dedupeKey: 'notif:training:h7-hr',
       },
       {
@@ -3362,6 +3368,8 @@ async function seedActivityAndSupport(tx: Tx) {
         category: NotificationCategory.LOCK,
         title: 'Buổi tập tốc độ Xích Thố bị tự động chặn',
         message: 'Buổi BREEZE bị chặn do chiến mã đang áp dụng Khóa Y Tế MLK-2026-002.',
+        link: '/locks?highlight=MLK-2026-002',
+        params: { lockCode: 'MLK-2026-002' },
         dedupeKey: 'notif:lock:h2-breeze',
       },
       {
@@ -3371,6 +3379,8 @@ async function seedActivityAndSupport(tx: Tx) {
         category: NotificationCategory.MEDICAL,
         title: 'Nhắc lịch gọt móng định kỳ quá hạn',
         message: 'Chiến mã Bạch Long Mã cần được kiểm tra gọt móng trong tuần này.',
+        link: '/vaccine?highlight=HR-000001',
+        params: { horseCode: 'HR-000001' },
         dedupeKey: 'notif:medical:farrier-due',
       },
       {
@@ -3380,6 +3390,8 @@ async function seedActivityAndSupport(tx: Tx) {
         category: NotificationCategory.NUTRITION,
         title: 'Thực đơn mới chờ bác sĩ phê duyệt',
         message: 'Thực đơn NP-2026-101 cho Kim Long đang chờ duyệt.',
+        link: '/rations?highlight=NP-2026-101',
+        params: { planCode: 'NP-2026-101' },
         dedupeKey: 'notif:nutrition:np-101',
       },
       {
@@ -3389,6 +3401,8 @@ async function seedActivityAndSupport(tx: Tx) {
         category: NotificationCategory.SYSTEM,
         title: 'Thông báo hóa đơn lưu chuồng quá hạn',
         message: 'Tài khoản có hóa đơn quá hạn cho Dạ Nguyệt từ kỳ 2026-08 – 2026-10.',
+        link: '/billing?highlight=INV-2026-004',
+        params: { invoiceNumber: 'INV-2026-004' },
         dedupeKey: 'notif:system:debt-owner4',
       },
     ],
