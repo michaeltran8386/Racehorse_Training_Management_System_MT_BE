@@ -1129,6 +1129,7 @@ export class WorkoutsService {
     horseId?: string,
     dateStr?: string,
     timeStr?: string,
+    excludeWorkoutId?: string,
   ): Promise<
     Array<{
       id: string;
@@ -1208,11 +1209,12 @@ export class WorkoutsService {
       !isNaN(targetDateTime.getTime()) &&
       this.prisma.workoutSession?.findMany
     ) {
-      // 1. Tìm các groom bị trùng buổi tập khác trong khoảng ±30 phút
+      // 1. Tìm các groom bị trùng buổi tập khác trong khoảng ±30 phút (loại trừ buổi tập đang sửa)
       const overlap = GROOM_OVERLAP_MINUTES * 60 * 1000;
       const workouts = await this.prisma.workoutSession.findMany({
         where: {
           status: { not: WorkoutStatus.CANCELLED },
+          ...(excludeWorkoutId ? { id: { not: excludeWorkoutId } } : {}),
           scheduledDate: {
             gt: new Date(targetDateTime.getTime() - overlap),
             lt: new Date(targetDateTime.getTime() + overlap),
@@ -1254,8 +1256,6 @@ export class WorkoutsService {
 
       if (hasRoster && shifts) {
         shiftInfo = shifts.map((s) => `${s.name} (${s.startTime}-${s.endTime})`).join(', ');
-      } else {
-        shiftInfo = 'Không có ca trực (Tự do)';
       }
 
       if (targetDateTime && !isNaN(targetDateTime.getTime())) {

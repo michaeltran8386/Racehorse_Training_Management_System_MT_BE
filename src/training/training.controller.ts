@@ -179,8 +179,9 @@ export class TrainingController {
     @Query('horseId') horseId?: string,
     @Query('date') date?: string,
     @Query('time') time?: string,
+    @Query('excludeWorkoutId') excludeWorkoutId?: string,
   ) {
-    return this.workouts.findGrooms(horseId, date, time);
+    return this.workouts.findGrooms(horseId, date, time, excludeWorkoutId);
   }
 
   @Post('plans/:id/workouts')

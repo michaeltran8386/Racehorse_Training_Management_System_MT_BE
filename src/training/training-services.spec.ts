@@ -822,6 +822,24 @@ describe('TrainingService (Flow 2 & RULE-MED-01)', () => {
       expect(morningIds).toContain('groom-free');
       expect(morningIds).not.toContain('groom-evening');
     });
+
+    it('does not filter out a groom when the overlapping workout is the one being edited (excludeWorkoutId)', async () => {
+      const gCurrent = { id: 'groom-current', fullName: 'Current Guy', email: 'current@club.vn' };
+      prisma.user.findMany.mockResolvedValue([gCurrent]);
+      (prisma as any).stallAllocation = { findFirst: jest.fn().mockResolvedValue(null) };
+      (prisma as any).shiftRoster = { findMany: jest.fn().mockResolvedValue([]) };
+      (prisma as any).workoutSession = {
+        findMany: jest.fn().mockImplementation((args) => {
+          if (args.where?.id?.not === 'workout-editing') {
+            return Promise.resolve([]);
+          }
+          return Promise.resolve([{ assignedStaffUserId: 'groom-current' }]);
+        }),
+      };
+
+      const result = await workouts.findGrooms('horse-1', '2026-11-15', '06:30', 'workout-editing');
+      expect(result.map((g) => g.id)).toContain('groom-current');
+    });
   });
 
   describe('restoreWorkout (DL-2.07)', () => {
