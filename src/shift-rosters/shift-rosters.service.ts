@@ -1,9 +1,10 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Optional } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
+import { DailyTasksService } from '../daily-tasks/daily-tasks.service';
 import {
   AssignShiftRosterDto,
   CopyWeekRosterDto,
@@ -30,6 +31,7 @@ export class ShiftRostersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    @Optional() private readonly dailyTasks?: DailyTasksService,
   ) {}
 
   /**
@@ -287,6 +289,12 @@ export class ShiftRostersService {
       },
     );
 
+    if (this.dailyTasks?.syncTasksForDateZones) {
+      await this.dailyTasks
+        .syncTasksForDateZones(targetDates.map((date) => ({ date, zoneId: dto.zoneId })))
+        .catch(() => {});
+    }
+
     return {
       success: true,
       affectedDatesCount: targetDates.length,
@@ -316,6 +324,12 @@ export class ShiftRostersService {
       id,
       { entityName: 'ShiftRoster' },
     );
+
+    if (this.dailyTasks?.syncTasksForDateZones) {
+      await this.dailyTasks
+        .syncTasksForDateZones([{ date: existing.date, zoneId: existing.zoneId }])
+        .catch(() => {});
+    }
 
     return { success: true };
   }
@@ -373,6 +387,7 @@ export class ShiftRostersService {
     const diffDays = Math.round(
       (targetMonday.getTime() - sourceMonday.getTime()) / (1000 * 60 * 60 * 24),
     );
+    const syncTargets: Array<{ date: Date; zoneId?: string }> = [];
 
     await this.prisma.$transaction(async (tx) => {
       // Nếu chọn ghi đè: xóa toàn bộ phân ca của tuần đích
@@ -385,6 +400,11 @@ export class ShiftRostersService {
             },
           },
         });
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(targetMonday);
+          d.setUTCDate(targetMonday.getUTCDate() + i);
+          syncTargets.push({ date: d });
+        }
       }
 
       for (const s of sourceRosters) {
@@ -410,6 +430,7 @@ export class ShiftRostersService {
           if (exists) {
             continue;
           }
+          syncTargets.push({ date: newDate, zoneId: s.zoneId });
         }
 
         await tx.shiftRoster.create({
@@ -442,6 +463,10 @@ export class ShiftRostersService {
         },
       },
     );
+
+    if (syncTargets.length > 0 && this.dailyTasks?.syncTasksForDateZones) {
+      await this.dailyTasks.syncTasksForDateZones(syncTargets).catch(() => {});
+    }
 
     return {
       copiedCount,

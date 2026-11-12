@@ -117,6 +117,45 @@ function mealDescription(meal: any): string {
     : 'Cho ăn theo khẩu phần chuẩn.';
 }
 
+const UNIT_VI_MAP: Record<string, string> = {
+  VIAL: 'lọ',
+  PILL: 'viên',
+  TABLET: 'viên',
+  TABLETS: 'viên',
+  BOTTLE: 'chai',
+  PACKET: 'gói',
+  SACHET: 'gói',
+  SACHETS: 'gói',
+  LITER: 'lít',
+  ML: 'ml',
+  MG: 'mg',
+  G: 'g',
+  KG: 'kg',
+  PIECE: 'cái',
+  SET: 'bộ',
+};
+
+const ROUTE_VI_MAP: Record<string, string> = {
+  ORAL: 'Uống',
+  INTRAMUSCULAR: 'Tiêm bắp',
+  INTRAVENOUS: 'Tiêm tĩnh mạch',
+  SUBCUTANEOUS: 'Tiêm dưới da',
+  TOPICAL: 'Bôi ngoài da',
+  OPHTHALMIC: 'Nhỏ mắt',
+};
+
+function formatMedicationUnit(unit?: string): string {
+  if (!unit) return '';
+  const trimmed = unit.trim();
+  return UNIT_VI_MAP[trimmed.toUpperCase()] ?? trimmed;
+}
+
+function formatMedicationRoute(route?: string): string {
+  if (!route) return 'Uống';
+  const trimmed = route.trim();
+  return ROUTE_VI_MAP[trimmed.toUpperCase()] ?? trimmed;
+}
+
 const MEAL_BASE: Record<string, string> = { MORNING: '05:30', NOON: '11:30', EVENING: '18:00' };
 
 function templatesFor(horse: ScheduleHorse): Template[] {
@@ -224,10 +263,12 @@ function templatesFor(horse: ScheduleHorse): Template[] {
         const suffix = times.length > 1 ? ` (Lần ${idx + 1})` : '';
         const parsedDosage =
           typeof med.dosage === 'number' ? med.dosage : parseFloat(String(med.dosage)) || 1;
+        const displayUnit = formatMedicationUnit(med.unit);
+        const displayRoute = formatMedicationRoute(med.route);
         list.push({
           taskType: DailyTaskType.MEDICATION,
           title: `Cho uống thuốc: ${med.name}${suffix}`,
-          description: `Liều lượng: ${med.dosage} ${med.unit || ''}. Đường dùng: ${med.route || 'Uống'}.${med.notes ? ` Ghi chú: ${med.notes}` : ''}`,
+          description: `Liều lượng: ${med.dosage}${displayUnit ? ` ${displayUnit}` : ''}. Đường dùng: ${displayRoute}.${med.notes ? ` Ghi chú: ${med.notes}` : ''}`,
           mealType: null,
           baseTime: time,
           minutes: 10,
@@ -260,7 +301,17 @@ export function planDailyTasks(horses: ScheduleHorse[], rosters: ScheduleRoster[
 
   const cursor = new Map<string, number>();
   return rows.map(({ horse, t, base }) => {
-    const roster = rosters.find((r) => r.zoneId === horse.zoneId && shiftCovers(r, base));
+    const matchingRosters = rosters.filter(
+      (r) => r.zoneId === horse.zoneId && shiftCovers(r, base),
+    );
+    const roster =
+      matchingRosters.find((r) => r.groomUserId === horse.allocationGroomId) ??
+      matchingRosters.reduce<ScheduleRoster | undefined>((best, cur) => {
+        if (!best) return cur;
+        const bestEnd = cursor.get(`${best.groomUserId}|${best.shiftId}`) ?? 0;
+        const curEnd = cursor.get(`${cur.groomUserId}|${cur.shiftId}`) ?? 0;
+        return curEnd < bestEnd ? cur : best;
+      }, undefined);
     const groom = roster?.groomUserId ?? horse.allocationGroomId;
     const lane = groom ? `${groom}|${roster?.shiftId ?? 'none'}` : `horse|${horse.id}`;
     const start = Math.max(base, cursor.get(lane) ?? 0);

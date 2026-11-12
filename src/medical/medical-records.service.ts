@@ -33,6 +33,15 @@ export class MedicalRecordsService {
     @Optional() private readonly dailyTasks?: DailyTasksService,
   ) {}
 
+  private async syncHorseMedicalTasks(
+    horseId: string,
+    fromDateStr?: string,
+    toDateStr?: string,
+  ): Promise<void> {
+    if (!this.dailyTasks?.syncMedicalTasksForHorse) return;
+    await this.dailyTasks.syncMedicalTasksForHorse(horseId, fromDateStr, toDateStr).catch(() => {});
+  }
+
   /** Trạng thái đề xuất hợp lệ của ngựa; giá trị lạ hoặc rỗng → null. */
   private toHorseStatus(value?: string | null): HorseStatus | null {
     return value && Object.values(HorseStatus).includes(value as HorseStatus)
@@ -797,6 +806,8 @@ export class MedicalRecordsService {
       { entityName: 'MedicalRecord' },
     );
 
+    await this.syncHorseMedicalTasks(record.horseId);
+
     return updated;
   }
 
@@ -874,6 +885,8 @@ export class MedicalRecordsService {
       id,
       { entityName: 'MedicalRecord' },
     );
+
+    await this.syncHorseMedicalTasks(record.horseId);
 
     return updated;
   }
@@ -955,6 +968,8 @@ export class MedicalRecordsService {
       recordId,
     );
 
+    await this.syncHorseMedicalTasks(record.horseId, dto.startDate, dto.endDate);
+
     return { message: 'Đã thêm giai đoạn phác đồ thành công', phase, record: updated };
   }
 
@@ -1030,6 +1045,8 @@ export class MedicalRecordsService {
       recordId,
       { entityName: 'MedicalRecord' },
     );
+
+    await this.syncHorseMedicalTasks(record.horseId, updatedPhase.startDate, updatedPhase.endDate);
 
     return {
       message: 'Đã cập nhật phác đồ điều trị thành công',
@@ -1155,6 +1172,8 @@ export class MedicalRecordsService {
       recordId,
     );
 
+    await this.syncHorseMedicalTasks(record.horseId, dto.startDate, effectiveEndDate);
+
     return {
       message: 'Kê đơn thuốc thành công',
       prescription: newPrescription,
@@ -1230,6 +1249,12 @@ export class MedicalRecordsService {
       recordId,
     );
 
+    await this.syncHorseMedicalTasks(
+      record.horseId,
+      currentRx[index].startDate,
+      currentRx[index].endDate,
+    );
+
     return { message: 'Cập nhật đơn thuốc thành công', prescription: currentRx[index] };
   }
 
@@ -1289,6 +1314,8 @@ export class MedicalRecordsService {
       `Stopped prescription ${prescriptionId} for medical record ${recordId}: ${rx.stoppedReason}`,
       recordId,
     );
+
+    await this.syncHorseMedicalTasks(record.horseId, rx.startDate, rx.endDate);
 
     return { message: 'Đã dừng đơn thuốc thành công', prescription: rx };
   }
