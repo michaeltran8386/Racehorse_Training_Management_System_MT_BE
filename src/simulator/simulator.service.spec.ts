@@ -1,3 +1,4 @@
+import { HttpStatus } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -1482,9 +1483,29 @@ describe('SimulatorService', () => {
       expect(res.results[2].prizeMoneyWon).toBe(60000000);
       expect(prisma.tournamentResult.upsert).toHaveBeenCalledTimes(3);
     });
+
+    it('rejects HEAD_TRAINER with 403 SIMULATOR_ROLE_FORBIDDEN', async () => {
+      await expect(
+        service.quickSimulateTournamentRace('tourney-1', mockActor),
+      ).rejects.toMatchObject({
+        status: HttpStatus.FORBIDDEN,
+        response: {
+          code: 'SIMULATOR_ROLE_FORBIDDEN',
+        },
+      });
+    });
   });
 
   describe('startTournamentRace + recordRaceProgress + recordFinished (2D race sync)', () => {
+    it('rejects HEAD_TRAINER with 403 SIMULATOR_ROLE_FORBIDDEN on startTournamentRace', async () => {
+      await expect(service.startTournamentRace('tourney-race-1', mockActor)).rejects.toMatchObject({
+        status: HttpStatus.FORBIDDEN,
+        response: {
+          code: 'SIMULATOR_ROLE_FORBIDDEN',
+        },
+      });
+    });
+
     it('preserves tournament metadata across sim:race_progress ticks and upserts draft TournamentResults on finish', async () => {
       prisma.tournament.findUnique.mockResolvedValue({
         id: 'tourney-race-1',
