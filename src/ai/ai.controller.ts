@@ -29,7 +29,7 @@ export class AiController {
   ) {}
 
   @Post('assistant/chat')
-  @Roles(UserRole.HORSE_OWNER, UserRole.CLUB_MANAGER)
+  @Roles(UserRole.CLUB_MANAGER)
   @HttpCode(200)
   @ApiOperation({ summary: 'Hỏi trợ lý (RAG trên đặc tả + dữ liệu trong phạm vi quyền, chỉ đọc)' })
   chat(@Body() dto: AssistantChatDto, @CurrentUser() user: CurrentUserPayload) {
@@ -37,16 +37,16 @@ export class AiController {
   }
 
   @Get('concierge/history')
-  @Roles(UserRole.HORSE_OWNER)
-  @ApiOperation({ summary: 'Lịch sử hội thoại Trợ lý TMEC của Chủ ngựa' })
+  @Roles(UserRole.CLUB_MANAGER)
+  @ApiOperation({ summary: 'Lịch sử hội thoại Trợ lý TMEC' })
   getConciergeHistory(@CurrentUser() user: CurrentUserPayload) {
     return this.ai.getConciergeHistory(user.userId);
   }
 
   @Post('concierge/clear')
-  @Roles(UserRole.HORSE_OWNER)
+  @Roles(UserRole.CLUB_MANAGER)
   @HttpCode(200)
-  @ApiOperation({ summary: 'Xóa lịch sử hội thoại Trợ lý TMEC của Chủ ngựa' })
+  @ApiOperation({ summary: 'Xóa lịch sử hội thoại Trợ lý TMEC' })
   clearConciergeHistory(@CurrentUser() user: CurrentUserPayload) {
     return this.ai.clearConciergeHistory(user.userId);
   }
