@@ -1,11 +1,12 @@
 import {
   BadRequestException,
-  ForbiddenException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { DailyTaskType, Prisma, Role, HorseStatus } from '@prisma/client';
+import { apiError } from '../common/exceptions/api-error';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -585,9 +586,25 @@ export class DailyTasksService {
       task.assignedGroomUserId &&
       task.assignedGroomUserId !== currentUser.userId
     ) {
-      throw new ForbiddenException(
-        'Bạn chỉ có thể hoàn thành công việc chăm sóc được phân công cho mình.',
-      );
+      const hasZoneRoster =
+        task.date && task.stallZoneId
+          ? await this.prisma.shiftRoster?.findFirst?.({
+              where: {
+                date: task.date,
+                zoneId: task.stallZoneId,
+                groomUserId: currentUser.userId,
+              },
+              select: { id: true },
+            })
+          : null;
+
+      if (!hasZoneRoster) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'TASK_NOT_ASSIGNED_TO_YOU',
+          'Bạn chỉ có thể hoàn thành công việc chăm sóc được phân công cho mình hoặc tại khu trực của mình.',
+        );
+      }
     }
 
     if (task.horse?.status === HorseStatus.RETIRED) {
@@ -694,7 +711,9 @@ export class DailyTasksService {
 
     // Kiểm tra quyền: Người bấm hoàn thành, hoặc Club Manager mới được hoàn tác
     if (task.completedById !== currentUser.userId && currentUser.role !== Role.CLUB_MANAGER) {
-      throw new ForbiddenException(
+      throw apiError(
+        HttpStatus.FORBIDDEN,
+        'TASK_UNDO_FORBIDDEN',
         'Bạn không có quyền hoàn tác công việc do nhân viên khác thực hiện.',
       );
     }

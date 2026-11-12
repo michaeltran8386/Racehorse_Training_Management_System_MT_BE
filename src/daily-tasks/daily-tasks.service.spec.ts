@@ -17,7 +17,7 @@ describe('DailyTasksService', () => {
   beforeEach(async () => {
     prisma = {
       horse: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn() },
-      shiftRoster: { findMany: jest.fn().mockResolvedValue([]) },
+      shiftRoster: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
       dailyCareTask: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
@@ -320,6 +320,63 @@ describe('DailyTasksService', () => {
       await expect(
         service.completeTask('not-found', {}, { userId: 'u1', role: Role.GROOM } as any),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('allows a groom rostered in the same zone to complete a teammate task', async () => {
+      const mockTask = {
+        id: 'task-zone-1',
+        taskCode: 'TSK-Z1',
+        date: new Date('2026-10-18T00:00:00.000Z'),
+        stallZoneId: 'zone-1',
+        assignedGroomUserId: 'groom-other',
+        isCompleted: false,
+        horse: { name: 'Flash' },
+      };
+
+      prisma.dailyCareTask.findUnique.mockResolvedValue(mockTask);
+      prisma.shiftRoster.findFirst.mockResolvedValue({ id: 'roster-1' });
+      prisma.dailyCareTask.update.mockResolvedValue({ ...mockTask, isCompleted: true });
+
+      const res = await service.completeTask('task-zone-1', {}, {
+        userId: 'groom-current',
+        role: Role.GROOM,
+        fullName: 'Groom Current',
+      } as any);
+
+      expect(res.isCompleted).toBe(true);
+      expect(prisma.shiftRoster.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            date: mockTask.date,
+            zoneId: 'zone-1',
+            groomUserId: 'groom-current',
+          },
+        }),
+      );
+    });
+
+    it('throws TASK_NOT_ASSIGNED_TO_YOU when groom is neither assigned nor rostered in the zone', async () => {
+      const mockTask = {
+        id: 'task-other-zone',
+        date: new Date('2026-10-18T00:00:00.000Z'),
+        stallZoneId: 'zone-2',
+        assignedGroomUserId: 'groom-other',
+        isCompleted: false,
+        horse: { name: 'Thunder' },
+      };
+
+      prisma.dailyCareTask.findUnique.mockResolvedValue(mockTask);
+      prisma.shiftRoster.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.completeTask('task-other-zone', {}, {
+          userId: 'groom-current',
+          role: Role.GROOM,
+          fullName: 'Groom Current',
+        } as any),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'TASK_NOT_ASSIGNED_TO_YOU' }),
+      });
     });
   });
 
