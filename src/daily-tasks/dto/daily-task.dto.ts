@@ -13,6 +13,12 @@ import {
 } from 'class-validator';
 import { DailyTaskType } from '@prisma/client';
 
+function parseOptionalBoolean(raw: unknown): boolean | undefined {
+  if (raw === 'true' || raw === true) return true;
+  if (raw === 'false' || raw === false) return false;
+  return undefined;
+}
+
 export class QueryDailyTasksDto {
   @ApiPropertyOptional({ description: 'Ngày cần lấy danh sách (YYYY-MM-DD), mặc định là hôm nay' })
   @IsOptional()
@@ -36,11 +42,7 @@ export class QueryDailyTasksDto {
 
   @ApiPropertyOptional({ description: 'Lọc công việc đã xong / chưa xong' })
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return undefined;
-  })
+  @Transform(({ obj, key }) => parseOptionalBoolean(obj?.[key]))
   @IsBoolean()
   isCompleted?: boolean;
 
@@ -48,11 +50,7 @@ export class QueryDailyTasksDto {
     description: 'Chỉ lấy công việc được phân công cho tôi hoặc trong ca của tôi',
   })
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return undefined;
-  })
+  @Transform(({ obj, key }) => parseOptionalBoolean(obj?.[key]))
   @IsBoolean()
   onlyMine?: boolean;
 
@@ -60,11 +58,7 @@ export class QueryDailyTasksDto {
     description: 'Chỉ lấy công việc được phân công cho tôi hoặc trong ca của tôi (alias onlyMine)',
   })
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === 'true' || value === true) return true;
-    if (value === 'false' || value === false) return false;
-    return undefined;
-  })
+  @Transform(({ obj, key }) => parseOptionalBoolean(obj?.[key]))
   @IsBoolean()
   onlyMyTasks?: boolean;
 

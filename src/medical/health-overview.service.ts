@@ -104,7 +104,7 @@ export class HealthOverviewService {
 
     let careInstructions: Array<{ activity: string; frequency?: string }> = [];
 
-    const latestRecord = records[0];
+    const latestRecord = records.find((r) => r.status === 'OPEN') ?? records[0];
     if (latestRecord?.treatmentPhases) {
       try {
         const phases = JSON.parse(latestRecord.treatmentPhases);
@@ -117,9 +117,15 @@ export class HealthOverviewService {
             Array.isArray(currentPhase?.careInstructions) &&
             currentPhase.careInstructions.length > 0
           ) {
-            careInstructions = currentPhase.careInstructions.map((c: any) =>
-              typeof c === 'string' ? { activity: c, frequency: 'Hằng ngày' } : c,
-            );
+            careInstructions = currentPhase.careInstructions
+              .map((c: any) =>
+                typeof c === 'string' && c.trim()
+                  ? { activity: c.trim(), frequency: 'Hằng ngày' }
+                  : c && typeof c === 'object' && !Array.isArray(c) && c.activity
+                    ? c
+                    : null,
+              )
+              .filter(Boolean);
           }
         }
       } catch {

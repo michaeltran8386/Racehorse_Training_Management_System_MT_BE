@@ -15,6 +15,45 @@ import { InventoryService } from '../inventory/inventory.service';
 import { planDailyTasks, ScheduleHorse, ScheduleCareInstruction } from './daily-schedule';
 
 const UNDO_WINDOW_MS = 15 * 60 * 1000; // 15 phút (900.000 ms)
+const CLUB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+function clubDateStr(d = new Date()): string {
+  return new Date(d.getTime() + CLUB_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+const TASK_DETAIL_INCLUDE = {
+  horse: {
+    select: {
+      id: true,
+      name: true,
+      horseCode: true,
+      avatarUrl: true,
+      status: true,
+      isMedicalLocked: true,
+    },
+  },
+  stallZone: {
+    select: { id: true, code: true, name: true },
+  },
+  stall: {
+    select: { id: true, code: true, zone: true },
+  },
+  completedBy: {
+    select: { id: true, fullName: true, role: true },
+  },
+  assignedGroom: {
+    select: { id: true, fullName: true },
+  },
+  shift: {
+    select: {
+      id: true,
+      name: true,
+      startTime: true,
+      endTime: true,
+      sortOrder: true,
+    },
+  },
+};
 
 @Injectable()
 export class DailyTasksService {
@@ -285,28 +324,37 @@ export class DailyTasksService {
           },
         });
         totalGenerated++;
-      } else if (
-        !existing.isCompleted &&
-        (existing.stallZoneId !== t.zoneId ||
-          existing.stallId !== t.stallId ||
-          existing.scheduledTime !== t.scheduledTime ||
-          existing.description !== t.description ||
-          (t.assignedGroomUserId && existing.assignedGroomUserId !== t.assignedGroomUserId) ||
-          existing.isMedicalLocked !== isLocked)
-      ) {
-        await this.prisma.dailyCareTask.update({
-          where: { id: existing.id },
-          data: {
-            stallZoneId: t.zoneId,
-            stallId: t.stallId,
-            scheduledTime: t.scheduledTime,
-            description: t.description,
-            shiftId: t.shiftId ?? existing.shiftId,
-            assignedGroomUserId: t.assignedGroomUserId || existing.assignedGroomUserId,
-            isMedicalLocked: isLocked,
-            medicalLockNotes: lockNotes,
-          },
-        });
+      } else {
+        const nextZoneId = t.zoneId ?? null;
+        const nextStallId = t.stallId ?? null;
+        const nextShiftId = t.shiftId ?? null;
+        const nextGroomId = t.assignedGroomUserId ?? null;
+        const nextLockNotes = lockNotes ?? null;
+        if (
+          !existing.isCompleted &&
+          ((existing.stallZoneId ?? null) !== nextZoneId ||
+            (existing.stallId ?? null) !== nextStallId ||
+            existing.scheduledTime !== t.scheduledTime ||
+            existing.description !== t.description ||
+            (existing.shiftId ?? null) !== nextShiftId ||
+            (existing.assignedGroomUserId ?? null) !== nextGroomId ||
+            existing.isMedicalLocked !== isLocked ||
+            (existing.medicalLockNotes ?? null) !== nextLockNotes)
+        ) {
+          await this.prisma.dailyCareTask.update({
+            where: { id: existing.id },
+            data: {
+              stallZoneId: nextZoneId,
+              stallId: nextStallId,
+              scheduledTime: t.scheduledTime,
+              description: t.description,
+              shiftId: nextShiftId,
+              assignedGroomUserId: nextGroomId,
+              isMedicalLocked: isLocked,
+              medicalLockNotes: nextLockNotes,
+            },
+          });
+        }
       }
     }
 
@@ -352,25 +400,67 @@ export class DailyTasksService {
     fromDateStr?: string,
     toDateStr?: string,
   ): Promise<void> {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const startStr = fromDateStr && fromDateStr > todayStr ? fromDateStr : todayStr;
+    const todayStr = clubDateStr();
+    const startStr =
+      fromDateStr && fromDateStr.slice(0, 10) > todayStr ? fromDateStr.slice(0, 10) : todayStr;
     const startDate = new Date(`${startStr}T00:00:00.000Z`);
 
     const maxDays = 14;
-    const endDate = toDateStr
-      ? new Date(`${toDateStr}T00:00:00.000Z`)
+    const rawEndStr = toDateStr ? toDateStr.slice(0, 10) : undefined;
+    const endDate = rawEndStr
+      ? new Date(`${rawEndStr}T00:00:00.000Z`)
       : new Date(startDate.getTime() + maxDays * 86400000);
+
+    if (endDate < startDate) {
+      return;
+    }
+
+    const horse = await this.prisma.horse.findUnique({
+      where: { id: horseId },
+      select: {
+        stallAllocations: {
+          where: { isActive: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { stall: { select: { zoneId: true } } },
+        },
+      },
+    });
+    const zoneId = horse?.stallAllocations?.[0]?.stall?.zoneId ?? undefined;
 
     const cur = new Date(startDate);
     while (cur <= endDate && cur.getTime() <= startDate.getTime() + maxDays * 86400000) {
       const curDate = new Date(cur);
+      const curStr = curDate.toISOString().slice(0, 10);
       const existingCount = await this.prisma.dailyCareTask.count({
         where: { date: curDate },
       });
-      if (existingCount > 0) {
-        await this.generateDailyTasksForDate(curDate, undefined, horseId);
+      if (curStr === todayStr || existingCount > 0) {
+        await this.generateDailyTasksForDate(curDate, zoneId, zoneId ? undefined : horseId);
       }
       cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+  }
+
+  /**
+   * Đồng bộ lại các công việc chưa hoàn thành khi CM thay đổi phân ca trực.
+   */
+  async syncTasksForDateZones(targets: Array<{ date: Date; zoneId?: string }>): Promise<void> {
+    const todayStr = clubDateStr();
+    const seen = new Set<string>();
+    for (const target of targets) {
+      const dateStr = target.date.toISOString().slice(0, 10);
+      const key = `${dateStr}|${target.zoneId ?? 'ALL'}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const dayDate = new Date(`${dateStr}T00:00:00.000Z`);
+      const existingCount = await this.prisma.dailyCareTask.count({
+        where: { date: dayDate, ...(target.zoneId ? { stallZoneId: target.zoneId } : {}) },
+      });
+      if (dateStr === todayStr || existingCount > 0) {
+        await this.generateDailyTasksForDate(dayDate, target.zoneId);
+      }
     }
   }
 
@@ -378,7 +468,7 @@ export class DailyTasksService {
    * SC-4.04: Lấy danh sách checklist công việc theo ngày, khu chuồng, ca trực và quyền xem
    */
   async findAll(query: QueryDailyTasksDto, currentUser: CurrentUserPayload) {
-    const dateStr = query.date || new Date().toISOString().slice(0, 10);
+    const dateStr = query.date || clubDateStr();
     const dayDate = new Date(`${dateStr}T00:00:00.000Z`);
 
     // Luôn đảm bảo Idempotent: sinh công việc nếu chưa có, hoặc đồng bộ lại các task y tế/chuồng mới nhất
@@ -445,39 +535,7 @@ export class DailyTasksService {
     const [items, total] = await Promise.all([
       this.prisma.dailyCareTask.findMany({
         where,
-        include: {
-          horse: {
-            select: {
-              id: true,
-              name: true,
-              horseCode: true,
-              avatarUrl: true,
-              status: true,
-              isMedicalLocked: true,
-            },
-          },
-          stallZone: {
-            select: { id: true, code: true, name: true },
-          },
-          stall: {
-            select: { id: true, code: true, zone: true },
-          },
-          completedBy: {
-            select: { id: true, fullName: true, role: true },
-          },
-          assignedGroom: {
-            select: { id: true, fullName: true },
-          },
-          shift: {
-            select: {
-              id: true,
-              name: true,
-              startTime: true,
-              endTime: true,
-              sortOrder: true,
-            },
-          },
-        },
+        include: TASK_DETAIL_INCLUDE,
         orderBy: [{ scheduledTime: 'asc' }, { taskType: 'asc' }],
       }),
       this.prisma.dailyCareTask.count({ where }),
@@ -566,10 +624,7 @@ export class DailyTasksService {
             ? `${task.description || ''}\n[Ghi chú Groom: ${dto.notes}]`
             : task.description,
         },
-        include: {
-          horse: true,
-          completedBy: { select: { id: true, fullName: true } },
-        },
+        include: TASK_DETAIL_INCLUDE,
       });
 
       // Trừ kho tự động cho việc cho ăn (FEEDING) cùng transaction
@@ -596,7 +651,7 @@ export class DailyTasksService {
     if (!updated) {
       return this.prisma.dailyCareTask.findUniqueOrThrow({
         where: { id },
-        include: { horse: true },
+        include: TASK_DETAIL_INCLUDE,
       });
     }
 
@@ -665,9 +720,7 @@ export class DailyTasksService {
           completedById: null,
           undoUntil: null,
         },
-        include: {
-          horse: true,
-        },
+        include: TASK_DETAIL_INCLUDE,
       })
       .catch((err: unknown) => {
         if (lostRace(err)) return null;
@@ -676,7 +729,7 @@ export class DailyTasksService {
     if (!updated) {
       return this.prisma.dailyCareTask.findUniqueOrThrow({
         where: { id },
-        include: { horse: true },
+        include: TASK_DETAIL_INCLUDE,
       });
     }
 

@@ -384,5 +384,129 @@ describe('DailyTasksService', () => {
       expect(res.horsesProcessed).toBe(1);
       expect(res.totalGenerated).toBeGreaterThanOrEqual(4);
     });
+
+    it('updates shiftId and assignedGroomUserId on existing uncompleted tasks when roster changes or clears', async () => {
+      const mockHorse = {
+        id: 'horse-1',
+        name: 'Flash',
+        deletedAt: null,
+        isMedicalLocked: false,
+        stallAllocations: [
+          {
+            isActive: true,
+            assignedGroomUserId: null,
+            stall: { id: 'stall-1', zoneId: 'zone-1' },
+          },
+        ],
+        medicalLocks: [],
+        nutritionPlans: [],
+        medicalRecords: [],
+      };
+
+      prisma.horse.findMany.mockResolvedValue([mockHorse]);
+      prisma.shiftRoster.findMany.mockResolvedValue([]); // Roster cleared by CM
+      prisma.dailyCareTask.findFirst.mockResolvedValue({
+        id: 'existing-task',
+        isCompleted: false,
+        stallZoneId: 'zone-1',
+        stallId: 'stall-1',
+        scheduledTime: '07:00',
+        description: 'old',
+        shiftId: 'shift-old',
+        assignedGroomUserId: 'groom-old',
+        isMedicalLocked: false,
+        medicalLockNotes: null,
+      });
+      prisma.dailyCareTask.update.mockResolvedValue({ id: 'existing-task' });
+
+      await service.generateDailyTasksForDate(new Date('2026-10-18T00:00:00Z'));
+
+      expect(prisma.dailyCareTask.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'existing-task' },
+          data: expect.objectContaining({
+            shiftId: null,
+            assignedGroomUserId: null,
+          }),
+        }),
+      );
+    });
+
+    it('includes shift and stallZone relations when completing a task', async () => {
+      const mockTask = {
+        id: 'task-1',
+        taskCode: 'TSK-001',
+        isCompleted: false,
+        horse: { name: 'Flash' },
+      };
+
+      prisma.dailyCareTask.findUnique.mockResolvedValue(mockTask);
+      prisma.dailyCareTask.update.mockResolvedValue({
+        ...mockTask,
+        isCompleted: true,
+        shift: { id: 'shift-1', name: 'Ca Sáng' },
+      });
+
+      const user = { userId: 'groom-1', role: Role.GROOM, fullName: 'Groom Nam' } as any;
+      const res = await service.completeTask('task-1', {}, user);
+
+      expect(res.shift).toEqual({ id: 'shift-1', name: 'Ca Sáng' });
+      expect(prisma.dailyCareTask.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            shift: expect.any(Object),
+            stallZone: expect.any(Object),
+            stall: expect.any(Object),
+            assignedGroom: expect.any(Object),
+          }),
+        }),
+      );
+    });
+
+    it('formats VIAL unit in Vietnamese and syncs today even when existingCount is 0', async () => {
+      prisma.horse.findUnique.mockResolvedValue({
+        stallAllocations: [{ stall: { zoneId: 'zone-1' } }],
+      });
+      prisma.dailyCareTask.count.mockResolvedValue(0);
+      prisma.horse.findMany.mockResolvedValue([
+        {
+          id: 'horse-med',
+          name: 'Flash',
+          deletedAt: null,
+          isMedicalLocked: false,
+          stallAllocations: [{ isActive: true, stall: { id: 'stall-1', zoneId: 'zone-1' } }],
+          medicalLocks: [],
+          nutritionPlans: [],
+          medicalRecords: [
+            {
+              prescriptions: JSON.stringify([
+                {
+                  status: 'ACTIVE',
+                  medicationName: 'Thuốc chống viêm',
+                  dosage: '1',
+                  unit: 'VIAL',
+                  route: 'Tiêm bắp',
+                  frequencyPerDay: 1,
+                },
+              ]),
+            },
+          ],
+        },
+      ]);
+      prisma.shiftRoster.findMany.mockResolvedValue([]);
+      prisma.dailyCareTask.findFirst.mockResolvedValue(null);
+      prisma.dailyCareTask.create.mockResolvedValue({ id: 't-med' });
+
+      await service.syncMedicalTasksForHorse('horse-med');
+
+      expect(prisma.dailyCareTask.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            taskType: DailyTaskType.MEDICATION,
+            description: expect.stringContaining('Liều lượng: 1 lọ.'),
+          }),
+        }),
+      );
+    });
   });
 });
