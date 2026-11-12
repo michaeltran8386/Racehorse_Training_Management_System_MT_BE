@@ -358,7 +358,8 @@ export class WorkoutsService {
       const week = await tx.workoutSession.findMany({
         where: {
           ...live,
-          horseId: plan.horseId,
+          trainingPlanId: plan.id,
+          phaseId: phase.id,
           scheduledDate: { gte: weekStart, lt: addDays(weekStart, 7) },
         },
         select: { distanceMeters: true, repetitions: true },
