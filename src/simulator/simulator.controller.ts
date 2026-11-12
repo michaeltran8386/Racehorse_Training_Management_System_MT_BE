@@ -54,7 +54,7 @@ export class SimulatorController {
   }
 
   @Post('tournaments/:tournamentId/start')
-  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER)
+  @Roles(UserRole.CLUB_MANAGER)
   @ApiOperation({ summary: 'Cấp phiên mô phỏng cho giải đua chính thức' })
   startTournamentRace(
     @Param('tournamentId') tournamentId: string,
@@ -64,7 +64,7 @@ export class SimulatorController {
   }
 
   @Post('tournaments/:tournamentId/quick-result')
-  @Roles(UserRole.HEAD_TRAINER, UserRole.CLUB_MANAGER)
+  @Roles(UserRole.CLUB_MANAGER)
   @ApiOperation({
     summary:
       'Đo nhanh kết quả giải đua từ mô hình huấn luyện thực tế và lưu nháp kết quả (1-click)',

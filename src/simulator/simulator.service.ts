@@ -246,11 +246,11 @@ export class SimulatorService {
   }
 
   async startTournamentRace(tournamentId: string, actor: CurrentUserPayload) {
-    if (actor.role !== UserRole.HEAD_TRAINER && actor.role !== UserRole.CLUB_MANAGER) {
+    if (actor.role !== UserRole.CLUB_MANAGER) {
       throw apiError(
         HttpStatus.FORBIDDEN,
         'SIMULATOR_ROLE_FORBIDDEN',
-        'Only Head Trainer or Club Manager can start tournament race simulation.',
+        'Only Club Manager can start tournament race simulation.',
       );
     }
 
@@ -378,11 +378,11 @@ export class SimulatorService {
   }
 
   async quickSimulateTournamentRace(tournamentId: string, actor: CurrentUserPayload) {
-    if (actor.role !== UserRole.HEAD_TRAINER && actor.role !== UserRole.CLUB_MANAGER) {
+    if (actor.role !== UserRole.CLUB_MANAGER) {
       throw apiError(
         HttpStatus.FORBIDDEN,
         'SIMULATOR_ROLE_FORBIDDEN',
-        'Only Head Trainer or Club Manager can run tournament race quick simulation.',
+        'Only Club Manager can run tournament race quick simulation.',
       );
     }
 
