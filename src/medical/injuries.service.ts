@@ -207,7 +207,9 @@ export class InjuriesService {
         recoveryHistory: [initialHistoryEntry],
       },
       include: {
-        horse: { select: { id: true, name: true, microchipRfid: true } },
+        horse: {
+          select: { id: true, name: true, horseCode: true, microchip: true, microchipRfid: true },
+        },
         medicalRecord: { select: { id: true, examinationDate: true, clinicalDiagnosis: true } },
       },
     });
@@ -240,7 +242,15 @@ export class InjuriesService {
       where: { id },
       include: {
         horse: {
-          select: { id: true, name: true, microchipRfid: true, status: true, ownerId: true },
+          select: {
+            id: true,
+            name: true,
+            horseCode: true,
+            microchip: true,
+            microchipRfid: true,
+            status: true,
+            ownerId: true,
+          },
         },
         medicalRecord: { select: { id: true, examinationDate: true, clinicalDiagnosis: true } },
       },
@@ -324,7 +334,9 @@ export class InjuriesService {
       where: { id },
       data: dataToUpdate,
       include: {
-        horse: { select: { id: true, name: true, microchipRfid: true } },
+        horse: {
+          select: { id: true, name: true, horseCode: true, microchip: true, microchipRfid: true },
+        },
         medicalRecord: { select: { id: true, examinationDate: true, clinicalDiagnosis: true } },
       },
     });
@@ -475,7 +487,9 @@ export class InjuriesService {
           recoveryHistory: history,
         },
         include: {
-          horse: { select: { id: true, name: true, microchipRfid: true } },
+          horse: {
+            select: { id: true, name: true, horseCode: true, microchip: true, microchipRfid: true },
+          },
           medicalRecord: { select: { id: true, examinationDate: true, clinicalDiagnosis: true } },
         },
       });

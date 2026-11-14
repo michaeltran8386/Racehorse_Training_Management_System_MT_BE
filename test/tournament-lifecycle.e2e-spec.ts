@@ -182,7 +182,8 @@ describeVerifyDb('Real-Stack Tournament Lifecycle Automated Verification (CR-028
       data: {
         name: `Horse A ${sentinel}`,
         horseCode: `HA-${sentinel.slice(-6)}`,
-        microchipRfid: `RFID-A-${sentinel.slice(-8)}`,
+        microchip: `985${sentinel.slice(-12).padStart(12, '1')}`,
+        microchipRfid: `985${sentinel.slice(-12).padStart(12, '1')}`,
         breed: 'Thoroughbred',
         dob: new Date('2020-05-15'),
         gender: 'STALLION',
@@ -200,7 +201,8 @@ describeVerifyDb('Real-Stack Tournament Lifecycle Automated Verification (CR-028
       data: {
         name: `Horse B ${sentinel}`,
         horseCode: `HB-${sentinel.slice(-6)}`,
-        microchipRfid: `RFID-B-${sentinel.slice(-8)}`,
+        microchip: `985${sentinel.slice(-12).padStart(12, '2')}`,
+        microchipRfid: `985${sentinel.slice(-12).padStart(12, '2')}`,
         breed: 'Thoroughbred',
         dob: new Date('2021-03-20'),
         gender: 'MARE',

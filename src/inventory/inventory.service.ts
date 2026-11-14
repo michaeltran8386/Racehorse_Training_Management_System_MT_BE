@@ -931,6 +931,32 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
           );
         }
       }
+      if (direct) {
+        await tx.stockBalance.upsert({
+          where: {
+            zoneId_supplyId: {
+              zoneId: dto.zoneId,
+              supplyId: dto.supplyId,
+            },
+          },
+          create: {
+            zoneId: dto.zoneId,
+            supplyId: dto.supplyId,
+            quantity: new Prisma.Decimal(dto.requestedQuantity),
+            minThreshold: new Prisma.Decimal(10),
+            lastInventoryDate: now,
+            lastAdjustedById: currentUser.userId,
+            notes: `Nhập kho trực tiếp ${requestNumber}`,
+          },
+          update: {
+            quantity: { increment: new Prisma.Decimal(dto.requestedQuantity) },
+            lastInventoryDate: now,
+            lastAdjustedById: currentUser.userId,
+            notes: `Nhập kho trực tiếp ${requestNumber}`,
+          },
+        });
+      }
+
       return tx.restockRequest.create({
         data: {
           requestNumber,
@@ -939,13 +965,14 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
           requestedQuantity: new Prisma.Decimal(dto.requestedQuantity),
           urgencyReason: dto.urgencyReason,
           requestedById: currentUser.userId,
-          // CM nhập trực tiếp bắt đầu giao ngay, tồn kho chỉ tăng khi hoàn tất giao hàng.
-          status: direct ? RestockStatus.DELIVERING : RestockStatus.PENDING,
+          status: direct ? RestockStatus.DELIVERED : RestockStatus.PENDING,
           ...(direct
             ? {
                 approvedQuantity: new Prisma.Decimal(dto.requestedQuantity),
                 reviewedById: currentUser.userId,
                 reviewedAt: now,
+                deliveredById: currentUser.userId,
+                deliveredAt: now,
               }
             : {}),
         },
@@ -958,36 +985,25 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
     });
 
     if (direct) {
-      const ackCapability = this.generateAckCapability(created.id, now);
-      const timer = setTimeout(() => {
-        this.completeDelivery(created.id, 'FALLBACK').catch((err) => {
-          this.logger.error(
-            `Watchdog fallback error for direct restock ${created.id}: ${err.message}`,
-          );
-        });
-      }, 20000);
-      this.deliveryTimers.set(created.id, timer);
-      this.gateway?.broadcastDeliveryStart({
+      const updatedBalance = await this.prisma.stockBalance.findUnique({
+        where: { zoneId_supplyId: { zoneId: created.zoneId, supplyId: created.supplyId } },
+      });
+      this.gateway?.broadcastDeliveryCompleted({
         requestId: created.id,
-        requestNumber: created.requestNumber || '',
         zoneId: created.zoneId,
         supplyId: created.supplyId,
-        supplyCode: supply.code,
-        supplyName: supply.name,
-        category: supply.category,
-        unit: supply.unit,
-        approvedQuantity: Number(created.requestedQuantity),
-        dispatchedAt: now.toISOString(),
-        animationEndsAt: new Date(now.getTime() + 8000).toISOString(),
-        fallbackAt: new Date(now.getTime() + 20000).toISOString(),
-        ackCapability,
+        status: 'DELIVERED',
+        balance: updatedBalance
+          ? Number(updatedBalance.quantity)
+          : Number(created.requestedQuantity),
       });
+
       await this.auditService.record(
         { id: currentUser.userId, name: currentUser.fullName },
         'RESTOCK_DIRECT_CREATED',
-        `Tạo bởi Quản lý CLB ${currentUser.fullName}, tự động bắt đầu giao hàng. Phiếu ${requestNumber}: ${dto.requestedQuantity} ${supply.unit} ${supply.name} cho ${zone.name}.`,
+        `Tạo bởi Quản lý CLB ${currentUser.fullName}, tự động hoàn tất nhập kho. Phiếu ${requestNumber}: ${dto.requestedQuantity} ${supply.unit} ${supply.name} cho ${zone.name}.`,
         created.id,
-        { entityName: 'RestockRequest', newValues: { status: RestockStatus.DELIVERING } },
+        { entityName: 'RestockRequest', newValues: { status: RestockStatus.DELIVERED } },
       );
       return { ...created, requestedQuantity: Number(created.requestedQuantity) };
     }
@@ -1189,15 +1205,43 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      if (isApproved) {
+        await tx.stockBalance.upsert({
+          where: {
+            zoneId_supplyId: {
+              zoneId: request.zoneId,
+              supplyId: request.supplyId,
+            },
+          },
+          create: {
+            zoneId: request.zoneId,
+            supplyId: request.supplyId,
+            quantity: new Prisma.Decimal(approvedQty),
+            minThreshold: new Prisma.Decimal(10),
+            lastInventoryDate: now,
+            lastAdjustedById: currentUser.userId,
+            notes: `Nhập kho từ phiếu đề xuất ${request.requestNumber}`,
+          },
+          update: {
+            quantity: { increment: new Prisma.Decimal(approvedQty) },
+            lastInventoryDate: now,
+            lastAdjustedById: currentUser.userId,
+            notes: `Nhập kho từ phiếu đề xuất ${request.requestNumber}`,
+          },
+        });
+      }
+
       // Atomic update: only succeeds if status is still PENDING (prevents double-click/concurrency race)
       return tx.restockRequest.updateMany({
         where: { id, status: RestockStatus.PENDING },
         data: {
-          status: isApproved ? RestockStatus.DELIVERING : RestockStatus.REJECTED,
+          status: isApproved ? RestockStatus.DELIVERED : RestockStatus.REJECTED,
           approvedQuantity: isApproved ? new Prisma.Decimal(approvedQty) : null,
           rejectionReason: !isApproved ? dto.rejectionReason : null,
           reviewedAt: now,
           reviewedById: currentUser.userId,
+          deliveredAt: isApproved ? now : null,
+          deliveredById: isApproved ? currentUser.userId : null,
         },
       });
     });
@@ -1217,13 +1261,14 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         supply: { select: { id: true, code: true, name: true, category: true, unit: true } },
         requestedBy: { select: { id: true, fullName: true, role: true } },
         reviewedBy: { select: { id: true, fullName: true, role: true } },
+        deliveredBy: { select: { id: true, fullName: true, role: true } },
       },
     });
 
     await this.auditService.record(
       { id: currentUser.userId, name: currentUser.fullName },
       isApproved ? 'RESTOCK_APPROVED' : 'RESTOCK_REJECTED',
-      `Phiếu đề xuất ${request.requestNumber} (${request.supply.name} - ${request.zone.name}) đã được ${isApproved ? 'DUYỆT VÀ BẮT ĐẦU GIAO HÀNG' : 'TỪ CHỐI'} bởi ${currentUser.fullName}.`,
+      `Phiếu đề xuất ${request.requestNumber} (${request.supply.name} - ${request.zone.name}) đã được ${isApproved ? 'DUYỆT VÀ HOÀN TẤT NHẬP KHO' : 'TỪ CHỐI'} bởi ${currentUser.fullName}.`,
       request.id,
       {
         entityName: 'RestockRequest',
@@ -1231,16 +1276,33 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       },
     );
 
+    if (isApproved) {
+      const updatedBalance = await this.prisma.stockBalance.findUnique({
+        where: { zoneId_supplyId: { zoneId: updated.zoneId, supplyId: updated.supplyId } },
+      });
+      this.gateway?.broadcastDeliveryCompleted({
+        requestId: updated.id,
+        zoneId: updated.zoneId,
+        supplyId: updated.supplyId,
+        status: 'DELIVERED',
+        balance: updatedBalance
+          ? Number(updatedBalance.quantity)
+          : Number(updated.approvedQuantity || 0),
+      });
+    }
+
     // Bắn thông báo cho người tạo đề xuất
     try {
       await this.notificationsService.notifyUsers(
         [request.requestedById],
         {
-          type: isApproved ? 'RESTOCK_APPROVED' : 'RESTOCK_REJECTED',
+          type: isApproved ? 'RESTOCK_DELIVERED' : 'RESTOCK_REJECTED',
           category: NotificationCategory.SYSTEM,
-          title: isApproved ? 'Đề xuất vật tư đã được phê duyệt' : 'Đề xuất vật tư bị từ chối',
+          title: isApproved
+            ? 'Đề xuất vật tư đã được phê duyệt & nhập kho'
+            : 'Đề xuất vật tư bị từ chối',
           message: isApproved
-            ? `Quản lý đã duyệt bổ sung ${updated.approvedQuantity} ${request.supply.unit} ${request.supply.name}. Đơn hàng đang được vận chuyển đến ${request.zone.name}.`
+            ? `Quản lý đã duyệt bổ sung ${updated.approvedQuantity} ${request.supply.unit} ${request.supply.name}. Hàng đã được nhập kho tại ${request.zone.name}.`
             : `Đề xuất ${request.requestNumber} bị từ chối. Lý do: ${dto.rejectionReason || 'Không phù hợp'}`,
           link: `/supplies/requests?highlight=${encodeURIComponent(request.id)}&search=${encodeURIComponent(request.requestNumber || '')}`,
           senderName: currentUser.fullName,
@@ -1252,34 +1314,6 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(
         `Failed to send approval notification for ${request.id}: ${notifErr?.message}`,
       );
-    }
-
-    if (isApproved) {
-      // Generate signed ACK capability and schedule 20s watchdog timer
-      const ackCapability = this.generateAckCapability(request.id, now);
-      const timer = setTimeout(() => {
-        this.completeDelivery(request.id, 'FALLBACK').catch((err) => {
-          this.logger.error(`Watchdog fallback error for ${request.id}: ${err.message}`);
-        });
-      }, 20000);
-      this.deliveryTimers.set(request.id, timer);
-
-      // Broadcast sys:supply_delivery_start to connected Simulator clients
-      this.gateway?.broadcastDeliveryStart({
-        requestId: request.id,
-        requestNumber: request.requestNumber || '',
-        zoneId: request.zoneId,
-        supplyId: request.supplyId,
-        supplyCode: request.supply.code,
-        supplyName: request.supply.name,
-        category: request.supply.category,
-        unit: request.supply.unit,
-        approvedQuantity: approvedQty,
-        dispatchedAt: now.toISOString(),
-        animationEndsAt: new Date(now.getTime() + 8000).toISOString(),
-        fallbackAt: new Date(now.getTime() + 20000).toISOString(),
-        ackCapability,
-      });
     }
 
     return {

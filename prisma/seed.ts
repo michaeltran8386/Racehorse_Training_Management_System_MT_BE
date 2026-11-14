@@ -1045,7 +1045,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
       horseCode: h.horseCode,
       name: h.name,
       microchip: h.microchip,
-      microchipRfid: `RFID-${h.microchip}`,
+      microchipRfid: h.microchip,
       breed: h.breed,
       dob: h.dob,
       gender: h.gender,
