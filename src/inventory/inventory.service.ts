@@ -993,7 +993,9 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         zoneId: created.zoneId,
         supplyId: created.supplyId,
         status: 'DELIVERED',
-        balance: updatedBalance ? Number(updatedBalance.quantity) : Number(created.requestedQuantity),
+        balance: updatedBalance
+          ? Number(updatedBalance.quantity)
+          : Number(created.requestedQuantity),
       });
 
       await this.auditService.record(
@@ -1283,7 +1285,9 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         zoneId: updated.zoneId,
         supplyId: updated.supplyId,
         status: 'DELIVERED',
-        balance: updatedBalance ? Number(updatedBalance.quantity) : Number(updated.approvedQuantity || 0),
+        balance: updatedBalance
+          ? Number(updatedBalance.quantity)
+          : Number(updated.approvedQuantity || 0),
       });
     }
 
@@ -1294,7 +1298,9 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
         {
           type: isApproved ? 'RESTOCK_DELIVERED' : 'RESTOCK_REJECTED',
           category: NotificationCategory.SYSTEM,
-          title: isApproved ? 'Đề xuất vật tư đã được phê duyệt & nhập kho' : 'Đề xuất vật tư bị từ chối',
+          title: isApproved
+            ? 'Đề xuất vật tư đã được phê duyệt & nhập kho'
+            : 'Đề xuất vật tư bị từ chối',
           message: isApproved
             ? `Quản lý đã duyệt bổ sung ${updated.approvedQuantity} ${request.supply.unit} ${request.supply.name}. Hàng đã được nhập kho tại ${request.zone.name}.`
             : `Đề xuất ${request.requestNumber} bị từ chối. Lý do: ${dto.rejectionReason || 'Không phù hợp'}`,

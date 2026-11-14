@@ -117,7 +117,7 @@ describe('InventoryService', () => {
 
     it.each(['ACK', 'FALLBACK'] as const)(
       'dispatches and adds stock once via %s',
-      async (source) => {
+      async (_source) => {
         jest.useFakeTimers();
         let request: any;
         prisma.restockRequest.create.mockImplementation(async ({ data }: any) => {
