@@ -47,9 +47,9 @@ function distinct<T>(values: Iterable<T>): Set<T> {
 async function main() {
   const prisma = new PrismaClient({ datasourceUrl: resolveDatabaseUrl() });
   try {
-    // 1. All Prisma models (38) must be populated
+    // 1. All Prisma models (36) must be populated
     const models = Prisma.dmmf.datamodel.models;
-    assert.strictEqual(models.length, 38, `Expected 38 Prisma models, saw ${models.length}`);
+    assert.strictEqual(models.length, 36, `Expected 36 Prisma models, saw ${models.length}`);
     for (const model of models) {
       const delegateKey = modelDelegateName(model.name);
       const count: number = await (prisma as any)[delegateKey].count();
@@ -270,14 +270,7 @@ async function main() {
       assert.ok(billingPeriods.has(p), `Missing FinancialInvoice period ${p}`);
     }
 
-    // 8. Owner AI hygiene & Notifications & Counters
-    const aiMsgs = await prisma.ownerAiMessage.findMany();
-    for (const msg of aiMsgs) {
-      assert.ok(
-        !msg.content.includes('Thunder'),
-        'OwnerAiMessage still contains stale Thunder name',
-      );
-    }
+    // 8. Notifications & Counters
     const notifs = await prisma.notification.findMany();
     const notifCats = distinct(notifs.map((n) => n.category));
     for (const cat of Object.values(NotificationCategory)) {

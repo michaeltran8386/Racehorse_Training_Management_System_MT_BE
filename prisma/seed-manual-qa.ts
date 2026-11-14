@@ -36,8 +36,6 @@ import {
   IncidentStatus,
   RestockStatus,
   PermissionRequestStatus,
-  InsightType,
-  InsightStatus,
   SimulatorSessionType,
   SimulatorSessionStatus,
   ShiftType,
@@ -132,7 +130,6 @@ const DOMAIN = {
   INCIDENT_REPORT: 0x17,
   SIMULATOR_SESSION: 0x18,
   PERMISSION_REQUEST: 0x19,
-  AI_INSIGHT: 0x1a,
 };
 
 /**
@@ -1454,47 +1451,6 @@ async function main() {
         status: pr.status,
         resolvedAt: pr.status !== PermissionRequestStatus.OPEN ? now : null,
         resolvedBy: pr.status !== PermissionRequestStatus.OPEN ? 'QA Michael Tran (Club Manager)' : null,
-      },
-    });
-  }
-
-  // 4 AI Insights
-  const insightTypes = [
-    InsightType.WORKOUT_RECOMMENDATION,
-    InsightType.INJURY_RISK_WARNING,
-    InsightType.RECOVERY_ADVICE,
-    InsightType.WORKOUT_RECOMMENDATION,
-  ];
-
-  for (let i = 1; i <= 4; i++) {
-    const insightId = toUuid(DOMAIN.AI_INSIGHT, i);
-    const horseCode = `QA-HR-${i.toString().padStart(6, '0')}`;
-    const type = insightTypes[i - 1];
-
-    await prisma.aIInsight.upsert({
-      where: { id: insightId },
-      update: {
-        horseId: horseMap[horseCode],
-        insightType: type,
-        trainingLoadIndex: 75.0 + (i * 3),
-        riskScore: 0.15 + (i * 0.1),
-        recommendationsJson: JSON.stringify({
-          summary: `Khuyến nghị AI kiểm thử QA #${i}`,
-          details: ['Tối ưu bài tập nước kiệu', 'Theo dõi sát nhịp tim phục hồi'],
-        }),
-        status: InsightStatus.GENERATED,
-      },
-      create: {
-        id: insightId,
-        horseId: horseMap[horseCode],
-        insightType: type,
-        trainingLoadIndex: 75.0 + (i * 3),
-        riskScore: 0.15 + (i * 0.1),
-        recommendationsJson: JSON.stringify({
-          summary: `Khuyến nghị AI kiểm thử QA #${i}`,
-          details: ['Tối ưu bài tập nước kiệu', 'Theo dõi sát nhịp tim phục hồi'],
-        }),
-        status: InsightStatus.GENERATED,
       },
     });
   }
