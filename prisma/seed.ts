@@ -1334,7 +1334,9 @@ async function seedTraining(tx: Tx) {
           type: 'FOUNDATION',
           focus: 'FOUNDATION',
           startDate: days(p.startOffset).toISOString().slice(0, 10),
-          endDate: days(p.startOffset + 14).toISOString().slice(0, 10),
+          endDate: days(p.startOffset + 14)
+            .toISOString()
+            .slice(0, 10),
           durationDays: 14,
           sessionsPerWeek: 5,
           maxWeeklyDistance: Math.max(5000, Math.round(p.targetDistance * 5)),
@@ -1347,8 +1349,12 @@ async function seedTraining(tx: Tx) {
           name: 'Giai đoạn Tốc độ & Bứt tốc',
           type: 'SPEED',
           focus: 'SPEED',
-          startDate: days(p.startOffset + 15).toISOString().slice(0, 10),
-          endDate: days(p.startOffset + 29).toISOString().slice(0, 10),
+          startDate: days(p.startOffset + 15)
+            .toISOString()
+            .slice(0, 10),
+          endDate: days(p.startOffset + 29)
+            .toISOString()
+            .slice(0, 10),
           durationDays: 14,
           sessionsPerWeek: 5,
           maxWeeklyDistance: Math.max(6000, Math.round(p.targetDistance * 6)),
@@ -1361,7 +1367,9 @@ async function seedTraining(tx: Tx) {
           name: 'Giai đoạn Thả lỏng Phục hồi',
           type: 'RECOVERY',
           focus: 'RECOVERY',
-          startDate: days(p.startOffset + 30).toISOString().slice(0, 10),
+          startDate: days(p.startOffset + 30)
+            .toISOString()
+            .slice(0, 10),
           endDate: days(p.endOffset).toISOString().slice(0, 10),
           durationDays: 7,
           sessionsPerWeek: 3,
@@ -1481,8 +1489,12 @@ async function seedTraining(tx: Tx) {
         heartRatePeak: isAbnormalSample ? 228 : 184 + (idx % 12),
         heartRateRecovery: isAbnormalSample ? 132 : 44 + (idx % 8),
         recoveryTimeMinutes: isAbnormalSample ? 16 : 7.5,
-        staminaScore: isAbnormalSample ? 6.4 : Number((8.4 + ((idx + runner.horseIdx) % 12) * 0.1).toFixed(1)),
-        performanceScore: isAbnormalSample ? 6.8 : Number((8.2 + ((idx + runner.horseIdx) % 14) * 0.1).toFixed(1)),
+        staminaScore: isAbnormalSample
+          ? 6.4
+          : Number((8.4 + ((idx + runner.horseIdx) % 12) * 0.1).toFixed(1)),
+        performanceScore: isAbnormalSample
+          ? 6.8
+          : Number((8.2 + ((idx + runner.horseIdx) % 14) * 0.1).toFixed(1)),
         injuryRiskLevel: isAbnormalSample ? 'MEDIUM' : 'LOW',
         status: WorkoutStatus.COMPLETED,
         workoutType: wType,
@@ -1505,10 +1517,28 @@ async function seedTraining(tx: Tx) {
       });
     });
 
-    // Scheduled sessions for today & next 4 days
-    [0, 2, 4].forEach((off, idx) => {
+    // Scheduled sessions for today & next 6 days (covering 14/11/2026 to 20/11/2026)
+    [0, 1, 2, 3, 4, 5, 6].forEach((off, idx) => {
       const hour = 6 + ((runner.horseIdx + idx) % 4);
-      const wType = idx === 0 ? 'BREEZE' : idx === 1 ? 'TROT' : 'TRIAL';
+      const wTypes: Array<'BREEZE' | 'TROT' | 'CANTER' | 'TRIAL'> = [
+        'BREEZE',
+        'TROT',
+        'CANTER',
+        'TRIAL',
+        'BREEZE',
+        'CANTER',
+        'TRIAL',
+      ];
+      const wType = wTypes[idx % wTypes.length];
+      const intensity = wType === 'TROT' ? 'LIGHT' : wType === 'CANTER' ? 'MEDIUM' : 'HEAVY';
+      const speed =
+        wType === 'TROT' ? 24 : wType === 'CANTER' ? runner.baseSpeed - 6 : runner.baseSpeed;
+      const dist =
+        wType === 'TROT'
+          ? 800
+          : wType === 'CANTER'
+            ? Math.max(1000, runner.dist - 200)
+            : runner.dist;
       workouts.push({
         id: id(`workout:sched:${runner.horseIdx}:${off}`),
         trainingPlanId: id(runner.planKey),
@@ -1516,37 +1546,44 @@ async function seedTraining(tx: Tx) {
         assignedStaffUserId: runner.trainerId,
         scheduledDate: days(off, hour, 0),
         phaseId: `${runner.planKey.toUpperCase()}-PH2`,
-        distanceMeters: wType === 'TROT' ? 800 : runner.dist,
+        distanceMeters: dist,
         repetitions: 1,
-        targetSpeedKmh: wType === 'TROT' ? 24 : runner.baseSpeed,
-        targetDurationSeconds: wType === 'TROT' ? 120 : 95,
+        targetSpeedKmh: speed,
+        targetDurationSeconds: Math.round((dist / 1000 / speed) * 3600),
         status: WorkoutStatus.SCHEDULED,
         workoutType: wType,
-        intensity: wType === 'TROT' ? 'LIGHT' : 'HEAVY',
+        intensity,
         trackSurface: runner.horseIdx % 2 === 0 ? 'TURF' : 'DIRT',
         jockeyName: runner.jockey,
         gateNumber: (runner.horseIdx % 8) + 1,
-        trainerNotes: 'Kiểm tra nhịp tim trước và sau khi về đích.',
+        trainerNotes:
+          off === 6
+            ? 'Buổi chạy nước rút chuẩn bị Cúp Tri Ân 20/11 - Tôn Vinh Huấn Luyện Viên.'
+            : 'Kiểm tra nhịp tim trước và sau khi về đích.',
       });
     });
   }
 
-  // Light rehab/walk + BLOCKED/MISSED/CANCELLED coverage
-  workouts.push(
-    {
-      id: id('workout:h2-walk-today'),
+  // Light rehab/walk for Xich Tho (horseIds[1]) under MedicalLock across every day up to 20/11
+  [0, 1, 2, 3, 4, 5, 6].forEach((off) => {
+    workouts.push({
+      id: id(`workout:h2-walk:d${off}`),
       trainingPlanId: id('tp-h2-active'),
       horseId: horseIds[1],
       assignedStaffUserId: userIds.trainer,
-      scheduledDate: days(0, 7, 30),
+      scheduledDate: days(off, 7, 30),
       distanceMeters: 600,
       repetitions: 1,
       status: WorkoutStatus.SCHEDULED,
       workoutType: 'WALK',
       intensity: 'LIGHT',
       trackSurface: 'DIRT',
-      trainerNotes: 'Dắt đi bộ nhẹ 15 phút theo phác đồ khóa y tế.',
-    },
+      trainerNotes: 'Dắt đi bộ nhẹ 15 phút theo phác đồ khóa y tế (theo dõi gân chân trước).',
+    });
+  });
+
+  // Coverage for BLOCKED/MISSED/CANCELLED sessions
+  workouts.push(
     {
       id: id('workout:h2-blocked-breeze'),
       trainingPlanId: id('tp-h2-active'),
@@ -2099,7 +2136,12 @@ async function seedMedical(tx: Tx) {
   const schedules: Prisma.PreventiveScheduleCreateManyInput[] = [];
   HORSES.filter((h) => h.status !== HorseStatus.RETIRED).forEach((h, idx) => {
     const types: Array<[PreventiveType, string, PreventiveStatus, number]> = [
-      [PreventiveType.VACCINATION, preventiveTypeIds.VACCINATION, PreventiveStatus.COMPLETED, -90],
+      [
+        PreventiveType.VACCINATION,
+        preventiveTypeIds.VACCINATION,
+        idx === 0 || idx === 2 ? PreventiveStatus.PENDING : PreventiveStatus.COMPLETED,
+        idx === 0 || idx === 2 ? 6 : -90,
+      ],
       [
         PreventiveType.FARRIER_HOOF_CARE,
         preventiveTypeIds.FARRIER_HOOF_CARE,
@@ -2108,19 +2150,19 @@ async function seedMedical(tx: Tx) {
           : idx % 3 === 0
             ? PreventiveStatus.PENDING
             : PreventiveStatus.COMPLETED,
-        idx % 5 === 0 ? -3 : idx % 3 === 0 ? 5 : -18,
+        idx % 5 === 0 ? -3 : idx % 3 === 0 ? 3 : -18,
       ],
       [
         PreventiveType.DEWORMING,
         preventiveTypeIds.DEWORMING,
         idx % 4 === 0 ? PreventiveStatus.PENDING : PreventiveStatus.COMPLETED,
-        idx % 4 === 0 ? 7 : -35,
+        idx % 4 === 0 ? 5 : -35,
       ],
       [
         PreventiveType.DENTAL,
         preventiveTypeIds.DENTAL,
         idx % 6 === 0 ? PreventiveStatus.OVERDUE : PreventiveStatus.PENDING,
-        idx % 6 === 0 ? -5 : 18,
+        idx % 6 === 0 ? -5 : 2,
       ],
     ];
     for (const [pType, typeCatalogId, status, off] of types) {
@@ -2418,7 +2460,7 @@ async function seedStableCare(tx: Tx) {
     skipDuplicates: true,
   });
 
-  // ShiftRoster covering ALL 10 Active Grooms over a 7-day rolling window (-1..+5)
+  // ShiftRoster covering ALL 10 Active Grooms over rolling window (-2..+7, covering through 21/11/2026)
   const rosterAssignments: Array<[string, string, string]> = [
     [zoneIds.A, shiftIds.MORNING, userIds.grooms[0]],
     [zoneIds.A, shiftIds.MORNING, userIds.grooms[3]],
@@ -2432,7 +2474,7 @@ async function seedStableCare(tx: Tx) {
     [zoneIds.H, shiftIds.MORNING, userIds.grooms[8]],
   ];
   const rosters: Prisma.ShiftRosterCreateManyInput[] = [];
-  for (let d = -1; d <= 5; d++) {
+  for (let d = -2; d <= 7; d++) {
     const rDate = days(d, 0, 0);
     rosterAssignments.forEach(([zoneId, shiftId, groomUserId], idx) => {
       rosters.push({
@@ -2447,7 +2489,7 @@ async function seedStableCare(tx: Tx) {
   }
   await tx.shiftRoster.createMany({ data: rosters, skipDuplicates: true });
 
-  // DailyCareTasks for today (d=0) excluding RETIRED horses (BR-STL-07)
+  // DailyCareTasks for days 0 to 6 (14/11/2026 through 20/11/2026) excluding RETIRED horses (BR-STL-07)
   const activeHorses = HORSES.filter((h) => h.status !== HorseStatus.RETIRED);
   const scheduleHorses: ScheduleHorse[] = activeHorses.map((h) => {
     const zCode: 'A' | 'B' | 'C' | 'H' =
@@ -2522,58 +2564,68 @@ async function seedStableCare(tx: Tx) {
       ...shiftMeta[shiftId],
     })),
   );
-  const todayDate = days(0, 0, 0);
-  const dailyTasks: Prisma.DailyCareTaskCreateManyInput[] = todayPlanned.map((t, idx) => {
-    const done = t.scheduledTime < '09:00';
-    return {
-      id: id(`task:d0:${t.horseId}:${t.taskType}:${t.mealType ?? 'none'}:${t.scheduledTime}`),
-      taskCode: `TSK-${yymm()}-${String(idx + 1).padStart(4, '0')}`,
-      date: todayDate,
-      horseId: t.horseId,
-      stallZoneId: t.zoneId ?? null,
-      stallId: t.stallId ?? null,
-      taskType: t.taskType,
-      title: t.title,
-      description: t.description,
-      mealType: t.mealType ?? null,
-      scheduledTime: t.scheduledTime,
-      shiftId: t.shiftId ?? null,
-      nutritionPlanId: id(`nutri:approved:${t.horseId}`),
-      isMedicalLocked: Boolean(activeHorses.find((h) => h.id === t.horseId)?.isMedicalLocked),
-      itemsSnapshotJson: (t.itemsSnapshotJson as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-      isCompleted: done,
-      completedAt: done ? days(0, 8, 45) : null,
-      completedById: done ? (t.assignedGroomUserId ?? userIds.grooms[0]) : null,
-      assignedGroomUserId: t.assignedGroomUserId ?? userIds.grooms[0],
-    };
-  });
-  // Explicit DailyTaskType.OTHER night temperature check to ensure all 7 DailyTaskTypes are covered
-  dailyTasks.push({
-    id: id('task:d0:other:h15-temp'),
-    taskCode: `TSK-${yymm()}-9901`,
-    date: todayDate,
-    horseId: horseIds[14],
-    stallZoneId: zoneIds.C,
-    stallId: stallIds.C[0],
-    taskType: DailyTaskType.OTHER,
-    title: 'Đo thân nhiệt & kiểm tra chuồng cách ly ban đêm',
-    description: 'Kiểm tra nhiệt độ trực tràng và lượng nước uống khu C.',
-    scheduledTime: '21:30',
-    shiftId: shiftIds.NIGHT,
-    isMedicalLocked: true,
-    isCompleted: false,
-    assignedGroomUserId: userIds.grooms[4],
-  });
+
+  const dailyTasks: Prisma.DailyCareTaskCreateManyInput[] = [];
+  let taskCounter = 1;
+
+  for (let d = 0; d <= 6; d++) {
+    const taskDate = days(d, 0, 0);
+    todayPlanned.forEach((t) => {
+      // On day 0 (today), morning tasks (< 12:00) are completed.
+      // On future days (d > 0: 15/11 .. 20/11), tasks are pending (isCompleted = false).
+      const done = d === 0 ? t.scheduledTime < '12:00' : false;
+      dailyTasks.push({
+        id: id(`task:d${d}:${t.horseId}:${t.taskType}:${t.mealType ?? 'none'}:${t.scheduledTime}`),
+        taskCode: `TSK-${yymm()}-${String(taskCounter++).padStart(5, '0')}`,
+        date: taskDate,
+        horseId: t.horseId,
+        stallZoneId: t.zoneId ?? null,
+        stallId: t.stallId ?? null,
+        taskType: t.taskType,
+        title: t.title,
+        description: t.description,
+        mealType: t.mealType ?? null,
+        scheduledTime: t.scheduledTime,
+        shiftId: t.shiftId ?? null,
+        nutritionPlanId: id(`nutri:approved:${t.horseId}`),
+        isMedicalLocked: Boolean(activeHorses.find((h) => h.id === t.horseId)?.isMedicalLocked),
+        itemsSnapshotJson: (t.itemsSnapshotJson as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        isCompleted: done,
+        completedAt: done ? days(d, 8, 45) : null,
+        completedById: done ? (t.assignedGroomUserId ?? userIds.grooms[0]) : null,
+        assignedGroomUserId: t.assignedGroomUserId ?? userIds.grooms[0],
+      });
+    });
+
+    // Explicit DailyTaskType.OTHER night temperature check for Tuyet Anh (C01) for each day
+    dailyTasks.push({
+      id: id(`task:d${d}:other:h15-temp`),
+      taskCode: `TSK-${yymm()}-${String(taskCounter++).padStart(5, '0')}`,
+      date: taskDate,
+      horseId: horseIds[14],
+      stallZoneId: zoneIds.C,
+      stallId: stallIds.C[0],
+      taskType: DailyTaskType.OTHER,
+      title: 'Đo thân nhiệt & kiểm tra chuồng cách ly ban đêm',
+      description: 'Kiểm tra nhiệt độ trực tràng và lượng nước uống khu C.',
+      scheduledTime: '21:30',
+      shiftId: shiftIds.NIGHT,
+      isMedicalLocked: true,
+      isCompleted: false,
+      assignedGroomUserId: userIds.grooms[4],
+    });
+  }
   await tx.dailyCareTask.createMany({ data: dailyTasks, skipDuplicates: true });
 
   // DailyGroomingLog across MORNING / AFTERNOON / EVENING
-  await tx.dailyGroomingLog.createMany({
-    data: [
+  const groomingLogs: Prisma.DailyGroomingLogCreateManyInput[] = [];
+  [-1, 0].forEach((d) => {
+    groomingLogs.push(
       {
-        id: id('groomlog:h1-m'),
+        id: id(`groomlog:h1:d${d}`),
         horseId: horseIds[0],
         groomUserId: userIds.grooms[0],
-        shiftDate: days(0, 6, 30),
+        shiftDate: days(d, 6, 30),
         shiftType: ShiftType.MORNING,
         feedCompleted: true,
         cleaningCompleted: true,
@@ -2582,10 +2634,10 @@ async function seedStableCare(tx: Tx) {
         healthObservations: 'Ăn hết sạch cỏ khô và ngũ cốc, tinh thần hưng phấn.',
       },
       {
-        id: id('groomlog:h2-a'),
+        id: id(`groomlog:h2:d${d}`),
         horseId: horseIds[1],
         groomUserId: userIds.grooms[3],
-        shiftDate: days(-1, 14, 0),
+        shiftDate: days(d, 14, 0),
         shiftType: ShiftType.AFTERNOON,
         feedCompleted: true,
         cleaningCompleted: true,
@@ -2594,10 +2646,10 @@ async function seedStableCare(tx: Tx) {
         healthObservations: 'Đã chườm đá chân phải 15 phút, vùng gân mát và đỡ sưng.',
       },
       {
-        id: id('groomlog:h15-e'),
+        id: id(`groomlog:h15:d${d}`),
         horseId: horseIds[14],
         groomUserId: userIds.grooms[2],
-        shiftDate: days(-1, 19, 0),
+        shiftDate: days(d, 19, 0),
         shiftType: ShiftType.EVENING,
         feedCompleted: true,
         cleaningCompleted: true,
@@ -2605,9 +2657,9 @@ async function seedStableCare(tx: Tx) {
         iceBootCompleted: false,
         healthObservations: 'Thân nhiệt tối 38.6°C, uống nước tốt hơn hôm qua.',
       },
-    ],
-    skipDuplicates: true,
+    );
   });
+  await tx.dailyGroomingLog.createMany({ data: groomingLogs, skipDuplicates: true });
 
   // RestockRequests covering all 5 RestockStatus
   await tx.restockRequest.createMany({
@@ -2675,6 +2727,44 @@ async function seedStableCare(tx: Tx) {
         requestedById: userIds.grooms[8],
         reviewedById: userIds.manager,
         reviewedAt: days(-4),
+      },
+      {
+        id: id('restock:d1:oats'),
+        requestNumber: 'REQ-SUP-006',
+        zoneId: zoneIds.A,
+        supplyId: supplyIds.oatGrain,
+        requestedQuantity: 200,
+        approvedQuantity: 200,
+        status: RestockStatus.DELIVERED,
+        urgencyReason: 'Nhập cám yến mạch phục vụ chế độ tập tăng tải tuần đua 15-20/11',
+        requestedById: userIds.grooms[0],
+        reviewedById: userIds.manager,
+        reviewedAt: days(1, 10, 0),
+        deliveredAt: days(1, 10, 5),
+        deliveredById: userIds.grooms[0],
+      },
+      {
+        id: id('restock:d3:electrolyte'),
+        requestNumber: 'REQ-SUP-007',
+        zoneId: zoneIds.B,
+        supplyId: supplyIds.electrolyte,
+        requestedQuantity: 50,
+        approvedQuantity: 50,
+        status: RestockStatus.APPROVED,
+        urgencyReason: 'Bổ sung gói điện giải khu B chuẩn bị cho vòng bán kết ngày 18/11',
+        requestedById: userIds.grooms[1],
+        reviewedById: userIds.manager,
+        reviewedAt: days(3, 14, 0),
+      },
+      {
+        id: id('restock:d5:timothy'),
+        requestNumber: 'REQ-SUP-008',
+        zoneId: zoneIds.C,
+        supplyId: supplyIds.timothyHay,
+        requestedQuantity: 150,
+        status: RestockStatus.PENDING,
+        urgencyReason: 'Đề xuất dự trữ cỏ khô Timothy chuẩn bị đại lễ 20/11',
+        requestedById: userIds.grooms[2],
       },
     ],
     skipDuplicates: true,
@@ -2759,6 +2849,7 @@ async function seedRacingAndInvoices(tx: Tx) {
     oct: id('tour:2026-10'),
     closedReg: id('tour:2026-11-closed'),
     closedRegB: id('tour:2026-11-closed-b'),
+    t20Nov: id('tour:2026-11-20'),
     openReg: id('tour:2026-11-open'),
     openRegB: id('tour:2026-11-open-b'),
     openRegC: id('tour:2026-11-open-c'),
@@ -2912,6 +3003,22 @@ async function seedRacingAndInvoices(tx: Tx) {
         maxFieldSize: 10,
         minAgeYears: 3,
         registrationDeadline: days(-1),
+        status: TournamentStatus.CLOSED_REGISTRATION,
+      },
+      {
+        id: tIds.t20Nov,
+        code: 'CUP-2026-11-20',
+        name: 'Cúp Tri Ân 20/11 - Tôn Vinh Huấn Luyện Viên Thiên Mã 2026',
+        raceDate: days(6, 15, 0),
+        location: 'Trường đua Thiên Mã Đà Lạt',
+        distanceMeters: 1600,
+        trackType: TrackSurface.TURF,
+        entryFee: 5000000,
+        prizePool: 200000000,
+        trackCondition: 'GOOD',
+        maxFieldSize: 12,
+        minAgeYears: 3,
+        registrationDeadline: days(4),
         status: TournamentStatus.CLOSED_REGISTRATION,
       },
       {
@@ -3077,7 +3184,7 @@ async function seedRacingAndInvoices(tx: Tx) {
     reg(tIds.oct, 2, RegistrationStatus.CONFIRMED, 5000000, -32),
     reg(tIds.oct, 3, RegistrationStatus.CONFIRMED, 5000000, -32),
     reg(tIds.oct, 1, RegistrationStatus.SCRATCHED_MEDICAL, 5000000, -32),
-    // T11 Closed A & B
+    // T11 Closed A & B & 20/11 Special Cup
     reg(tIds.closedReg, 4, RegistrationStatus.CONFIRMED, 3500000, -3),
     reg(tIds.closedReg, 6, RegistrationStatus.CONFIRMED, 3500000, -3),
     reg(tIds.closedReg, 11, RegistrationStatus.CONFIRMED, 3500000, -3),
@@ -3085,6 +3192,11 @@ async function seedRacingAndInvoices(tx: Tx) {
     reg(tIds.closedRegB, 2, RegistrationStatus.CONFIRMED, 4000000, -2),
     reg(tIds.closedRegB, 5, RegistrationStatus.CONFIRMED, 4000000, -2),
     reg(tIds.closedRegB, 9, RegistrationStatus.CONFIRMED, 4000000, -2),
+    reg(tIds.t20Nov, 0, RegistrationStatus.CONFIRMED, 5000000, -2),
+    reg(tIds.t20Nov, 2, RegistrationStatus.CONFIRMED, 5000000, -2),
+    reg(tIds.t20Nov, 3, RegistrationStatus.CONFIRMED, 5000000, -1),
+    reg(tIds.t20Nov, 4, RegistrationStatus.CONFIRMED, 5000000, -1),
+    reg(tIds.t20Nov, 5, RegistrationStatus.CONFIRMED, 5000000, 0),
     // T11 Open B, D, E
     reg(tIds.openReg, 0, RegistrationStatus.REGISTERED, 5000000, -1),
     reg(tIds.openReg, 3, RegistrationStatus.REGISTERED, 5000000, -1),
@@ -3303,6 +3415,18 @@ async function seedActivityAndSupport(tx: Tx) {
         params: { invoiceNumber: 'INV-2026-004' },
         dedupeKey: 'notif:system:debt-owner4',
       },
+      {
+        id: id('notif:cup20nov'),
+        userId: userIds.owners[0],
+        type: 'HORSE_STATUS_UPDATE',
+        category: NotificationCategory.HORSE,
+        title: 'Công bố danh sách Cúp Tri Ân 20/11',
+        message:
+          'Bạch Long Mã đã được xác nhận tham gia thi đấu Cúp Tri Ân 20/11 tại SVĐ Thiên Mã.',
+        link: '/racing',
+        params: { tournamentCode: 'CUP-2026-11-20' },
+        dedupeKey: 'notif:horse:cup20nov',
+      },
     ],
     skipDuplicates: true,
   });
@@ -3352,6 +3476,19 @@ async function seedActivityAndSupport(tx: Tx) {
           grossPrize: 90000000,
         }),
         timestamp: days(-21, 17, 0),
+      },
+      {
+        id: id('audit:5'),
+        userId: userIds.manager,
+        action: 'TOURNAMENT_ROSTER_FINALIZED',
+        entityName: 'Tournament',
+        entityId: id('tour:2026-11-20'),
+        newValuesJson: JSON.stringify({
+          code: 'CUP-2026-11-20',
+          title: 'Cúp Tri Ân 20/11 - Tôn Vinh Huấn Luyện Viên Thiên Mã 2026',
+          confirmedRunners: 5,
+        }),
+        timestamp: days(4, 18, 0),
       },
     ],
     skipDuplicates: true,
