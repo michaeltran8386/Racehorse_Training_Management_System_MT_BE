@@ -203,19 +203,6 @@ enum InvoiceStatus {
   CANCELLED
 }
 
-enum InsightType {
-  WORKOUT_RECOMMENDATION
-  INJURY_RISK_WARNING
-  RECOVERY_ADVICE
-}
-
-enum InsightStatus {
-  GENERATED
-  ACKNOWLEDGED
-  APPLIED
-  DISMISSED
-}
-
 enum SupplyCategory {
   FEED_HAY
   FEED_GRAIN
@@ -317,7 +304,6 @@ model User {
   restockRequestsCreated   RestockRequest[]         @relation("RestockRequestedBy")
   restockRequestsReviewed  RestockRequest[]         @relation("RestockReviewedBy")
   restockRequestsDelivered RestockRequest[]         @relation("RestockDeliveredBy")
-  ownerAiMessages          OwnerAiMessage[]
 
   @@index([email])
   @@index([role])
@@ -471,7 +457,6 @@ model Horse {
   incidents               IncidentReport[]         @relation("HorseIncidents")
   tournamentRegistrations TournamentRegistration[]
   financialInvoices       FinancialInvoice[]
-  aiInsights              AIInsight[]
 
   @@index([horseCode])
   @@index([microchip])
@@ -970,22 +955,6 @@ model FinancialInvoice {
   @@index([billingPeriod])
 }
 
-model AIInsight {
-  id                  String        @id @default(uuid())
-  horseId             String
-  horse               Horse         @relation(fields: [horseId], references: [id], onDelete: Restrict)
-  insightType         InsightType
-  trainingLoadIndex   Float
-  riskScore           Float
-  recommendationsJson String // JSON string of AI suggestions
-  status              InsightStatus @default(GENERATED)
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-
-  @@index([horseId])
-  @@index([insightType])
-}
-
 model AuditLog {
   id            String   @id @default(uuid())
   userId        String?
@@ -1220,21 +1189,4 @@ model SimulatorSession {
 
   @@index([status, updatedAt])
   @@index([medicalRecordId])
-}
-
-// -------------------------------------------------------------
-// HORSE OWNER AI CONCIERGE (FLOW 6: SCOPED TO ROLE OWNER)
-// -------------------------------------------------------------
-
-model OwnerAiMessage {
-  id        String   @id @default(uuid())
-  ownerId   String
-  sender    String   // USER | AI
-  content   String
-  cardType  String?  // HORSE_CARD | RACE_CARD | SETTLEMENT_CARD | BILLING_CARD
-  cardData  Json?
-  createdAt DateTime @default(now())
-  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-
-  @@index([ownerId, createdAt])
 }

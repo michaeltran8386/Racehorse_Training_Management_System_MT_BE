@@ -5,8 +5,6 @@ import {
   HorseStatus,
   IncidentStatus,
   InjuryStatus,
-  InsightStatus,
-  InsightType,
   InvoiceStatus,
   MedicalRecordStatus,
   NotificationCategory,
@@ -138,10 +136,8 @@ const preventiveTypeIds = {
 };
 
 async function clearFixtures(tx: Tx) {
-  await tx.ownerAiMessage.deleteMany();
   await tx.auditLog.deleteMany();
   await tx.notification.deleteMany();
-  await tx.aIInsight.deleteMany();
   await tx.financialInvoice.deleteMany();
   await tx.tournamentResult.deleteMany();
   await tx.tournamentRegistration.deleteMany();
@@ -3226,122 +3222,6 @@ async function seedRacingAndInvoices(tx: Tx) {
 }
 
 async function seedActivityAndSupport(tx: Tx) {
-  // AIInsights covering all 3 InsightType & all 4 InsightStatus
-  await tx.aIInsight.createMany({
-    data: [
-      {
-        id: id('ai:h1-applied'),
-        horseId: horseIds[0],
-        insightType: InsightType.WORKOUT_RECOMMENDATION,
-        trainingLoadIndex: 1.12,
-        riskScore: 18,
-        status: InsightStatus.APPLIED,
-        recommendationsJson: JSON.stringify({
-          summary:
-            'ACWR đạt vùng tối ưu (1.12). Khuyến nghị giữ cự ly 1600m nước rút tốc độ 62 km/h.',
-          action: 'MAINTAIN_LOAD',
-        }),
-      },
-      {
-        id: id('ai:h2-warning'),
-        horseId: horseIds[1],
-        insightType: InsightType.INJURY_RISK_WARNING,
-        trainingLoadIndex: 1.48,
-        riskScore: 76,
-        status: InsightStatus.ACKNOWLEDGED,
-        recommendationsJson: JSON.stringify({
-          summary:
-            'Tải trọng tập kết hợp dấu hiệu viêm gân chân trước phải. Duy trì Khóa Y Tế 14 ngày.',
-          action: 'HOLD_HEAVY_TRAINING',
-        }),
-      },
-      {
-        id: id('ai:h7-generated'),
-        horseId: horseIds[6],
-        insightType: InsightType.RECOVERY_ADVICE,
-        trainingLoadIndex: 1.24,
-        riskScore: 45,
-        status: InsightStatus.GENERATED,
-        recommendationsJson: JSON.stringify({
-          summary:
-            'Nhịp tim hồi phục sau 10 phút hơi chậm ở buổi gần nhất (132 bpm). Thêm 1 ngày TROT nhẹ.',
-          action: 'LIGHT_RECOVERY',
-        }),
-      },
-      {
-        id: id('ai:h5-dismissed'),
-        horseId: horseIds[4],
-        insightType: InsightType.WORKOUT_RECOMMENDATION,
-        trainingLoadIndex: 1.05,
-        riskScore: 15,
-        status: InsightStatus.DISMISSED,
-        recommendationsJson: JSON.stringify({
-          summary: 'Đề xuất tăng tốc cự ly 1800m; HLV giữ cự ly sở trường 1600m.',
-          action: 'INCREASE_DISTANCE',
-        }),
-      },
-    ],
-    skipDuplicates: true,
-  });
-
-  // OwnerAiMessages with deterministic IDs referencing canonical horse names
-  await tx.ownerAiMessage.createMany({
-    data: [
-      {
-        id: id('oai:owner1:1'),
-        ownerId: userIds.owners[0],
-        sender: 'OWNER',
-        content: 'Tình hình tập luyện và giải đấu sắp tới của Bạch Long Mã thế nào?',
-        createdAt: days(-2, 10, 0),
-      },
-      {
-        id: id('oai:owner1:2'),
-        ownerId: userIds.owners[0],
-        sender: 'AI',
-        content:
-          'Bạch Long Mã đang ở trạng thái ACTIVE với chỉ số ACWR 1.12 (vùng tối ưu), vừa vô địch Giải Vô Địch Mùa Thu và đã đăng ký Cúp Mùa Đông.',
-        cardType: 'HORSE_SUMMARY',
-        cardData: { horseCode: 'HR-000001', horseName: 'Bạch Long Mã', acwr: 1.12 },
-        createdAt: days(-2, 10, 1),
-      },
-      {
-        id: id('oai:owner1:3'),
-        ownerId: userIds.owners[0],
-        sender: 'OWNER',
-        content: 'Xích Thố khi nào dự kiến được mở Khóa Y Tế?',
-        createdAt: days(-1, 14, 0),
-      },
-      {
-        id: id('oai:owner1:4'),
-        ownerId: userIds.owners[0],
-        sender: 'AI',
-        content:
-          'Xích Thố đang điều trị viêm gân gấp nông chân trước phải (mã MLK-2026-002), lịch tái khám dự kiến sau 4 ngày nữa do BS. Phạm Minh Trí phụ trách.',
-        cardType: 'MEDICAL_STATUS',
-        cardData: { horseCode: 'HR-000002', lockCode: 'MLK-2026-002' },
-        createdAt: days(-1, 14, 1),
-      },
-      {
-        id: id('oai:owner4:1'),
-        ownerId: userIds.owners[3],
-        sender: 'OWNER',
-        content: 'Tổng dư nợ hiện tại của Dạ Nguyệt là bao nhiêu?',
-        createdAt: days(0, 9, 0),
-      },
-      {
-        id: id('oai:owner4:2'),
-        ownerId: userIds.owners[3],
-        sender: 'AI',
-        content:
-          'Dạ Nguyệt hiện có 3 kỳ hóa đơn quá hạn (T8, T9, T10/2026) và đang lưu giữ tại Khu H (STALL-H01). Bạn có thể xem chi tiết ở mục Tài chính.',
-        cardType: 'INVOICE_ALERT',
-        cardData: { horseCode: 'HR-000017', overdueMonths: ['2026-08', '2026-09', '2026-10'] },
-        createdAt: days(0, 9, 1),
-      },
-    ],
-    skipDuplicates: true,
-  });
-
   // Notifications covering all 7 NotificationCategory values
   await tx.notification.createMany({
     data: [
