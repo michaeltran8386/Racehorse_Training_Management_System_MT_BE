@@ -132,7 +132,7 @@ export class MedicalLocksService {
           isLocked: true,
         },
         include: {
-          horse: { select: { id: true, name: true, microchipRfid: true } },
+          horse: { select: { id: true, name: true, horseCode: true, microchip: true, microchipRfid: true } },
           veterinarian: { select: { id: true, fullName: true, email: true } },
           medicalRecord: { select: { id: true, examinationDate: true, clinicalDiagnosis: true } },
         },
@@ -333,7 +333,7 @@ export class MedicalLocksService {
           recheckNotes: dto.recheckNotes || dto.unlockReason,
         },
         include: {
-          horse: { select: { id: true, name: true, microchipRfid: true } },
+          horse: { select: { id: true, name: true, horseCode: true, microchip: true, microchipRfid: true } },
           veterinarian: { select: { id: true, fullName: true } },
           unlockVet: { select: { id: true, fullName: true } },
         },
@@ -506,7 +506,7 @@ export class MedicalLocksService {
           extensionHistory: history,
         },
         include: {
-          horse: { select: { id: true, name: true, microchipRfid: true } },
+          horse: { select: { id: true, name: true, horseCode: true, microchip: true, microchipRfid: true } },
           veterinarian: { select: { id: true, fullName: true } },
         },
       });
@@ -608,6 +608,7 @@ export class MedicalLocksService {
         { lockCode: { contains: search, mode: 'insensitive' } },
         { lockReason: { contains: search, mode: 'insensitive' } },
         { horse: { name: { contains: search, mode: 'insensitive' } } },
+        { horse: { microchip: { contains: search, mode: 'insensitive' } } },
         { horse: { microchipRfid: { contains: search, mode: 'insensitive' } } },
       ];
     }
@@ -620,7 +621,7 @@ export class MedicalLocksService {
         take,
         orderBy: { lockedAt: 'desc' },
         include: {
-          horse: { select: { id: true, name: true, microchipRfid: true, status: true } },
+          horse: { select: { id: true, name: true, horseCode: true, microchip: true, microchipRfid: true, status: true } },
           veterinarian: { select: { id: true, fullName: true, email: true } },
           unlockVet: { select: { id: true, fullName: true, email: true } },
           medicalRecord: { select: { id: true, examinationDate: true, clinicalDiagnosis: true } },
@@ -665,7 +666,7 @@ export class MedicalLocksService {
       where: { id },
       include: {
         horse: {
-          select: { id: true, name: true, microchipRfid: true, status: true, ownerId: true },
+          select: { id: true, name: true, horseCode: true, microchip: true, microchipRfid: true, status: true, ownerId: true },
         },
         veterinarian: { select: { id: true, fullName: true, email: true, phoneNumber: true } },
         unlockVet: { select: { id: true, fullName: true, email: true } },

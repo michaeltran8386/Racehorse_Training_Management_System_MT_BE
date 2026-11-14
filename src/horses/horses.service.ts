@@ -590,7 +590,7 @@ export class HorsesService {
       };
     }
 
-    // Bộ lọc tìm kiếm tự do (Tên, Mã ngựa, Microchip, RFID)
+    // Bộ lọc tìm kiếm tự do (Tên, Mã ngựa, Microchip)
     if (search && search.trim()) {
       const q = search.trim();
       where.OR = [

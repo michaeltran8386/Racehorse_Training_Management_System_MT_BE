@@ -167,7 +167,7 @@ describe('horse-rules', () => {
     ).toBe('SAME_STATUS');
   });
 
-  describe('name and RFID formats', () => {
+  describe('name and microchip formats', () => {
     it('accepts Vietnamese horse names and collapses extra spaces', () => {
       expect(HORSE_NAME_RE.test('Gió Bấc Đồng Nai')).toBe(true);
       expect(HORSE_NAME_RE.test("O'Brien Jr.")).toBe(true);

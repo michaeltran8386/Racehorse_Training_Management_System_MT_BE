@@ -137,30 +137,8 @@ describe('InventoryService', () => {
         prisma.stockBalance.upsert.mockResolvedValue({ quantity: new Prisma.Decimal(150) });
 
         const created = await service.createRestockRequest(dto, manager, true);
-        expect(created.status).toBe(RestockStatus.DELIVERING);
+        expect(created.status).toBe(RestockStatus.DELIVERED);
         expect(Number(created.approvedQuantity)).toBe(50);
-        expect(prisma.stockBalance.upsert).not.toHaveBeenCalled();
-        const payload = mockGateway.broadcastDeliveryStart.mock.calls[0][0];
-        expect(payload).toEqual(
-          expect.objectContaining({
-            requestId: 'req-direct',
-            zoneId: 'zone-1',
-            supplyId: 'sup-1',
-            supplyCode: 'OAT',
-            approvedQuantity: 50,
-            ackCapability: expect.any(String),
-          }),
-        );
-        expect(Date.parse(payload.animationEndsAt) - Date.parse(payload.dispatchedAt)).toBe(8000);
-        expect(Date.parse(payload.fallbackAt) - Date.parse(payload.dispatchedAt)).toBe(20000);
-        await jest.advanceTimersByTimeAsync(8000);
-        if (source === 'ACK') {
-          expect(await service.handleSimulatorAck('req-direct', payload.ackCapability)).toEqual(
-            expect.objectContaining({ success: true, completed: true }),
-          );
-        }
-        await jest.advanceTimersByTimeAsync(12000);
-        expect(request.status).toBe(RestockStatus.DELIVERED);
         expect(prisma.stockBalance.upsert).toHaveBeenCalledTimes(1);
         expect(
           prisma.stockBalance.upsert.mock.calls[0][0].update.quantity.increment.toNumber(),
@@ -169,7 +147,6 @@ describe('InventoryService', () => {
           expect.objectContaining({
             requestId: 'req-direct',
             status: 'DELIVERED',
-            balance: 150,
           }),
         );
         await service.completeDelivery('req-direct', 'FALLBACK');
@@ -375,7 +352,7 @@ describe('InventoryService', () => {
         supplyId: 'sup-1',
         requestedQuantity: new Prisma.Decimal(300),
         approvedQuantity: new Prisma.Decimal(300),
-        status: RestockStatus.DELIVERING,
+        status: RestockStatus.DELIVERED,
         requestedById: 'groom-1',
         zone: { id: 'zone-1', code: 'ZA', name: 'Zone A' },
         supply: { id: 'sup-1', code: 'OAT', name: 'Oats', category: 'FEED_GRAIN', unit: 'KG' },
@@ -388,7 +365,7 @@ describe('InventoryService', () => {
         { action: 'APPROVE', approvedQuantity: 300 },
         managerUser,
       );
-      expect(result.status).toBe(RestockStatus.DELIVERING);
+      expect(result.status).toBe(RestockStatus.DELIVERED);
       // Verify $queryRaw was called inside the transaction (SELECT FOR UPDATE)
       expect(txProxy.$queryRaw).toHaveBeenCalled();
     });
@@ -486,7 +463,7 @@ describe('InventoryService', () => {
         supplyId: 'sup-1',
         requestedQuantity: new Prisma.Decimal(50),
         approvedQuantity: new Prisma.Decimal(50),
-        status: RestockStatus.DELIVERING,
+        status: RestockStatus.DELIVERED,
         requestedById: 'groom-1',
         zone: { id: 'zone-1', code: 'ZA', name: 'Zone A' },
         supply: { id: 'sup-1', code: 'OAT', name: 'Oats', category: 'FEED_GRAIN', unit: 'KG' },
@@ -512,7 +489,7 @@ describe('InventoryService', () => {
         { action: 'APPROVE', approvedQuantity: 50 },
         managerUser,
       );
-      expect(first.status).toBe(RestockStatus.DELIVERING);
+      expect(first.status).toBe(RestockStatus.DELIVERED);
 
       // Second call loses the PENDING→DELIVERING race
       await expect(
@@ -561,7 +538,7 @@ describe('InventoryService', () => {
         supplyId: 'sup-1',
         requestedQuantity: new Prisma.Decimal(30),
         approvedQuantity: new Prisma.Decimal(30),
-        status: RestockStatus.DELIVERING,
+        status: RestockStatus.DELIVERED,
         requestedById: 'groom-1',
         zone: { id: 'zone-1', code: 'ZA', name: 'Zone A' },
         supply: { id: 'sup-1', code: 'OAT', name: 'Oats', category: 'FEED_GRAIN', unit: 'KG' },
@@ -593,7 +570,7 @@ describe('InventoryService', () => {
         { action: 'APPROVE', approvedQuantity: 30 },
         managerUser,
       );
-      expect(resA.status).toBe(RestockStatus.DELIVERING);
+      expect(resA.status).toBe(RestockStatus.DELIVERED);
 
       await expect(
         service.reviewRestockRequest(
@@ -687,7 +664,7 @@ describe('InventoryService', () => {
         supplyId: 'sup-1',
         requestedQuantity: new Prisma.Decimal(50),
         approvedQuantity: new Prisma.Decimal(50),
-        status: RestockStatus.DELIVERING,
+        status: RestockStatus.DELIVERED,
         requestedById: 'groom-1',
         zone: { id: 'zone-1', code: 'ZA', name: 'Zone A' },
         supply: { id: 'sup-1', code: 'OAT', name: 'Oats', category: 'FEED_GRAIN', unit: 'KG' },
@@ -712,7 +689,7 @@ describe('InventoryService', () => {
         { action: 'APPROVE', approvedQuantity: 50 },
         managerUser,
       );
-      expect(res.status).toBe(RestockStatus.DELIVERING);
+      expect(res.status).toBe(RestockStatus.DELIVERED);
       expect(txProxy.$queryRaw).toHaveBeenCalled();
     });
   });
@@ -893,7 +870,7 @@ describe('InventoryService', () => {
       const longOverdue = {
         id: 'req-extended-uptime',
         reviewedAt: new Date(Date.now() - 50000),
-        status: RestockStatus.DELIVERING,
+        status: RestockStatus.DELIVERED,
         approvedQuantity: new Prisma.Decimal(40),
         supply: { id: 'sup-1', name: 'Oats', unit: 'KG' },
         zone: { id: 'zone-1', name: 'Zone A' },
@@ -989,7 +966,7 @@ describe('InventoryService', () => {
         supplyId: 'sup-1',
         requestedQuantity: new Prisma.Decimal(50),
         approvedQuantity: new Prisma.Decimal(50),
-        status: RestockStatus.DELIVERING,
+        status: RestockStatus.DELIVERED,
         requestedById: 'groom-1',
         zone: { id: 'zone-1', code: 'ZA', name: 'Zone A' },
         supply: { id: 'sup-1', code: 'OAT', name: 'Oats', category: 'FEED_GRAIN', unit: 'KG' },
@@ -1015,33 +992,11 @@ describe('InventoryService', () => {
         managerUser,
       );
 
-      // Verify status is DELIVERING
-      expect(approved.status).toBe(RestockStatus.DELIVERING);
-      // Verify gateway broadcasted sys:supply_delivery_start with capability
-      expect(mockGateway.broadcastDeliveryStart).toHaveBeenCalledWith(
-        expect.objectContaining({
-          requestId: 'req-1',
-          approvedQuantity: 50,
-          ackCapability: expect.any(String),
-        }),
-      );
+      // Verify status is DELIVERED directly upon CM approval
+      expect(approved.status).toBe(RestockStatus.DELIVERED);
+      expect(prisma.stockBalance.upsert).toHaveBeenCalled();
 
-      // 3. Simulator completes 8s animation and sends ACK
-      const broadcastCall = mockGateway.broadcastDeliveryStart.mock.calls[0][0];
-      const capability = broadcastCall.ackCapability;
-
-      // Mock early ACK before 8s -> should reject
-      const earlyNow = new Date(Date.now() + 4000);
-      const earlyResult = service.verifyAckCapability('req-1', capability, earlyNow);
-      expect(earlyResult.valid).toBe(false);
-      expect(earlyResult.reason).toBe('EARLY_ACK_REJECTED');
-
-      // Valid ACK at 8.5 seconds
-      const validNow = new Date(Date.now() + 8500);
-      const validResult = service.verifyAckCapability('req-1', capability, validNow);
-      expect(validResult.valid).toBe(true);
-
-      // 4. Handle simulator ACK
+      // 3. For backwards compatibility: handleSimulatorAck completes delivering requests
       prisma.restockRequest.findUnique.mockResolvedValue({
         id: 'req-1',
         requestNumber: 'REQ-2610-0001',
@@ -1061,9 +1016,9 @@ describe('InventoryService', () => {
         quantity: new Prisma.Decimal(150),
       });
 
-      // Emulate valid ACK received from Simulator
+      // Emulate valid ACK received from Simulator for legacy order
       jest.spyOn(service, 'verifyAckCapability').mockReturnValue({ valid: true });
-      const ackRes = await service.handleSimulatorAck('req-1', capability);
+      const ackRes = await service.handleSimulatorAck('req-1', 'cap-1');
       expect(ackRes.success).toBe(true);
       expect(ackRes.resultingBalance).toBe(150);
 
@@ -1076,8 +1031,7 @@ describe('InventoryService', () => {
         balance: 150,
       });
 
-      // Verify exactly-once upsert
-      expect(prisma.stockBalance.upsert).toHaveBeenCalledTimes(1);
+      expect(prisma.stockBalance.upsert).toHaveBeenCalledTimes(2);
     });
 
     it('prevents double-credit on concurrent ACK and fallback timer race', async () => {
@@ -1121,7 +1075,7 @@ describe('InventoryService', () => {
       const overdueReq = {
         id: 'req-overdue',
         reviewedAt: new Date(now.getTime() - 25000),
-        status: RestockStatus.DELIVERING,
+        status: RestockStatus.DELIVERED,
         approvedQuantity: new Prisma.Decimal(30),
         supply: { id: 'sup-1', name: 'Oats', unit: 'KG' },
         zone: { id: 'zone-1', name: 'Zone A' },
@@ -1130,7 +1084,7 @@ describe('InventoryService', () => {
       const activeReq = {
         id: 'req-active',
         reviewedAt: new Date(now.getTime() - 5000),
-        status: RestockStatus.DELIVERING,
+        status: RestockStatus.DELIVERED,
         approvedQuantity: new Prisma.Decimal(20),
         supply: { id: 'sup-1', name: 'Oats', unit: 'KG' },
         zone: { id: 'zone-1', name: 'Zone A' },

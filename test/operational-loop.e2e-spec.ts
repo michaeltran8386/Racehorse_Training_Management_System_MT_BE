@@ -142,7 +142,8 @@ describe('End-to-End Operational Loop (Groom -> Vet -> Trainer -> Owner -> Manag
           horse: {
             id: currentHorseState.id,
             name: currentHorseState.name,
-            microchipRfid: 'RFID-001',
+            microchip: '985000000000001',
+            microchipRfid: '985000000000001',
           },
           veterinarian: {
             id: users[Role.VETERINARIAN].id,
