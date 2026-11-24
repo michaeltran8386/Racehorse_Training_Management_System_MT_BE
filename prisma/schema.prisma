@@ -863,7 +863,7 @@ model MedicalLock {
   sourceIncident       IncidentReport? @relation(fields: [sourceIncidentId], references: [id], onDelete: Restrict)
   issuedByUserId       String?
   id                   String         @id @default(uuid())
-  lockCode             String?        @unique // e.g. KH-000001
+  lockCode             String?        @unique // e.g. MLK-2026-001
   horseId              String
   horse                Horse          @relation(fields: [horseId], references: [id], onDelete: Restrict)
   medicalRecordId      String?

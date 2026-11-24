@@ -5,7 +5,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { CreateMedicalLockDto } from './dto/medical-lock.dto';
 import {
   HorseStatus,
@@ -18,6 +17,7 @@ import { AuditService } from '../audit/audit.service';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { lockIssuer } from '../incidents/incident-lifecycle';
 import { HEAVY_WORKOUT_WHERE } from '../training/training-rules';
+import { generateMedicalLockCode } from './medical-lock-code';
 
 /** Transaction primitives only. The caller owns commit and post-commit delivery. */
 @Injectable()
@@ -69,7 +69,7 @@ export class MedicalLifecycleService {
             ...lockIssuer('VET', actor.userId, actor.userId),
             horseId: horse.id,
             medicalRecordId: dto.medicalRecordId ?? null,
-            lockCode: `KH-${randomUUID()}`,
+            lockCode: await generateMedicalLockCode(tx),
           },
           include,
         });
@@ -179,7 +179,7 @@ export class MedicalLifecycleService {
       data: {
         ...lockIssuer('INCIDENT_AUTO', actor.userId, undefined, incident.id),
         horseId: horse.id,
-        lockCode: `KH-AUTO-${incident.id}`,
+        lockCode: await generateMedicalLockCode(tx, now),
         appliedMedicalStatus: status,
         lockReason: 'Bảo vệ tạm thời sau báo cáo nặng; chờ bác sĩ đánh giá.',
         unlockConditions: 'Bác sĩ xác nhận hồi phục trong bệnh án liên quan',

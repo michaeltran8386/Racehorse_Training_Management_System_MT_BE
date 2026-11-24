@@ -24,6 +24,7 @@ import { AuditService } from '../audit/audit.service';
 import { MedicalAccessService } from './medical-access.service';
 import { DailyTasksService } from '../daily-tasks/daily-tasks.service';
 import { SimulatorRealtimeService } from '../simulator/simulator-realtime.service';
+import { generateMedicalLockCode } from './medical-lock-code';
 
 /** P2-04: Khóa huấn luyện — đặt, gỡ, gia hạn, danh sách (FR-3.10 → FR-3.12). */
 @Injectable()
@@ -158,16 +159,7 @@ export class MedicalLocksService {
         );
       }
 
-      const lockCount = await tx.medicalLock.count();
-      let lockCode = `KH-${String(lockCount + 1).padStart(6, '0')}`;
-      let attempts = 0;
-      while (attempts < 5) {
-        const existing = await tx.medicalLock.findUnique({ where: { lockCode } });
-        if (!existing) break;
-        attempts++;
-        const randomPart = Math.floor(100000 + Math.random() * 900000);
-        lockCode = `KH-${randomPart}`;
-      }
+      const lockCode = await generateMedicalLockCode(tx, now);
 
       const lock = await tx.medicalLock.create({
         data: {

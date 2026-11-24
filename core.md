@@ -348,3 +348,27 @@
   - BE: 8 suites / 177 unit tests PASS, nest build 0 errors.
   - FE: tsc --noEmit && vite build 0 errors.
 - **Current Status:** San sang commit va tao Pull Request feat/horse-admission -> dev tren GitHub.
+
+
+---
+### [2026-11-24 21:05] - Session Update by: DungLT0216 / Antigravity Assistant (Full-Stack Engineer)
+- **Context / Task:**
+  1. Loại bỏ các trường Expected rest days và Conditions for release khi kích hoạt "Propose Training Lock activation" trong màn hình RecordFormPage.
+  2. Chuẩn hóa cấu trúc Medical Lock Code thành `MLK-YYYY-XXX` (trong đó YYYY là năm, XXX là số thứ tự tăng dần 3 chữ số: ví dụ `MLK-2026-001`, `MLK-2026-002`,...) thay cho định dạng cũ `KH-...`.
+  3. Loại bỏ thẻ quản lý "Medical protection" (thẻ khóa y tế) khỏi màn hình chi tiết bệnh án RecordDetailPage; việc quản lý và chỉnh sửa khóa huấn luyện được quy hoạch tập trung tại trang Training Lock (`/medical/locks`).
+  4. Sửa cảnh báo ESLint `@typescript-eslint/no-unused-vars` đối với import `randomUUID` trong `medical-lifecycle.service.ts`.
+- **Changes Made:**
+  - `Racehorse_Training_Management_System_MT_FE/src/features/health/pages/RecordFormPage.tsx`: Loại bỏ 2 trường nhập Expected rest days và Conditions for release, dọn dẹp state và payload liên quan.
+  - `Racehorse_Training_Management_System_MT_FE/src/features/health/pages/RecordDetailPage.tsx`: Loại bỏ component `<MedicalLocksPanel ... />` và import tương ứng, tối ưu giao diện bệnh án tập trung vào khám và điều trị.
+  - `Racehorse_Training_Management_System_MT_BE/src/medical/medical-lock-code.ts`: Tạo hàm `generateMedicalLockCode` sinh mã theo format `MLK-YYYY-XXX`, hỗ trợ atomic counter và fallback kiểm tra trùng mã.
+  - `Racehorse_Training_Management_System_MT_BE/src/medical/medical-lock-code.spec.ts`: Bổ sung 4 unit tests kiểm thử hàm sinh mã `generateMedicalLockCode`.
+  - `Racehorse_Training_Management_System_MT_BE/src/medical/medical-locks.service.ts`: Áp dụng `generateMedicalLockCode` khi tạo khóa huấn luyện (thay thế mã `KH-XXXXXX`).
+  - `Racehorse_Training_Management_System_MT_BE/src/medical/medical-lifecycle.service.ts`: Áp dụng `generateMedicalLockCode` cho các khóa y tế tự động / theo sự cố (thay thế `KH-${randomUUID()}` và `KH-AUTO-...`), loại bỏ import `randomUUID` thừa.
+  - `Racehorse_Training_Management_System_MT_BE/prisma/schema.prisma`: Cập nhật chú thích chuẩn format `MLK-2026-001`.
+  - `core.md`: Ghi nhận nhật ký phiên làm việc trên cả FE và BE.
+- **Evidence / Verification:**
+  - Backend: `nest build` hoàn thành 100% không lỗi (exit code 0).
+  - Backend: `npm run lint` đạt 0 errors, 0 warnings (--max-warnings=0).
+  - Backend Unit Tests: `medical-lock-code.spec.ts`, `medical-lifecycle.service.spec.ts` đạt 100% PASS (8/8 tests).
+  - Frontend: `tsc --noEmit && vite build` hoàn thành 100% không lỗi (exit code 0).
+- **Current Status:** Hoàn thành toàn bộ yêu cầu, commit và push lên nhánh `fix/DungLT` trên cả 2 repository FE và BE.
