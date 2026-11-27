@@ -377,7 +377,7 @@ export class WorkoutsService {
         throw apiError(
           HttpStatus.CONFLICT,
           'TRAINER_TIME_CONFLICT',
-          `Huấn luyện viên ${busyTrainer.trainingPlan?.trainer?.fullName ?? 'này'} đã có buổi tập của ngựa ${busyTrainer.horse.name} lúc ${c.time} ngày ${c.date}. HLV chỉ có thể điều hành 1 buổi tập tại một thời điểm. Chọn giờ bắt đầu từ ${c.before} trở về trước hoặc từ ${c.after} trở đi.`,
+          `Huấn luyện viên ${busyTrainer.trainingPlan?.trainer?.fullName ?? 'này'} đã có buổi tập của ngựa ${busyTrainer.horse.name} lúc ${c.time} ngày ${c.date}. Cần giãn cách tối thiểu 15 phút chuyển tiếp giữa hai buổi tập (chọn từ ${c.before} trở về trước hoặc từ ${c.after} trở đi).`,
           { workoutId: busyTrainer.id, horse: busyTrainer.horse.name, ...c },
         );
       }

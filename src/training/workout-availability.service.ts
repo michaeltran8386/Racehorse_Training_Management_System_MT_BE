@@ -99,7 +99,7 @@ export function evaluateWorkoutAvailability(
       throw apiError(
         HttpStatus.CONFLICT,
         'TRAINER_BUSY_SLOT',
-        `HLV đã có lịch huấn luyện ngựa ${row.horse?.name ?? ''} trong khung giờ này.`,
+        `HLV đã có lịch huấn luyện ngựa ${row.horse?.name ?? ''} trong khung giờ này (cần tối thiểu 15 phút chuyển tiếp giữa hai buổi tập).`,
       );
     if (!usesTrack || !overlaps) continue;
     if (!row.trackId && row.trackSurface === w.trackSurface)
