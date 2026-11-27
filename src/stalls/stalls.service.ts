@@ -156,8 +156,12 @@ export class StallsService {
     const targetZoneId = allocation.stall.zoneId;
 
     const grooms = await this.prisma.user.findMany({
-      where: { role: Role.GROOM, status: UserStatus.ACTIVE },
-      select: { id: true, fullName: true, email: true },
+      where: {
+        role: Role.GROOM,
+        status: UserStatus.ACTIVE,
+        OR: [{ assignedBarnId: targetZoneId }, { assignedBarnId: null }],
+      },
+      select: { id: true, fullName: true, email: true, assignedBarnId: true },
       orderBy: { fullName: 'asc' },
     });
 
@@ -294,6 +298,14 @@ export class StallsService {
           HttpStatus.BAD_REQUEST,
           'DIFFERENT_ZONES',
           'Tất cả các ô chuồng được chọn phải thuộc cùng 1 phân khu.',
+        );
+      }
+
+      if (groom.assignedBarnId && groom.assignedBarnId !== targetZoneId) {
+        throw apiError(
+          HttpStatus.CONFLICT,
+          'GROOM_MULTI_ZONE_FORBIDDEN',
+          `Nhân viên ${groom.fullName} thuộc phân khu khác. Mỗi Groom chỉ được phụ trách các ô chuồng trong phân khu của mình.`,
         );
       }
 

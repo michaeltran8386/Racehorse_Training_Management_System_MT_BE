@@ -6,6 +6,7 @@ import {
   PlanStatus,
   Prisma,
   Role,
+  TrainerAssignmentStatus,
   User,
   UserStatus,
   WorkoutStatus,
@@ -27,7 +28,12 @@ import {
   UpdateAccountDto,
 } from './dto/accounts.dto';
 import { NotificationsService } from '../notifications/notifications.service';
-import { MAX_HORSES_PER_TRAINER, MAX_TRAINERS_PER_BARN } from '../training/training-rules';
+import {
+  MAX_HORSES_PER_TRAINER,
+  MAX_TRAINERS_PER_BARN,
+  MAX_GROOMS_PER_BARN,
+} from '../training/training-rules';
+import { MAX_CARE_STALLS } from '../stalls/groom-care.rules';
 
 export type AccountAction = 'approve' | 'decline' | 'lock' | 'unlock' | 'deactivate' | 'reactivate';
 
@@ -109,12 +115,41 @@ export class AccountsService {
       }
     }
 
+    if (role === Role.GROOM) {
+      if (!dto.assignedBarnId) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'BARN_REQUIRED',
+          'Vui lòng chọn Khu chuồng phụ trách cho nhân viên Groom.',
+        );
+      }
+      const barn = await this.prisma.stallZone.findUnique({ where: { id: dto.assignedBarnId } });
+      if (!barn) {
+        throw apiError(HttpStatus.NOT_FOUND, 'BARN_NOT_FOUND', 'Khu chuồng không tồn tại.');
+      }
+      const countGrooms = await this.prisma.user.count({
+        where: {
+          assignedBarnId: dto.assignedBarnId,
+          role: Role.GROOM,
+          status: { notIn: [UserStatus.LOCKED, UserStatus.REJECTED] },
+        },
+      });
+      if (countGrooms >= MAX_GROOMS_PER_BARN) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'BARN_GROOM_CAPACITY_EXCEEDED',
+          `Khu chuồng này đã đủ tối đa ${MAX_GROOMS_PER_BARN} Groom phụ trách.`,
+        );
+      }
+    }
+
     const user = await this.prisma.user.create({
       data: {
         fullName,
         email,
         role,
-        assignedBarnId: role === Role.HEAD_TRAINER ? dto.assignedBarnId : null,
+        assignedBarnId:
+          role === Role.HEAD_TRAINER || role === Role.GROOM ? dto.assignedBarnId : null,
         status: UserStatus.INVITED,
         invitedBy: actor.name,
       },
@@ -577,7 +612,7 @@ export class AccountsService {
     };
   }
 
-  /** Lấy danh sách định mức nhân sự HLV của tất cả các Barn kèm tải hiện tại của từng HLV. */
+  /** Lấy danh sách định mức nhân sự HLV & Groom của tất cả các Barn kèm tải hiện tại. */
   async getBarnStaffing() {
     const zones = await this.prisma.stallZone.findMany({
       where: { isActive: true },
@@ -585,7 +620,7 @@ export class AccountsService {
       include: {
         assignedTrainers: {
           where: {
-            role: Role.HEAD_TRAINER,
+            role: { in: [Role.HEAD_TRAINER, Role.GROOM] },
             status: { notIn: [UserStatus.LOCKED, UserStatus.REJECTED] },
           },
           select: {
@@ -594,38 +629,80 @@ export class AccountsService {
             email: true,
             role: true,
             status: true,
+            createdAt: true,
           },
         },
       },
     });
 
-    const trainerIds = zones.flatMap((z) => z.assignedTrainers.map((t) => t.id));
-    const horseCounts = await this.prisma.horse.groupBy({
-      by: ['assignedTrainerId'],
-      where: {
-        assignedTrainerId: { in: trainerIds },
-        deletedAt: null,
-      },
-      _count: { id: true },
-    });
+    const trainerIds = zones.flatMap((z) =>
+      z.assignedTrainers.filter((t) => t.role === Role.HEAD_TRAINER).map((t) => t.id),
+    );
+    const groomIds = zones.flatMap((z) =>
+      z.assignedTrainers.filter((t) => t.role === Role.GROOM).map((t) => t.id),
+    );
+
+    const [horseCounts, stallCounts] = await Promise.all([
+      trainerIds.length > 0
+        ? this.prisma.horse.groupBy({
+            by: ['assignedTrainerId'],
+            where: {
+              assignedTrainerId: { in: trainerIds },
+              deletedAt: null,
+            },
+            _count: { id: true },
+          })
+        : Promise.resolve([]),
+      groomIds.length > 0
+        ? this.prisma.stallAllocation.groupBy({
+            by: ['assignedGroomUserId'],
+            where: {
+              assignedGroomUserId: { in: groomIds },
+              isActive: true,
+            },
+            _count: { id: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
     const horseCountMap = new Map<string, number>();
-    horseCounts.forEach((hc) => {
-      if (hc.assignedTrainerId) horseCountMap.set(hc.assignedTrainerId, hc._count.id);
+    (horseCounts as any[]).forEach((hc: any) => {
+      if (hc.assignedTrainerId) horseCountMap.set(hc.assignedTrainerId, hc._count?.id ?? 0);
     });
 
-    return zones.map((z) => ({
-      id: z.id,
-      code: z.code,
-      name: z.name,
-      trainersCount: z.assignedTrainers.length,
-      maxTrainers: MAX_TRAINERS_PER_BARN,
-      isFull: z.assignedTrainers.length >= MAX_TRAINERS_PER_BARN,
-      trainers: z.assignedTrainers.map((t) => ({
-        ...t,
-        currentLoad: horseCountMap.get(t.id) ?? 0,
-        maxCapacity: MAX_HORSES_PER_TRAINER,
-      })),
-    }));
+    const stallCountMap = new Map<string, number>();
+    (stallCounts as any[]).forEach((sc: any) => {
+      if (sc.assignedGroomUserId) stallCountMap.set(sc.assignedGroomUserId, sc._count?.id ?? 0);
+    });
+
+    return zones.map((z) => {
+      const barnTrainers = z.assignedTrainers.filter((u) => u.role === Role.HEAD_TRAINER);
+      const barnGrooms = z.assignedTrainers.filter((u) => u.role === Role.GROOM);
+
+      return {
+        id: z.id,
+        code: z.code,
+        name: z.name,
+        // HLV
+        trainersCount: barnTrainers.length,
+        maxTrainers: MAX_TRAINERS_PER_BARN,
+        isFull: barnTrainers.length >= MAX_TRAINERS_PER_BARN,
+        trainers: barnTrainers.map((t) => ({
+          ...t,
+          currentLoad: horseCountMap.get(t.id) ?? 0,
+          maxCapacity: MAX_HORSES_PER_TRAINER,
+        })),
+        // Groom
+        groomsCount: barnGrooms.length,
+        maxGrooms: MAX_GROOMS_PER_BARN,
+        isGroomFull: barnGrooms.length >= MAX_GROOMS_PER_BARN,
+        grooms: barnGrooms.map((g) => ({
+          ...g,
+          currentLoad: stallCountMap.get(g.id) ?? 0,
+          maxCapacity: MAX_CARE_STALLS,
+        })),
+      };
+    });
   }
 
   /** Lấy danh sách các chiến mã đang ở trong ô chuồng nhưng chưa có HLV phụ trách (ngựa tồn đọng do điều chuyển hoặc mới vào). */
@@ -743,11 +820,14 @@ export class AccountsService {
       }
 
       const handoverTrainer = await this.find(dto.handoverTrainerId);
-      if (handoverTrainer.role !== Role.HEAD_TRAINER) {
+      if (
+        handoverTrainer.role !== Role.HEAD_TRAINER ||
+        handoverTrainer.status !== UserStatus.ACTIVE
+      ) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'INVALID_HANDOVER_RECIPIENT',
-          'Người nhận bàn giao phải là Huấn luyện viên trưởng.',
+          'Người nhận bàn giao phải là Huấn luyện viên trưởng đang hoạt động.',
         );
       }
 
@@ -760,15 +840,35 @@ export class AccountsService {
       }
 
       // Kiểm tra sức chứa của HLV nhận bàn giao (tối đa 8 con)
-      const recipientPlanCount = await this.prisma.trainingPlan.count({
+      const rawPlanCount = await this.prisma.trainingPlan.count({
         where: {
           trainerUserId: dto.handoverTrainerId,
           status: { in: [PlanStatus.DRAFT, PlanStatus.ACTIVE] },
           horse: { deletedAt: null },
         },
       });
+      const recipientPlanCount = Number(rawPlanCount) || 0;
 
-      const availableSlots = Math.max(0, MAX_HORSES_PER_TRAINER - recipientPlanCount);
+      let recipientHorseCount = 0;
+      try {
+        if (this.prisma.horse?.count) {
+          const c = await this.prisma.horse.count({
+            where: {
+              assignedTrainerId: dto.handoverTrainerId,
+              trainerAssignmentStatus: {
+                in: [TrainerAssignmentStatus.ASSIGNED, TrainerAssignmentStatus.PENDING_ACCEPTANCE],
+              },
+              deletedAt: null,
+            },
+          });
+          recipientHorseCount = Number(c) || 0;
+        }
+      } catch {
+        recipientHorseCount = 0;
+      }
+
+      const currentLoad = Math.max(recipientPlanCount, recipientHorseCount);
+      const availableSlots = Math.max(0, MAX_HORSES_PER_TRAINER - currentLoad);
       // Cơ chế Bàn giao Chia tách Thông minh (Smart Split Handover)
       const toHandoverPlans = activeOrDraftPlans.slice(0, availableSlots);
       const excessPlans = activeOrDraftPlans.slice(availableSlots);

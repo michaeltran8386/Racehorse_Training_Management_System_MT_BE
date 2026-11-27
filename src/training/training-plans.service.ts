@@ -1431,7 +1431,9 @@ export class TrainingPlansService {
 
     const activeOrDraftPlans = await this.prisma.trainingPlan.findMany({
       where: {
-        status: { in: [PlanStatus.DRAFT, PlanStatus.ACTIVE, PlanStatus.COMPLETED] },
+        status: {
+          in: [PlanStatus.DRAFT, PlanStatus.ACTIVE, PlanStatus.COMPLETED, PlanStatus.CANCELLED],
+        },
         horse: { deletedAt: null },
       },
       orderBy: { updatedAt: 'desc' },
@@ -1469,6 +1471,17 @@ export class TrainingPlansService {
               phaseName: completedPlans[0].phaseName,
               completedAt: completedPlans[0].endDate
                 ? completedPlans[0].endDate.toISOString()
+                : null,
+            }
+          : null;
+        const cancelledPlans = plans.filter((p) => p.status === PlanStatus.CANCELLED);
+        const lastCancelledPlan = cancelledPlans[0]
+          ? {
+              id: cancelledPlans[0].id,
+              planCode: cancelledPlans[0].planCode ?? '',
+              phaseName: cancelledPlans[0].phaseName,
+              cancelledAt: cancelledPlans[0].updatedAt
+                ? cancelledPlans[0].updatedAt.toISOString()
                 : null,
             }
           : null;
@@ -1621,11 +1634,20 @@ export class TrainingPlansService {
           if (h.isMedicalLocked || planState === 'MEDICAL_LOCKED') {
             unplannedCategory = 'MEDICAL_LOCKED';
             isSlaExempt = true;
-          } else if (lastCompletedPlan) {
+          } else if (lastCompletedPlan || lastCancelledPlan || h.status === HorseStatus.RESTING) {
             unplannedCategory = 'RESTING_CYCLE';
             isSlaExempt = true;
-            badge = 'Nghỉ ngơi hồi phục (Không tính SLA)';
-            explanation = `Chiến mã đã hoàn thành giáo án ${lastCompletedPlan.planCode}, đang trong chu kỳ nghỉ ngơi phục hồi thể lực.`;
+            if (lastCompletedPlan) {
+              badge = 'Nghỉ ngơi hồi phục (Không tính SLA)';
+              explanation = `Chiến mã đã hoàn thành giáo án ${lastCompletedPlan.planCode}, đang trong chu kỳ nghỉ ngơi phục hồi thể lực.`;
+            } else if (lastCancelledPlan) {
+              badge = 'Nghỉ ngơi hồi phục (Không tính SLA)';
+              explanation = `Giáo án ${lastCancelledPlan.planCode} đã hủy, chiến mã đang nghỉ ngơi và sẵn sàng cho giáo án mới.`;
+            } else {
+              badge = 'Nghỉ ngơi hồi phục (Không tính SLA)';
+              explanation =
+                'Chiến mã đang trong chu kỳ nghỉ ngơi phục hồi thể lực, sẵn sàng cho giáo án mới.';
+            }
           } else {
             unplannedCategory = 'NEW_ADMISSION';
             isSlaExempt = false;

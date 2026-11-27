@@ -117,6 +117,57 @@ describe('AccountsService - Barn Staffing & Reassignment QA', () => {
       expect(result.id).toBe('trainer-2');
       expect(result.assignedBarnId).toBe('zone-a');
     });
+
+    it('QA-BARN-10: Thất bại khi tạo Groom mà không chọn Barn', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.invite(actor, {
+          fullName: 'Nguyễn Văn Groom',
+          email: 'groom@gmail.com',
+          role: Role.GROOM,
+        } as any),
+      ).rejects.toThrow('Vui lòng chọn Khu chuồng phụ trách cho nhân viên Groom.');
+    });
+
+    it('QA-BARN-11: Thất bại khi tạo Groom vào Barn đã đủ 4/4 Groom', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.stallZone.findUnique.mockResolvedValue({ id: 'zone-a', name: 'Khu chuồng A' });
+      mockPrisma.user.count.mockResolvedValue(4); // Barn A đã đủ 4 Groom
+
+      await expect(
+        service.invite(actor, {
+          fullName: 'Nguyễn Văn Groom',
+          email: 'groom@gmail.com',
+          role: Role.GROOM,
+          assignedBarnId: 'zone-a',
+        } as any),
+      ).rejects.toThrow('Khu chuồng này đã đủ tối đa 4 Groom phụ trách.');
+    });
+
+    it('QA-BARN-12: Thành công tạo Groom khi Barn mới có 3/4 Groom', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.stallZone.findUnique.mockResolvedValue({ id: 'zone-a', name: 'Khu chuồng A' });
+      mockPrisma.user.count.mockResolvedValue(3); // 3 Groom
+      mockPrisma.user.create.mockResolvedValue({
+        id: 'groom-4',
+        fullName: 'Nguyễn Văn Bốn',
+        email: 'groom4@gmail.com',
+        role: Role.GROOM,
+        assignedBarnId: 'zone-a',
+        status: UserStatus.INVITED,
+      });
+
+      const result = await service.invite(actor, {
+        fullName: 'Nguyễn Văn Bốn',
+        email: 'groom4@gmail.com',
+        role: Role.GROOM,
+        assignedBarnId: 'zone-a',
+      } as any);
+
+      expect(result.id).toBe('groom-4');
+      expect(result.assignedBarnId).toBe('zone-a');
+    });
   });
 
   describe('Reassign Trainer Barn Constraints', () => {

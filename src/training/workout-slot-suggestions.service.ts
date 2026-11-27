@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,6 +17,11 @@ import {
   effectiveSurface,
   isHeavy,
   MAX_WORKOUTS_PER_DAY,
+  GROOM_BUFFER_MINUTES,
+  TRACK_MAX_LIGHT_HORSES,
+  TRIAL_SLOT_MINUTES,
+  MAX_PRIME_HEAVY_SESSIONS_PER_TRAINER,
+  isWithinPrimeTime,
   startOfClubDay,
   startOfClubWeek,
   workoutDurationMinutes,
@@ -52,12 +58,12 @@ export function rankWorkoutSlots(
               (!input.trackId || t.id === input.trackId),
           )
           .sort((a, b) => a.id.localeCompare(b.id));
-  // Whole intervals must fit the preferred windows; morning groups rank before afternoon.
-  for (const [begin, end] of [
-    [360, 510],
-    [930, 1020],
-  ]) {
-    for (let day = new Date(`${from}T00:00:00+07:00`); clubDate(day) <= to; day = addDays(day, 1)) {
+  // Keep the whole session between meals/care, preferring the nearest available day.
+  for (let day = new Date(`${from}T00:00:00+07:00`); clubDate(day) <= to; day = addDays(day, 1)) {
+    for (const [begin, end] of [
+      [375, 690],
+      [855, 1020],
+    ]) {
       for (
         let minute = begin;
         minute + workoutDurationMinutes(input.workoutType) <= end;
@@ -83,8 +89,9 @@ export function rankWorkoutSlots(
               reasons: ['Within preferred training hours', 'Availability checked; not reserved'],
             });
             if (slots.length === 3) return slots;
+            break; // Different physical tracks at the same time are one time suggestion.
           } catch (error) {
-            if (!(error instanceof HttpException)) throw error;
+            if (!(error instanceof HttpException) || error.getStatus() >= 500) throw error;
           }
         }
       }
@@ -112,6 +119,7 @@ export class WorkoutSlotSuggestionsService {
         'INVALID_SLOT_RANGE',
         'Choose a range of at most 14 days.',
       );
+    const now = effectiveNow();
     return this.prisma.$transaction(
       async (tx) => {
         const plan = await tx.trainingPlan.findUnique({
@@ -155,7 +163,7 @@ export class WorkoutSlotSuggestionsService {
         const unavailable = (reason: string) => ({
           slots: [],
           reasons: [reason],
-          evaluatedAt: new Date().toISOString(),
+          evaluatedAt: now.toISOString(),
         });
         if (!['DRAFT', 'ACTIVE'].includes(plan.status)) return unavailable('PLAN_CLOSED');
         if (horse.deletedAt || ['RETIRED', 'ISOLATED'].includes(horse.status))
@@ -214,7 +222,7 @@ export class WorkoutSlotSuggestionsService {
           live,
           dto.from,
           dto.to,
-          new Date(),
+          now,
           dto.excludeWorkoutId,
           (at) => {
             const date = clubDate(at);
@@ -243,6 +251,43 @@ export class WorkoutSlotSuggestionsService {
               )
             )
               return false;
+            // Match the save path's surface safety rules, including its transition buffer.
+            if (surface !== 'NONE') {
+              const end = +at + (workoutDurationMinutes(type) + GROOM_BUFFER_MINUTES) * 60000;
+              const onSurface = day.filter(
+                (r) =>
+                  r.trackSurface === surface &&
+                  +at < +r.scheduledDate + (workoutDurationMinutes(r.workoutType) + 15) * 60000 &&
+                  +r.scheduledDate < end,
+              );
+              if (
+                onSurface.some((r) => isHeavy(r.workoutType, r.intensity)) ||
+                (isHeavy(type, intensity) && type !== 'TRIAL' && onSurface.length > 0) ||
+                onSurface.length >= TRACK_MAX_LIGHT_HORSES
+              )
+                return false;
+              if (
+                type === 'TRIAL' &&
+                day.some(
+                  (r) =>
+                    r.workoutType === 'TRIAL' &&
+                    r.trackSurface === surface &&
+                    Math.abs(+r.scheduledDate - +at) < TRIAL_SLOT_MINUTES * 60000,
+                )
+              )
+                return false;
+            }
+            if (
+              isHeavy(type, intensity) &&
+              isWithinPrimeTime(at) &&
+              day.filter(
+                (r) =>
+                  r.trainingPlan.trainerUserId === plan.trainerUserId &&
+                  isHeavy(r.workoutType, r.intensity) &&
+                  isWithinPrimeTime(r.scheduledDate),
+              ).length >= MAX_PRIME_HEAVY_SESSIONS_PER_TRAINER
+            )
+              return false;
             if (phase) {
               const week = startOfClubWeek(at),
                 weekRows = live.filter(
@@ -269,7 +314,7 @@ export class WorkoutSlotSuggestionsService {
             slots.length < 3
               ? ['Fewer than three slots meet the current safety and phase limits.']
               : [],
-          evaluatedAt: new Date().toISOString(),
+          evaluatedAt: now.toISOString(),
         };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },

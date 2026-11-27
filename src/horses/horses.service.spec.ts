@@ -520,7 +520,7 @@ describe('HorsesService', () => {
       });
     });
 
-    it('should hide stall information for HORSE_OWNER', async () => {
+    it('should expose stallCode and hide raw stallAllocations for HORSE_OWNER', async () => {
       const horse = {
         id: 'h-1',
         name: 'Thunderbolt',
@@ -531,7 +531,7 @@ describe('HorsesService', () => {
       prisma.horse.findUnique.mockResolvedValue(horse);
 
       const res = await service.findOne('h-1', mockOwner);
-      expect(res.stallCode).toBeNull();
+      expect(res.stallCode).toBe('A-01');
       expect(res.stallAllocations).toBeUndefined();
     });
 

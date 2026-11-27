@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsISO8601,
   IsNotEmpty,
@@ -7,11 +9,30 @@ import {
   IsString,
   Length,
   Matches,
+  MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { HORSE_GENDERS, HORSE_NAME_RE, normalizeName } from '../horse-rules';
+
+export class AdmissionDocumentPhotoDto {
+  @ApiProperty({
+    description: 'Tên loại giấy tờ pháp lý',
+    example: 'Giấy chứng nhận sở hữu / Hộ chiếu ngựa',
+  })
+  @IsNotEmpty({ message: 'Vui lòng chọn hoặc nhập tên loại giấy tờ.' })
+  @IsString({ message: 'Tên loại giấy tờ không hợp lệ.' })
+  @MaxLength(120, { message: 'Tên loại giấy tờ tối đa 120 ký tự.' })
+  label: string;
+
+  @ApiProperty({ description: 'Ảnh giấy tờ (data URL hoặc đường dẫn ảnh)' })
+  @IsNotEmpty({ message: 'Ảnh giấy tờ không được để trống.' })
+  @IsString({ message: 'Dữ liệu ảnh giấy tờ không hợp lệ.' })
+  @MaxLength(450_000, { message: 'Mỗi ảnh giấy tờ vượt quá dung lượng cho phép.' })
+  url: string;
+}
 
 export class CreateHorseDto {
   @ApiProperty({ description: 'Horse name (2-100 characters)', example: 'Thunderbolt Swift' })
@@ -82,5 +103,26 @@ export class CreateHorseDto {
   @ApiPropertyOptional({ description: 'Link scan giấy tờ phả hệ, chuyển nhượng (tùy chọn)' })
   @IsOptional()
   @IsString()
+  @MaxLength(450_000, { message: 'Ảnh giấy tờ vượt quá dung lượng cho phép.' })
   documentsUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Bộ ảnh giấy tờ pháp lý chủ ngựa nộp (tối đa 3 ảnh)',
+    type: [AdmissionDocumentPhotoDto],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Danh sách ảnh giấy tờ phải là mảng.' })
+  @ArrayMaxSize(3, { message: 'Tối đa 3 ảnh giấy tờ pháp lý.' })
+  @ValidateNested({ each: true })
+  @Type(() => AdmissionDocumentPhotoDto)
+  documentPhotos?: AdmissionDocumentPhotoDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Ghi chú / mong muốn của chủ ngựa gửi CLB (khung giờ mong muốn, lưu ý tính cách, mục tiêu)',
+  })
+  @IsOptional()
+  @IsString({ message: 'Ghi chú chủ ngựa không hợp lệ.' })
+  @MaxLength(1000, { message: 'Ghi chú mong muốn tối đa 1000 ký tự.' })
+  ownerNotes?: string;
 }

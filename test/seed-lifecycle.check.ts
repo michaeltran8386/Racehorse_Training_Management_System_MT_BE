@@ -47,9 +47,8 @@ function distinct<T>(values: Iterable<T>): Set<T> {
 async function main() {
   const prisma = new PrismaClient({ datasourceUrl: resolveDatabaseUrl() });
   try {
-    // 1. All Prisma models (36) must be populated
+    // 1. Every model in the current Prisma schema must be populated
     const models = Prisma.dmmf.datamodel.models;
-    assert.strictEqual(models.length, 36, `Expected 36 Prisma models, saw ${models.length}`);
     for (const model of models) {
       const delegateKey = modelDelegateName(model.name);
       const count: number = await (prisma as any)[delegateKey].count();
@@ -227,8 +226,8 @@ async function main() {
     const supplyCodes = distinct(supplies.map((s) => s.code));
     assert.strictEqual(
       supplies.length,
-      4,
-      `Expected original 4 SupplyCatalog items, found ${supplies.length}`,
+      7,
+      `Expected 7 SupplyCatalog items, found ${supplies.length}`,
     );
     for (const code of ['TIMOTHY', 'OATS', 'ELECTROLYTE', 'ANTI_INFLAM']) {
       assert.ok(supplyCodes.has(code), `Missing original SupplyCatalog code: ${code}`);
@@ -287,19 +286,31 @@ async function main() {
       assert.ok(invStatuses.has(st), `Missing InvoiceStatus: ${st}`);
     }
     const billingPeriods = distinct(invoices.map((i) => i.billingPeriod));
-    for (const p of ['2026-07', '2026-08', '2026-09', '2026-10']) {
+    for (const p of [
+      '2025-12',
+      '2026-01',
+      '2026-02',
+      '2026-03',
+      '2026-04',
+      '2026-05',
+      '2026-06',
+      '2026-07',
+      '2026-08',
+      '2026-09',
+      '2026-10',
+    ]) {
       assert.ok(billingPeriods.has(p), `Missing FinancialInvoice period ${p}`);
     }
     assert.ok(
-      invoices.every((i) => i.billingPeriod >= '2026-07' && i.billingPeriod <= '2026-10'),
-      'Demo invoices must be limited to July–October 2026',
+      invoices.every((i) => i.billingPeriod >= '2025-12' && i.billingPeriod <= '2026-10'),
+      'Demo invoices must be limited to December 2025–October 2026',
     );
     const raceMonths = distinct(
       tournaments.map((t) =>
         new Date(t.raceDate.getTime() + 7 * 3600000).toISOString().slice(0, 7),
       ),
     );
-    for (const period of ['2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12']) {
+    for (const period of ['2025-12', '2026-01', '2026-07', '2026-10', '2026-11', '2026-12']) {
       assert.ok(raceMonths.has(period), `Missing tournament month ${period}`);
     }
     for (const invoice of invoices) {
@@ -319,6 +330,46 @@ async function main() {
       );
     }
 
+    // Trace actual-usage invoices to immutable lines and exclusive claims.
+    const lines = await prisma.invoiceLineItem.findMany();
+    const claims = await prisma.careCostClaim.findMany();
+    for (const invoice of invoices.filter((i) => i.billingMethod === 'ACTUAL_USAGE')) {
+      const invoiceLines = lines.filter((line) => line.invoiceId === invoice.id);
+      assert.equal(
+        invoiceLines.reduce((sum, line) => sum + Number(line.amount), 0),
+        Number(invoice.medicalFee),
+      );
+      assert.equal(
+        claims.filter((claim) => claim.invoiceId === invoice.id).length,
+        invoice.status === InvoiceStatus.CANCELLED ? 0 : invoiceLines.length,
+      );
+    }
+    assert.ok(tasks.length > 20000, 'Expected a full year of daily care history');
+    assert.ok(workouts.length > 1500, 'Expected multiple training cycles');
+    for (const task of tasks)
+      if (task.isCompleted) {
+        assert.ok(
+          task.completedAt && task.completedAt <= new Date(),
+          `Invalid task completion: ${task.id}`,
+        );
+      }
+    const handovers = await prisma.horseHandoverRequest.findMany();
+    assert.ok(
+      handovers.filter((h) => h.status === 'PENDING').length >= 2,
+      'Expected normal and urgent SLA handovers',
+    );
+    const admissions = await prisma.horseAdmissionRecord.findMany();
+    assert.ok(
+      admissions.some(
+        (a) =>
+          a.status === 'INSPECTION_IN_PROGRESS' &&
+          a.microchipVerified &&
+          a.legalVerified &&
+          a.isHealthEligible,
+      ),
+      'Missing ready-to-approve intake',
+    );
+
     // 8. Notifications & Counters
     const notifs = await prisma.notification.findMany();
     const notifCats = distinct(notifs.map((n) => n.category));
@@ -331,7 +382,7 @@ async function main() {
     }
 
     console.log(
-      `PASS: All ${models.length} Prisma models, enums, counts (10 grooms, 4 vets, 19 horses, 48 stalls), BR-STL-07, and PR #153 verified cleanly.`,
+      `PASS: All ${models.length} Prisma models, enums, counts (10 grooms, 4 vets, 24 horses, 48 stalls), BR-STL-07, and PR #153 verified cleanly.`,
     );
   } finally {
     await prisma.$disconnect();

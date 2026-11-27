@@ -1,3 +1,4 @@
+import { demoClockMiddleware } from '../common/utils/demo-clock';
 import {
   rankWorkoutSlots,
   WorkoutSlotSuggestionsService,
@@ -17,8 +18,64 @@ describe('workout slot recommendations', () => {
   it('ranks morning first and keeps the entire session in the preferred window', () => {
     const slots = rankWorkoutSlots(input, [track], [], from, to, new Date('2026-11-23T00:00Z'));
     expect(slots).toHaveLength(3);
-    expect(slots[0].startAt).toBe('2026-11-23T23:00:00.000Z');
+    expect(slots[0].startAt).toBe('2026-11-23T23:15:00.000Z');
     for (const slot of slots) expect(new Date(slot.endAt).getUTCHours()).toBeLessThan(2);
+  });
+  it('suggests this afternoon before a later morning when the morning window has passed', () => {
+    const slots = rankWorkoutSlots(input, [track], [], from, to, new Date('2026-11-24T06:00:00Z'));
+    expect(slots).toHaveLength(3);
+    expect(slots[0].startAt).toBe('2026-11-24T07:15:00.000Z');
+  });
+  it('fits long sessions before meals and does not duplicate times on different tracks', () => {
+    const slots = rankWorkoutSlots(
+      { ...input, workoutType: 'TRIAL', intensity: 'HEAVY' },
+      [track, { ...track, id: 'other' }],
+      [],
+      from,
+      from,
+      new Date('2026-11-24T08:10:00Z'),
+    );
+    expect(slots).toHaveLength(0); // 30-minute notice leaves no 90-minute window before 17:00.
+    const morning = rankWorkoutSlots(
+      input,
+      [track, { ...track, id: 'other' }],
+      [],
+      from,
+      from,
+      new Date('2026-11-23T00:00Z'),
+    );
+    expect(new Set(morning.map((s) => s.startAt)).size).toBe(morning.length);
+  });
+  it('keeps sessions outside lunch/care and returns only one fitting late trial', () => {
+    const beforeLunch = rankWorkoutSlots(
+      input,
+      [track],
+      [],
+      from,
+      from,
+      new Date('2026-11-24T03:00Z'),
+    );
+    expect(beforeLunch[0].endAt).toBe('2026-11-24T04:30:00.000Z');
+    const afterCutoff = rankWorkoutSlots(
+      input,
+      [track],
+      [],
+      from,
+      from,
+      new Date('2026-11-24T03:01Z'),
+    );
+    expect(afterCutoff[0].startAt).toBe('2026-11-24T07:15:00.000Z');
+    const trial = rankWorkoutSlots(
+      { ...input, workoutType: 'TRIAL', intensity: 'HEAVY' },
+      [track],
+      [],
+      from,
+      from,
+      new Date('2026-11-24T08:00Z'),
+    );
+    expect(trial).toHaveLength(1);
+    expect(trial[0].startAt).toBe('2026-11-24T08:30:00.000Z');
+    expect(trial[0].endAt).toBe('2026-11-24T10:00:00.000Z');
   });
   it('applies symmetric rest against a future booking and never relaxes it to fill three cards', () => {
     const rows = [
@@ -52,11 +109,11 @@ describe('workout slot recommendations', () => {
     }));
     expect(
       rankWorkoutSlots(input, [track], rows, from, from, new Date('2026-11-23T00:00Z'))[0].startAt,
-    ).not.toBe('2026-11-23T23:00:00.000Z');
+    ).not.toBe('2026-11-23T23:15:00.000Z');
     expect(
       rankWorkoutSlots(input, [track], rows, from, from, new Date('2026-11-23T00:00Z'), 'w0')[0]
         .startAt,
-    ).toBe('2026-11-23T23:00:00.000Z');
+    ).toBe('2026-11-23T23:15:00.000Z');
   });
   it('loads one snapshot for all candidates and rejects foreign plans before loading occupancy', async () => {
     const tx = {
@@ -97,12 +154,38 @@ describe('workout slot recommendations', () => {
         { status: 403 },
       );
       expect(tx.workoutSession.findMany).toHaveBeenCalledTimes(1);
+      tx.workoutSession.findMany.mockResolvedValueOnce([
+        {
+          id: 'heavy',
+          horseId: 'other',
+          trackId: 'track',
+          trackSurface: 'TURF',
+          scheduledDate: new Date('2026-11-23T23:30:00Z'),
+          workoutType: 'BREEZE',
+          intensity: 'HEAVY',
+          status: 'SCHEDULED',
+          trainingPlan: { trainerUserId: 'other' },
+        },
+      ] as any);
+      expect((await service.suggest('p', dto, user)).slots[0].startAt).toBe(
+        '2026-11-24T00:45:00.000Z',
+      );
+      let simulated!: ReturnType<typeof service.suggest>;
+      demoClockMiddleware(
+        { headers: { 'x-demo-date': '2026-11-24T13:00' } } as any,
+        {} as any,
+        () => {
+          simulated = service.suggest('p', dto, user);
+        },
+      );
+      expect((await simulated).slots[0].startAt).toBe('2026-11-24T07:15:00.000Z');
+      expect(tx.workoutSession.findMany).toHaveBeenCalledTimes(3);
       tx.trainingPlan.findUnique.mockResolvedValueOnce({
         ...(await tx.trainingPlan.findUnique()),
         horse: { status: 'ACTIVE', isMedicalLocked: true, medicalLocks: [], stallAllocations: [] },
       });
       expect((await service.suggest('p', dto, user)).slots).toHaveLength(0);
-      expect(tx.workoutSession.findMany).toHaveBeenCalledTimes(1);
+      expect(tx.workoutSession.findMany).toHaveBeenCalledTimes(3);
     } finally {
       jest.useRealTimers();
     }

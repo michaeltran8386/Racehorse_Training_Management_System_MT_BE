@@ -29,6 +29,12 @@ export async function assertPrimaryGroom(
       'GROOM_ZONE_REQUIRED',
       'Ô chuồng phải thuộc một khu đang hoạt động để phân công Groom.',
     );
+  if (groom.assignedBarnId && groom.assignedBarnId !== zoneId)
+    throw apiError(
+      HttpStatus.CONFLICT,
+      'GROOM_MULTI_ZONE_FORBIDDEN',
+      'Groom chăm sóc chính chỉ phụ trách một khu chuồng.',
+    );
   const where: Prisma.StallAllocationWhereInput = {
     assignedGroomUserId: groomId,
     isActive: true,

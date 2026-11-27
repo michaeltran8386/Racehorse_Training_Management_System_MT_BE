@@ -71,6 +71,9 @@ export const MAX_HORSES_PER_TRAINER = 8;
 /** BR-BARN-CAPACITY-HLV: Mỗi Khu chuồng (Barn) cho phép tối đa 2 Huấn luyện viên cùng phụ trách. */
 export const MAX_TRAINERS_PER_BARN = 2;
 
+/** BR-BARN-CAPACITY-GROOM: Mỗi Khu chuồng (Barn) cho phép tối đa 4 Groom phụ trách. */
+export const MAX_GROOMS_PER_BARN = 4;
+
 /** BR-TRN-SLOT-HT: Đệm thời gian tối thiểu giữa các buổi tập của 1 HLV (phút). */
 export const TRAINER_BUFFER_MINUTES = 15;
 
@@ -301,8 +304,32 @@ export function validatePhases(
             : `Giai đoạn rèn luyện "${p.name}" tối thiểu 7 ngày (1 tuần).`,
       );
     }
+    const maxDays = maxDaysForPhase(p.type);
+    if (maxDays && pDays > maxDays) {
+      return bad(
+        `Giai đoạn "${p.name}" (${p.type}) dài ${pDays} ngày, vượt quá trần sinh lý an toàn tối đa ${maxDays} ngày (${Math.round(maxDays / 7)} tuần).`,
+      );
+    }
   }
   return { phases };
+}
+
+/** Khung trần sinh lý an toàn tối đa cho từng loại giai đoạn huấn luyện (Equine Exercise Physiology). */
+export function maxDaysForPhase(type?: string | null): number {
+  switch (type) {
+    case 'BASE':
+      return 56; // 8 tuần
+    case 'BUILD':
+      return 42; // 6 tuần
+    case 'SPEED':
+      return 28; // 4 tuần
+    case 'PRE_RACE':
+      return 14; // 2 tuần
+    case 'RECOVERY':
+      return 21; // 3 tuần
+    default:
+      return 56;
+  }
 }
 
 // ---------------------------------------------------------------- Điểm tải (SC-2.01, SC-2.07)

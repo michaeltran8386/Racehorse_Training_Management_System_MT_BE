@@ -222,14 +222,14 @@ export class WorkoutsService {
     }
 
     // Kiểm tra ô nhập phụ thuộc nhau (DTO không tự kiểm được).
-    if (w.scheduledDate < startOfClubDay(new Date())) {
+    const now = effectiveNow();
+    if (w.scheduledDate < startOfClubDay(now)) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
         'DATE_IN_PAST',
         'Không thể xếp buổi tập vào ngày đã qua.',
       );
     }
-    const now = new Date();
     if (
       clubDate(w.scheduledDate) === clubDate(now) &&
       w.scheduledDate.getTime() < now.getTime() + 29 * 60 * 1000

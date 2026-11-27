@@ -179,6 +179,10 @@ export class TrainingInsightsService {
         avatarUrl: true,
         breed: true,
         gender: true,
+        assignedTrainerId: true,
+        assignedTrainer: {
+          select: { id: true, fullName: true, email: true },
+        },
         owner: {
           select: { fullName: true, phoneNumber: true },
         },
@@ -326,6 +330,7 @@ export class TrainingInsightsService {
           breed: (horse as any).breed ?? null,
           gender: (horse as any).gender ?? null,
           stallCode,
+          assignedTrainer: (horse as any).assignedTrainer ?? null,
           ownerName: (horse as any).owner?.fullName ?? null,
           ownerPhone: (horse as any).owner?.phoneNumber ?? null,
           fromManagerName: (horse as any).handoverRequests?.[0]?.fromManager?.fullName ?? null,
@@ -395,11 +400,7 @@ export class TrainingInsightsService {
       allPlans.filter((p) => p.status === PlanStatus.DRAFT).map((p) => p.horseId),
     );
     const horsesWithoutPlan = horses.filter(
-      (h) =>
-        !withActive.has(h.id) &&
-        !withDraft.has(h.id) &&
-        !completedPlansByHorse.has(h.id) &&
-        h.status !== HorseStatus.RESTING,
+      (h) => !withActive.has(h.id) && !withDraft.has(h.id),
     ).length;
     const horsesDraftPlan = horses.filter(
       (h) => !withActive.has(h.id) && withDraft.has(h.id),

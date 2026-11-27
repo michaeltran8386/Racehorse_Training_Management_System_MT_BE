@@ -34,6 +34,7 @@ describe('AccountsService', () => {
     otpCode: { deleteMany: jest.fn() },
     resetToken: { deleteMany: jest.fn() },
     loginAttempt: { deleteMany: jest.fn() },
+    stallZone: { findUnique: jest.fn().mockResolvedValue({ id: 'barn-a', name: 'Barn A' }) },
     $transaction: jest.fn(),
   };
   const mockMail = { send: jest.fn() };
@@ -198,6 +199,7 @@ describe('AccountsService', () => {
 
   it('should invite staff and Horse Owner as INVITED and mail an invite code', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.count.mockResolvedValue(0);
     mockPrisma.user.create.mockImplementation(({ data }) =>
       Promise.resolve({ id: 'tung', ...data }),
     );
@@ -206,6 +208,7 @@ describe('AccountsService', () => {
       fullName: 'Ngô Thanh Tùng',
       email: 'tung.ngo@gmail.com',
       role: 'GROOM',
+      assignedBarnId: 'barn-a',
     });
     expect(user.status).toBe(UserStatus.INVITED);
     expect(user.invitedBy).toBe('Đỗ Quốc Việt');

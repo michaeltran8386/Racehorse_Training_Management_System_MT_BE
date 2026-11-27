@@ -136,27 +136,38 @@ Mật khẩu mặc định cho tất cả các tài khoản: **`EquiFlow@2026`**
 
 ---
 
-## 4. Dữ liệu mẫu chuẩn theo vòng đời (Canonical Full Seed 07/2026 – 12/2026)
+## 4. Bộ dữ liệu doanh nghiệp nhỏ — một seed duy nhất
 
-Một bộ seed chuẩn duy nhất tại `prisma/seed.ts` phủ kín **38/38 bảng Prisma** với **19 chiến mã** (đủ 8 giống ngựa chính + 1 giống `Morgan` ngừng kích hoạt, đủ 7 `HorseStatus`, ngựa `RETIRED` nhả ô chuồng theo `BR-STL-07`), **32 ô chuồng** (Khu A, B, C, H), **8 giải đấu**, chuỗi hóa đơn **6 tháng (2026-07 – 2026-12)** và lịch trực **10 Groom**:
+`prisma/seed.ts` là bộ dữ liệu duy nhất. Các seed demo, master, manual-QA và trainer riêng đã được hợp nhất rồi bỏ. Không đổi schema.
+
+- Lịch sử từ **01/12/2025**, công việc gần ngày chạy chi tiết hơn và lịch dự kiến đến **21 ngày tới**, dùng múi giờ Việt Nam.
+- **24 ngựa**: 19 hồ sơ cư trú/lịch sử và 5 hồ sơ tiếp nhận; **48 ô chuồng**, 4 sân tập, 7 nhóm vật tư.
+- **32 tài khoản**: 2 quản lý, 4 HLV, 4 bác sĩ, 10 Groom, 6 chủ ngựa và 6 tài khoản ở các trạng thái vòng đời khác. Tài khoản đăng nhập giữ mật khẩu demo `EquiFlow@2026`; tài khoản mời chưa đặt mật khẩu.
+- Huấn luyện có chu kỳ đã hoàn thành, nháp, đang chạy, hủy; có kết quả, bỏ lỡ, khóa y tế và buổi tập tương lai. Nhân viên được phân khu và lịch làm việc.
+- Chăm sóc có lịch sử hằng ngày, nhật ký, thực đơn, khám định kỳ, phòng bệnh, sự cố, nhập kho và cảnh báo tồn thấp.
+- Tiếp nhận đủ 6 trạng thái, có đối chiếu chip, kết quả khám và lịch sử quyết định. Bàn giao có SLA thường/khẩn và các trạng thái đã xử lý; có chuyển nhượng, phản ánh, đánh giá HLV và thông báo.
+- **Hóa đơn chỉ từ 12/2025 đến hết 10/2026**. Trước 09/2026 dùng gói cũ; từ 09/2026 dùng sổ chi phí thực tế, dòng hóa đơn, khoản hoàn tác và quyền ghi nhận chi phí. Tháng 11 trở đi có hoạt động và chi phí chưa lập hóa đơn.
+- Có hóa đơn đã thanh toán, chờ đối soát, quá hạn, nháp và hủy; có chủ nợ xấu và ngựa lưu giữ nợ. Tiền thưởng giải đối soát theo hàm chia thưởng của hệ thống.
 
 ```powershell
-# Nạp dữ liệu chuẩn (an toàn chạy nhiều lần, giữ nguyên dữ liệu mới trên DB đã có)
+# Nạp bộ dữ liệu chính; chạy lại không nhân đôi ID mẫu và không sửa hóa đơn đã có
 npm run db:seed
 
-# Xóa sạch dữ liệu cũ và nạp lại từ đầu (chỉ dùng cho môi trường dev/local)
+# Xóa toàn bộ dữ liệu rồi dựng lại bộ mẫu — chỉ chạy trên database demo có thể bỏ
 npm run db:seed -- --reset
+
+# Kiểm tra sinh dữ liệu, quan hệ, số tiền, mốc thời gian và chạy lặp; không kết nối database
+npm run test:seed
+
+# Kiểm tra database đã được nạp seed (chỉ đọc)
+npm run db:verify
 ```
 
-Khi deploy bằng Docker (`Dockerfile`), container tự động chạy `npx prisma db push --skip-generate`, kiểm tra nếu bảng `User` đang trống (`count === 0`) sẽ tự động thực thi `npm run db:seed` một lần trước khi khởi động API.
+`--reset` chạy trong transaction và bị chặn khi `NODE_ENV=production`. Không cần reset để kiểm tra mã. Seed không gửi email và các token/OTP mẫu đều hết hạn hoặc bị thu hồi.
 
-| Màn hình demo            | Dữ liệu để kiểm tra                                                                                                                                                                    |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Dashboard HLV**        | Giáo án `DRAFT`/`ACTIVE`/`COMPLETED`/`CANCELLED`; lịch tập hôm nay và lịch sử 35+ ngày phục vụ ACWR; mô phỏng `WORKOUT`/`RACE`/`EXAM`.                                                 |
-| **Phong độ & Giải đấu**  | 4 giải `COMPLETED` (T7–T10 chia thưởng 85/10/5), giải T11 `CLOSED_REGISTRATION` & `OPEN_REGISTRATION`, giải T12 `UPCOMING`, và mẫu `CANCELLED`.                                        |
-| **Hồ sơ Thú y**          | Bệnh án `OPEN`/`CLOSED`/`DRAFT` (tối đa 1 `OPEN`/ngựa theo PR #153), Khóa y tế (Xích Thố, Tuyết Ảnh, Lôi Chấn), lịch phòng ngừa đủ 4 loại (gồm `FARRIER_HOOF_CARE`) & 5 loại thực đơn. |
-| **Tài chính & Sao kê**   | Hóa đơn 6 tháng (2026-07 đến 2026-12) đủ 5 trạng thái (`PAID`, `SENT`, `DRAFT`, `OVERDUE`, `CANCELLED`); Dạ Nguyệt lưu giữ Khu H; Xích Thố có hóa đơn quá hạn T9–T10.                  |
-| **Chuồng trại & Vật tư** | Sơ đồ 4 phân khu A (`3x4`), B (`3x4`), C (`2x2`), H (`2x2`); đủ 7 nhóm vật tư, cảnh báo tồn kho, phiếu nhập đủ 5 trạng thái và sự cố đủ 4 trạng thái.                                  |
+Nếu database đang chứa dữ liệu từ bộ seed khác, chạy thường sẽ **không xóa** các dữ liệu đó, kể cả hóa đơn cũ ngoài mốc tháng 10. Muốn một bộ demo sạch, dùng database demo trống hoặc chủ động chọn `--reset` sau khi sao lưu dữ liệu cần giữ.
+
+Số lượng kiểm tra ngoại tuyến tại **28/11/2026**: hơn 33.000 nhiệm vụ chăm sóc, 2.170 buổi tập, 233 bệnh án, 209 hóa đơn, có dữ liệu ở đủ 50 model. Số bản ghi theo ngày sẽ thay đổi khi chạy vào ngày khác.
 
 ---
 
