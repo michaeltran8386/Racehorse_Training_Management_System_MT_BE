@@ -1544,6 +1544,10 @@ model HorseAdmissionRecord {
   legalVerified      Boolean @default(false)
   // §6 câu 2: link ảnh giấy tờ chủ upload (tùy chọn)
   documentsUrl       String?
+  // Bộ ảnh giấy tờ pháp lý chủ ngựa nộp (tối đa 3 ảnh: [{ label, url }])
+  documentPhotos     Json?
+  // Ghi chú / mong muốn của chủ ngựa gửi CLB lúc đăng ký (kiểu Dịch vụ công)
+  ownerNotes         String?
 
   // §3 Khám sàng lọc (Vet)
   isHealthEligible   Boolean?
