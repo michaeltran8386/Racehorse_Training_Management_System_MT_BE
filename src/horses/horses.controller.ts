@@ -78,7 +78,8 @@ export class HorsesController {
   @Get('admissions')
   @Roles(...ALL_STAFF_ROLES, UserRole.HORSE_OWNER)
   @ApiOperation({
-    summary: 'Danh sách hồ sơ tiếp nhận ngựa (Staff xem toàn CLB/được giao; Chủ ngựa chỉ xem đơn của mình)',
+    summary:
+      'Danh sách hồ sơ tiếp nhận ngựa (Staff xem toàn CLB/được giao; Chủ ngựa chỉ xem đơn của mình)',
   })
   async listAdmissions(@Query() query: QueryAdmissionDto, @CurrentUser() user: CurrentUserPayload) {
     return this.horsesService.listAdmissions(query, user);
@@ -96,7 +97,8 @@ export class HorsesController {
   @Patch('admissions/:id/submission')
   @Roles(UserRole.HORSE_OWNER)
   @ApiOperation({
-    summary: 'Chủ ngựa cập nhật ghi chú mong muốn / bổ sung ảnh giấy tờ pháp lý khi hồ sơ chưa xếp lịch',
+    summary:
+      'Chủ ngựa cập nhật ghi chú mong muốn / bổ sung ảnh giấy tờ pháp lý khi hồ sơ chưa xếp lịch',
   })
   async updateOwnerSubmission(
     @Param('id') id: string,

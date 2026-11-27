@@ -136,7 +136,9 @@ export class CancelAdmissionDto {
 
 /** PATCH /horses/admissions/:id/submission — Chủ ngựa bổ sung giấy tờ / sửa ghi chú khi chưa xếp lịch */
 export class UpdateOwnerAdmissionSubmissionDto {
-  @ApiPropertyOptional({ description: 'Ghi chú / mong muốn của chủ ngựa gửi CLB (tối đa 1000 ký tự)' })
+  @ApiPropertyOptional({
+    description: 'Ghi chú / mong muốn của chủ ngựa gửi CLB (tối đa 1000 ký tự)',
+  })
   @IsOptional()
   @IsString({ message: 'Ghi chú chủ ngựa không hợp lệ.' })
   @MaxLength(1000, { message: 'Ghi chú mong muốn tối đa 1000 ký tự.' })

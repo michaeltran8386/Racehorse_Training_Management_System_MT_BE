@@ -18,7 +18,10 @@ import { Transform, Type } from 'class-transformer';
 import { HORSE_GENDERS, HORSE_NAME_RE, normalizeName } from '../horse-rules';
 
 export class AdmissionDocumentPhotoDto {
-  @ApiProperty({ description: 'Tên loại giấy tờ pháp lý', example: 'Giấy chứng nhận sở hữu / Hộ chiếu ngựa' })
+  @ApiProperty({
+    description: 'Tên loại giấy tờ pháp lý',
+    example: 'Giấy chứng nhận sở hữu / Hộ chiếu ngựa',
+  })
   @IsNotEmpty({ message: 'Vui lòng chọn hoặc nhập tên loại giấy tờ.' })
   @IsString({ message: 'Tên loại giấy tờ không hợp lệ.' })
   @MaxLength(120, { message: 'Tên loại giấy tờ tối đa 120 ký tự.' })
@@ -115,7 +118,8 @@ export class CreateHorseDto {
   documentPhotos?: AdmissionDocumentPhotoDto[];
 
   @ApiPropertyOptional({
-    description: 'Ghi chú / mong muốn của chủ ngựa gửi CLB (khung giờ mong muốn, lưu ý tính cách, mục tiêu)',
+    description:
+      'Ghi chú / mong muốn của chủ ngựa gửi CLB (khung giờ mong muốn, lưu ý tính cách, mục tiêu)',
   })
   @IsOptional()
   @IsString({ message: 'Ghi chú chủ ngựa không hợp lệ.' })

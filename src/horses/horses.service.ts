@@ -394,13 +394,11 @@ export class HorsesService {
   /** Che giấu ghi chú thẩm định nội bộ trước khi trả hồ sơ tiếp nhận cho Chủ ngựa. */
   private sanitizeAdmissionForRole(record: any, user: CurrentUserPayload): any {
     if (!record || user.role !== UserRole.HORSE_OWNER) return record;
-    const {
-      legalDocumentsNote: _legalNote,
-      healthCheckNotes: _healthNote,
-      healthReviews: _healthReviews,
-      isHealthEligible: _healthEligible,
-      ...ownerSafe
-    } = record;
+    const ownerSafe = { ...record };
+    delete ownerSafe.legalDocumentsNote;
+    delete ownerSafe.healthCheckNotes;
+    delete ownerSafe.healthReviews;
+    delete ownerSafe.isHealthEligible;
     return ownerSafe;
   }
 
