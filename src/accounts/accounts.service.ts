@@ -820,11 +820,11 @@ export class AccountsService {
       }
 
       const handoverTrainer = await this.find(dto.handoverTrainerId);
-      if (handoverTrainer.role !== Role.HEAD_TRAINER) {
+      if (handoverTrainer.role !== Role.HEAD_TRAINER || handoverTrainer.status !== UserStatus.ACTIVE) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'INVALID_HANDOVER_RECIPIENT',
-          'Người nhận bàn giao phải là Huấn luyện viên trưởng.',
+          'Người nhận bàn giao phải là Huấn luyện viên trưởng đang hoạt động.',
         );
       }
 

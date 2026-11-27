@@ -400,11 +400,7 @@ export class TrainingInsightsService {
       allPlans.filter((p) => p.status === PlanStatus.DRAFT).map((p) => p.horseId),
     );
     const horsesWithoutPlan = horses.filter(
-      (h) =>
-        !withActive.has(h.id) &&
-        !withDraft.has(h.id) &&
-        !completedPlansByHorse.has(h.id) &&
-        h.status !== HorseStatus.RESTING,
+      (h) => !withActive.has(h.id) && !withDraft.has(h.id),
     ).length;
     const horsesDraftPlan = horses.filter(
       (h) => !withActive.has(h.id) && withDraft.has(h.id),
