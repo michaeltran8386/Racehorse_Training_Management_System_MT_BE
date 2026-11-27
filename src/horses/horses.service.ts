@@ -18,6 +18,7 @@ import {
   Role,
   TrainerAssignmentStatus,
   UserStatus,
+  WorkoutStatus,
 } from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
 import { UserRole } from '../common/enums/role.enum';
@@ -2713,6 +2714,7 @@ export class HorsesService {
         await tx.horse.update({
           where: { id: req.horseId },
           data: {
+            assignedTrainerId: null,
             trainerAssignmentStatus: TrainerAssignmentStatus.DECLINED,
             trainerDeclineReason: 'Hết hạn phản hồi 48h',
             trainerRespondedAt: new Date(),
@@ -2751,6 +2753,39 @@ export class HorsesService {
           },
         });
 
+        // Kế thừa giáo án & buổi tập (nếu chiến mã đã có giáo án từ HLV tiền nhiệm)
+        if (tx.trainingPlan) {
+          const activeOrDraftPlans = await tx.trainingPlan.findMany({
+            where: {
+              horseId: req.horseId,
+              status: { in: [PlanStatus.DRAFT, PlanStatus.ACTIVE] },
+            },
+            select: { id: true, status: true },
+          });
+
+          if (activeOrDraftPlans.length > 0) {
+            const planIds = activeOrDraftPlans.map((p) => p.id);
+            await tx.trainingPlan.updateMany({
+              where: { id: { in: planIds } },
+              data: { trainerUserId: req.toTrainerId },
+            });
+
+            // Các buổi tập từ ngày mai trở đi do HLV mới tiếp quản (buổi tập hôm nay HLV cũ hoàn thành nốt ca)
+            if (tx.workoutSession) {
+              const startOfTomorrow = new Date();
+              startOfTomorrow.setHours(24, 0, 0, 0);
+              await tx.workoutSession.updateMany({
+                where: {
+                  trainingPlanId: { in: planIds },
+                  scheduledDate: { gte: startOfTomorrow },
+                  status: WorkoutStatus.SCHEDULED,
+                },
+                data: { assignedStaffUserId: req.toTrainerId },
+              });
+            }
+          }
+        }
+
         await this.auditService.record(
           { id: req.toTrainerId, name: req.toTrainer.fullName },
           'HORSE_HANDOVER_ACCEPTED',
@@ -2786,6 +2821,7 @@ export class HorsesService {
         await tx.horse.update({
           where: { id: req.horseId },
           data: {
+            assignedTrainerId: null,
             trainerAssignmentStatus: TrainerAssignmentStatus.DECLINED,
             trainerDeclineReason: declineReason,
             trainerRespondedAt: new Date(),

@@ -6,6 +6,7 @@ import {
   PlanStatus,
   Prisma,
   Role,
+  TrainerAssignmentStatus,
   User,
   UserStatus,
   WorkoutStatus,
@@ -819,11 +820,14 @@ export class AccountsService {
       }
 
       const handoverTrainer = await this.find(dto.handoverTrainerId);
-      if (handoverTrainer.role !== Role.HEAD_TRAINER) {
+      if (
+        handoverTrainer.role !== Role.HEAD_TRAINER ||
+        handoverTrainer.status !== UserStatus.ACTIVE
+      ) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'INVALID_HANDOVER_RECIPIENT',
-          'Người nhận bàn giao phải là Huấn luyện viên trưởng.',
+          'Người nhận bàn giao phải là Huấn luyện viên trưởng đang hoạt động.',
         );
       }
 
@@ -836,15 +840,35 @@ export class AccountsService {
       }
 
       // Kiểm tra sức chứa của HLV nhận bàn giao (tối đa 8 con)
-      const recipientPlanCount = await this.prisma.trainingPlan.count({
+      const rawPlanCount = await this.prisma.trainingPlan.count({
         where: {
           trainerUserId: dto.handoverTrainerId,
           status: { in: [PlanStatus.DRAFT, PlanStatus.ACTIVE] },
           horse: { deletedAt: null },
         },
       });
+      const recipientPlanCount = Number(rawPlanCount) || 0;
 
-      const availableSlots = Math.max(0, MAX_HORSES_PER_TRAINER - recipientPlanCount);
+      let recipientHorseCount = 0;
+      try {
+        if (this.prisma.horse?.count) {
+          const c = await this.prisma.horse.count({
+            where: {
+              assignedTrainerId: dto.handoverTrainerId,
+              trainerAssignmentStatus: {
+                in: [TrainerAssignmentStatus.ASSIGNED, TrainerAssignmentStatus.PENDING_ACCEPTANCE],
+              },
+              deletedAt: null,
+            },
+          });
+          recipientHorseCount = Number(c) || 0;
+        }
+      } catch {
+        recipientHorseCount = 0;
+      }
+
+      const currentLoad = Math.max(recipientPlanCount, recipientHorseCount);
+      const availableSlots = Math.max(0, MAX_HORSES_PER_TRAINER - currentLoad);
       // Cơ chế Bàn giao Chia tách Thông minh (Smart Split Handover)
       const toHandoverPlans = activeOrDraftPlans.slice(0, availableSlots);
       const excessPlans = activeOrDraftPlans.slice(availableSlots);

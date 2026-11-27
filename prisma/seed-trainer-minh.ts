@@ -185,7 +185,7 @@ async function main() {
     where: { horseCode: 'HRS-BLM-01' },
     update: {
       name: 'Bạch Long Mã',
-      status: HorseStatus.ACTIVE,
+      status: HorseStatus.IN_TRAINING,
       isMedicalLocked: false,
       ownerId: owner.id,
       assignedTrainerId: trainerMinh.id,
@@ -202,7 +202,7 @@ async function main() {
       microchip: '985141000111111',
       microchipRfid: 'RFID-BLM-111111',
       avatarUrl: '/images/horses/horse-01.jpg',
-      status: HorseStatus.ACTIVE,
+      status: HorseStatus.IN_TRAINING,
       isMedicalLocked: false,
       ownerId: owner.id,
       assignedTrainerId: trainerMinh.id,
@@ -216,7 +216,7 @@ async function main() {
     where: { horseCode: 'HRS-XT-01' },
     update: {
       name: 'Xích Thổ',
-      status: HorseStatus.ACTIVE,
+      status: HorseStatus.IN_TRAINING,
       isMedicalLocked: false,
       ownerId: owner.id,
       assignedTrainerId: trainerMinh.id,
@@ -233,7 +233,7 @@ async function main() {
       microchip: '985141000222222',
       microchipRfid: 'RFID-XT-222222',
       avatarUrl: '/images/horses/horse-02.jpg',
-      status: HorseStatus.ACTIVE,
+      status: HorseStatus.IN_TRAINING,
       isMedicalLocked: false,
       ownerId: owner.id,
       assignedTrainerId: trainerMinh.id,
@@ -247,7 +247,7 @@ async function main() {
     where: { horseCode: 'HRS-PT-02' },
     update: {
       name: 'Phi Tiêu',
-      status: HorseStatus.ACTIVE,
+      status: HorseStatus.IN_TRAINING,
       isMedicalLocked: false,
       ownerId: owner.id,
       assignedTrainerId: trainerMinh.id,
@@ -264,7 +264,7 @@ async function main() {
       microchip: '985141000333333',
       microchipRfid: 'RFID-PT-333333',
       avatarUrl: '/images/horses/horse-03.jpg',
-      status: HorseStatus.ACTIVE,
+      status: HorseStatus.IN_TRAINING,
       isMedicalLocked: false,
       ownerId: owner.id,
       assignedTrainerId: trainerMinh.id,
@@ -462,21 +462,32 @@ async function main() {
   // 6. Cấu hình Giáo án & Buổi tập xung đột cho HLV Minh
   console.log('[6/7] Khởi tạo giáo án và buổi tập xung đột lịch HLV...');
 
-  // Dọn sạch buổi tập cũ của các ngựa này để tránh rác
+  // Dọn sạch buổi tập cũ của các ngựa này và của HLV Minh để tránh rác
   await prisma.workoutSession.deleteMany({
-    where: { horseId: { in: [bachLongMa.id, xichTho.id, phiTieu.id, thanhPhong.id, huyetLong.id, kimLong.id, thanMa.id] } },
+    where: {
+      OR: [
+        { horseId: { in: [bachLongMa.id, xichTho.id, phiTieu.id, thanhPhong.id, huyetLong.id, kimLong.id, thanMa.id] } },
+        { assignedStaffUserId: trainerMinh.id },
+      ],
+    },
   });
   await prisma.trainingPlan.deleteMany({
-    where: { horseId: { in: [bachLongMa.id, xichTho.id, phiTieu.id, thanhPhong.id, huyetLong.id, kimLong.id, thanMa.id] } },
+    where: {
+      OR: [
+        { horseId: { in: [bachLongMa.id, xichTho.id, phiTieu.id, thanhPhong.id, huyetLong.id, kimLong.id, thanMa.id] } },
+        { trainerUserId: trainerMinh.id },
+      ],
+    },
   });
 
-  // Giáo án 1: Bạch Long Mã - Đang chạy
+  // Giáo án 1: Bạch Long Mã - Đang chạy (Active)
   const planBachLongMa = await prisma.trainingPlan.create({
     data: {
       planCode: 'GA-MINH-BLM',
       horseId: bachLongMa.id,
       trainerUserId: trainerMinh.id,
       phaseName: 'Giai đoạn thể lực cơ bản',
+      objective: 'Tăng cường sức bền nền tảng trên mặt sân cỏ.',
       status: PlanStatus.ACTIVE,
       trackSurface: TrackSurface.TURF,
       startDate: new Date('2026-11-28T00:00:00.000Z'),
@@ -500,13 +511,14 @@ async function main() {
     },
   });
 
-  // Giáo án 2: Xích Thổ - Đang chạy
+  // Giáo án 2: Xích Thổ - Đang chạy (Active)
   const planXichTho = await prisma.trainingPlan.create({
     data: {
       planCode: 'GA-MINH-XT',
       horseId: xichTho.id,
       trainerUserId: trainerMinh.id,
       phaseName: 'Giai đoạn thể lực nâng cao',
+      objective: 'Rèn luyện cơ đùi và bứt tốc cự ly 1200m trên sân cát.',
       status: PlanStatus.ACTIVE,
       trackSurface: TrackSurface.DIRT,
       startDate: new Date('2026-11-28T00:00:00.000Z'),
@@ -530,13 +542,14 @@ async function main() {
     },
   });
 
-  // Giáo án 3: Phi Tiêu - Đang chạy (Giai đoạn 1: 2026-11-28 -> 2026-12-04, chưa có buổi tập để HLV Minh bấm sinh lịch)
+  // Giáo án 3: Phi Tiêu - Đang chạy (Giai đoạn 1: 2026-11-28 -> 2026-12-04, 0 buổi tập để HLV Minh bấm sinh lịch)
   await prisma.trainingPlan.create({
     data: {
       planCode: 'GA-MINH-PT',
       horseId: phiTieu.id,
       trainerUserId: trainerMinh.id,
-      phaseName: 'Giai đoạn 1',
+      phaseName: 'Giai đoạn 1: Nền tảng',
+      objective: 'Làm quen nhịp chạy và duy trì cự ly ngắn 1000m.',
       status: PlanStatus.ACTIVE,
       trackSurface: TrackSurface.TURF,
       startDate: new Date('2026-11-28T00:00:00.000Z'),
@@ -544,7 +557,7 @@ async function main() {
       phases: [
         {
           id: 'PH-PT-01',
-          name: 'Giai đoạn 1',
+          name: 'Giai đoạn 1: Nền tảng',
           type: 'BASE',
           focus: 'BASE',
           startDate: '2026-11-28',
@@ -560,23 +573,96 @@ async function main() {
     },
   });
 
-  // Giáo án 4: Thần Mã - Đã hoàn thành (Sẵn sàng thi đấu)
-  await prisma.trainingPlan.create({
+  // Giáo án 4: Huyết Long - Bản nháp (DRAFT) để demo nút "Kích hoạt giáo án"
+  const planHuyetLong = await prisma.trainingPlan.create({
+    data: {
+      planCode: 'GA-MINH-HL',
+      horseId: huyetLong.id,
+      trainerUserId: trainerMinh.id,
+      phaseName: 'Giáo án Phục hồi sau dưỡng sức',
+      objective: 'Phục hồi cơ bắp và thích nghi nhẹ nhàng với bài tập đi bộ cự ly ngắn.',
+      status: PlanStatus.DRAFT,
+      trackSurface: TrackSurface.TURF,
+      startDate: new Date('2026-11-30T00:00:00.000Z'),
+      endDate: new Date('2026-12-14T00:00:00.000Z'),
+      phases: [
+        {
+          id: 'PH-HL-01',
+          name: 'Giai đoạn 1: Phục hồi nhẹ',
+          type: 'RECOVERY',
+          focus: 'RECOVERY',
+          startDate: '2026-11-30',
+          endDate: '2026-12-14',
+          durationDays: 14,
+          sessionsPerWeek: 3,
+          maxWeeklyDistance: 5000,
+          surface: 'TURF',
+          targetSpeedKmh: 35,
+          targetDistanceM: 800,
+        },
+      ],
+    },
+  });
+
+  // Buổi tập dự kiến cho bản nháp Huyết Long (thuộc phase PH-HL-01)
+  await prisma.workoutSession.createMany({
+    data: [
+      {
+        trainingPlanId: planHuyetLong.id,
+        phaseId: 'PH-HL-01',
+        horseId: huyetLong.id,
+        trackId: trackTurfA?.id,
+        assignedStaffUserId: trainerMinh.id,
+        jockeyName: trainerMinh.fullName,
+        scheduledDate: new Date('2026-11-30T09:00:00+07:00'),
+        workoutType: 'WALK',
+        intensity: 'LIGHT',
+        trackSurface: TrackSurface.TURF,
+        distanceMeters: 800,
+        repetitions: 1,
+        targetSpeedKmh: 35,
+        status: WorkoutStatus.SCHEDULED,
+        trainerNotes: 'Đi bộ thả lỏng phục hồi cơ đùi',
+      },
+      {
+        trainingPlanId: planHuyetLong.id,
+        phaseId: 'PH-HL-01',
+        horseId: huyetLong.id,
+        trackId: trackTurfA?.id,
+        assignedStaffUserId: trainerMinh.id,
+        jockeyName: trainerMinh.fullName,
+        scheduledDate: new Date('2026-12-02T09:00:00+07:00'),
+        workoutType: 'WALK',
+        intensity: 'LIGHT',
+        trackSurface: TrackSurface.TURF,
+        distanceMeters: 800,
+        repetitions: 1,
+        targetSpeedKmh: 35,
+        status: WorkoutStatus.SCHEDULED,
+        trainerNotes: 'Đi bộ thả lỏng nhịp nhàng',
+      },
+    ],
+  });
+
+  // Giáo án 5: Thần Mã - Đã hoàn thành (COMPLETED, tiến độ 100% 4/4 buổi)
+  const planThanMa = await prisma.trainingPlan.create({
     data: {
       planCode: 'GA-MINH-TM',
       horseId: thanMa.id,
       trainerUserId: trainerMinh.id,
-      phaseName: 'Giai đoạn hoàn thiện tốc độ',
+      phaseName: 'Giáo án Hoàn thiện tốc độ thi đấu',
+      objective: 'Bứt tốc nước rút 1600m và kiểm soát nhịp tim đỉnh cao.',
       status: PlanStatus.COMPLETED,
+      completionSummary: 'Chiến mã hoàn thành xuất sắc 100% giáo án, chỉ số tim mạch và tốc độ đạt chuẩn thi đấu.',
       trackSurface: TrackSurface.TURF,
       startDate: new Date('2026-10-01T00:00:00.000Z'),
       endDate: new Date('2026-11-15T00:00:00.000Z'),
       phases: [
         {
           id: 'PH-TM-01',
-          name: 'Giai đoạn 1: Hoàn thiện tốc độ',
-          type: 'PEAK',
-          focus: 'PEAK',
+          name: 'Giai đoạn 1: Bứt tốc nước rút',
+          type: 'SPEED',
+          focus: 'SPEED',
           startDate: '2026-10-01',
           endDate: '2026-11-15',
           durationDays: 45,
@@ -588,6 +674,112 @@ async function main() {
         },
       ],
     },
+  });
+
+  // 4 buổi tập quá khứ ĐÃ HOÀN THÀNH cho Thần Mã (đều gắn phaseId: 'PH-TM-01')
+  await prisma.workoutSession.createMany({
+    data: [
+      {
+        trainingPlanId: planThanMa.id,
+        phaseId: 'PH-TM-01',
+        horseId: thanMa.id,
+        trackId: trackTurfA?.id,
+        assignedStaffUserId: trainerMinh.id,
+        jockeyName: trainerMinh.fullName,
+        scheduledDate: new Date('2026-10-10T08:00:00+07:00'),
+        workoutType: 'CANTER',
+        intensity: 'MEDIUM',
+        trackSurface: TrackSurface.TURF,
+        distanceMeters: 1600,
+        actualDistanceMeters: 1600,
+        repetitions: 1,
+        targetSpeedKmh: 58,
+        actualTimeSeconds: 101.5,
+        averageSpeedKmh: 56.7,
+        topSpeedKmh: 58.2,
+        heartRatePeak: 182,
+        heartRateRecovery: 95,
+        performanceScore: 8.8,
+        status: WorkoutStatus.COMPLETED,
+        resultRecordedAt: new Date('2026-10-10T09:00:00+07:00'),
+        trainerNotes: 'Chạy đà ổn định, nhịp thở đều.',
+      },
+      {
+        trainingPlanId: planThanMa.id,
+        phaseId: 'PH-TM-01',
+        horseId: thanMa.id,
+        trackId: trackTurfA?.id,
+        assignedStaffUserId: trainerMinh.id,
+        jockeyName: trainerMinh.fullName,
+        scheduledDate: new Date('2026-10-20T08:00:00+07:00'),
+        workoutType: 'BREEZE',
+        intensity: 'HEAVY',
+        trackSurface: TrackSurface.TURF,
+        distanceMeters: 1600,
+        actualDistanceMeters: 1600,
+        repetitions: 1,
+        targetSpeedKmh: 60,
+        actualTimeSeconds: 98.6,
+        averageSpeedKmh: 58.4,
+        topSpeedKmh: 60.1,
+        heartRatePeak: 185,
+        heartRateRecovery: 92,
+        performanceScore: 9.0,
+        status: WorkoutStatus.COMPLETED,
+        resultRecordedAt: new Date('2026-10-20T09:00:00+07:00'),
+        trainerNotes: 'Tăng tốc nước rút tốt, giữ vững nhịp tim.',
+      },
+      {
+        trainingPlanId: planThanMa.id,
+        phaseId: 'PH-TM-01',
+        horseId: thanMa.id,
+        trackId: trackTurfA?.id,
+        assignedStaffUserId: trainerMinh.id,
+        jockeyName: trainerMinh.fullName,
+        scheduledDate: new Date('2026-10-30T08:00:00+07:00'),
+        workoutType: 'BREEZE',
+        intensity: 'HEAVY',
+        trackSurface: TrackSurface.TURF,
+        distanceMeters: 1600,
+        actualDistanceMeters: 1600,
+        repetitions: 1,
+        targetSpeedKmh: 60,
+        actualTimeSeconds: 96.3,
+        averageSpeedKmh: 59.8,
+        topSpeedKmh: 61.5,
+        heartRatePeak: 188,
+        heartRateRecovery: 90,
+        performanceScore: 9.3,
+        status: WorkoutStatus.COMPLETED,
+        resultRecordedAt: new Date('2026-10-30T09:00:00+07:00'),
+        trainerNotes: 'Bứt phá xuất sắc ở 400m cuối.',
+      },
+      {
+        trainingPlanId: planThanMa.id,
+        phaseId: 'PH-TM-01',
+        horseId: thanMa.id,
+        trackId: trackTurfA?.id,
+        assignedStaffUserId: trainerMinh.id,
+        jockeyName: trainerMinh.fullName,
+        scheduledDate: new Date('2026-11-10T08:00:00+07:00'),
+        workoutType: 'BREEZE',
+        intensity: 'HEAVY',
+        trackSurface: TrackSurface.TURF,
+        distanceMeters: 1600,
+        actualDistanceMeters: 1600,
+        repetitions: 1,
+        targetSpeedKmh: 62,
+        actualTimeSeconds: 94.1,
+        averageSpeedKmh: 61.2,
+        topSpeedKmh: 63.0,
+        heartRatePeak: 190,
+        heartRateRecovery: 88,
+        performanceScore: 9.5,
+        status: WorkoutStatus.COMPLETED,
+        resultRecordedAt: new Date('2026-11-10T09:00:00+07:00'),
+        trainerNotes: 'Đạt đỉnh phong độ, sẵn sàng tham gia giải đua.',
+      },
+    ],
   });
 
   // Tạo các buổi tập xung đột lịch HLV Minh trên các ngày:
