@@ -35,6 +35,7 @@ import {
   QueryAdmissionDto,
   RejectAdmissionDto,
   ScheduleAdmissionDto,
+  UpdateOwnerAdmissionSubmissionDto,
 } from './dto/admission.dto';
 import { AssignHorseTrainerDto, RespondHandoverDto } from './dto/handover.dto';
 
@@ -75,17 +76,34 @@ export class HorsesController {
   // =========================================================================
 
   @Get('admissions')
-  @Roles(...ALL_STAFF_ROLES)
-  @ApiOperation({ summary: 'Danh sách hồ sơ tiếp nhận ngựa (ADM-02, ADM-04) - Chỉ Staff' })
+  @Roles(...ALL_STAFF_ROLES, UserRole.HORSE_OWNER)
+  @ApiOperation({
+    summary: 'Danh sách hồ sơ tiếp nhận ngựa (Staff xem toàn CLB/được giao; Chủ ngựa chỉ xem đơn của mình)',
+  })
   async listAdmissions(@Query() query: QueryAdmissionDto, @CurrentUser() user: CurrentUserPayload) {
     return this.horsesService.listAdmissions(query, user);
   }
 
   @Get('admissions/:id/history')
-  @Roles(...ALL_STAFF_ROLES)
-  @ApiOperation({ summary: 'Lịch sử các bước của hồ sơ tiếp nhận (ADM-02) - Chỉ Staff' })
+  @Roles(...ALL_STAFF_ROLES, UserRole.HORSE_OWNER)
+  @ApiOperation({
+    summary: 'Lịch sử các bước của hồ sơ tiếp nhận (Staff hoặc chính Chủ ngựa của hồ sơ)',
+  })
   async getAdmissionHistory(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.horsesService.getAdmissionHistory(id, user);
+  }
+
+  @Patch('admissions/:id/submission')
+  @Roles(UserRole.HORSE_OWNER)
+  @ApiOperation({
+    summary: 'Chủ ngựa cập nhật ghi chú mong muốn / bổ sung ảnh giấy tờ pháp lý khi hồ sơ chưa xếp lịch',
+  })
+  async updateOwnerSubmission(
+    @Param('id') id: string,
+    @Body() dto: UpdateOwnerAdmissionSubmissionDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.horsesService.updateOwnerSubmission(id, dto, user);
   }
 
   @Get('admissions/capacity')

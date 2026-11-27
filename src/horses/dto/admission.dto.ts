@@ -1,19 +1,25 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   IsUUID,
   Length,
   Max,
+  MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { AdmissionStatus } from '@prisma/client';
+import { AdmissionDocumentPhotoDto } from './create-horse.dto';
 
 /** POST /horses/admissions/:id/schedule */
 export class ScheduleAdmissionDto {
@@ -126,6 +132,32 @@ export class CancelAdmissionDto {
   @IsString({ message: 'reason must be a string.' })
   @Type(() => String)
   reason?: string;
+}
+
+/** PATCH /horses/admissions/:id/submission — Chủ ngựa bổ sung giấy tờ / sửa ghi chú khi chưa xếp lịch */
+export class UpdateOwnerAdmissionSubmissionDto {
+  @ApiPropertyOptional({ description: 'Ghi chú / mong muốn của chủ ngựa gửi CLB (tối đa 1000 ký tự)' })
+  @IsOptional()
+  @IsString({ message: 'Ghi chú chủ ngựa không hợp lệ.' })
+  @MaxLength(1000, { message: 'Ghi chú mong muốn tối đa 1000 ký tự.' })
+  ownerNotes?: string;
+
+  @ApiPropertyOptional({ description: 'Ảnh giấy tờ chính (tương thích ngược)' })
+  @IsOptional()
+  @IsString({ message: 'documentsUrl must be a string.' })
+  @MaxLength(450_000, { message: 'Ảnh giấy tờ vượt quá dung lượng cho phép.' })
+  documentsUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Bộ ảnh giấy tờ pháp lý chủ ngựa nộp (tối đa 3 ảnh)',
+    type: [AdmissionDocumentPhotoDto],
+  })
+  @IsOptional()
+  @IsArray({ message: 'Danh sách ảnh giấy tờ phải là mảng.' })
+  @ArrayMaxSize(3, { message: 'Tối đa 3 ảnh giấy tờ pháp lý.' })
+  @ValidateNested({ each: true })
+  @Type(() => AdmissionDocumentPhotoDto)
+  documentPhotos?: AdmissionDocumentPhotoDto[];
 }
 
 /** GET /horses/admissions — Danh sách hồ sơ tiếp nhận (Staff-only) */

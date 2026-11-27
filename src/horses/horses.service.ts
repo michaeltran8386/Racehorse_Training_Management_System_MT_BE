@@ -40,7 +40,9 @@ import {
   QueryAdmissionDto,
   RejectAdmissionDto,
   ScheduleAdmissionDto,
+  UpdateOwnerAdmissionSubmissionDto,
 } from './dto/admission.dto';
+import { effectiveNow } from '../common/utils/demo-clock';
 import {
   ACTIVE_ADMISSION_STATUSES,
   assertAdmissionApprovable,
@@ -356,6 +358,52 @@ export class HorsesService {
     return '*'.repeat(chip.length - 4) + chip.slice(-4);
   }
 
+  /** Chuẩn hóa bộ ảnh giấy tờ pháp lý & link ảnh đại diện khi chủ ngựa nộp hoặc bổ sung hồ sơ. */
+  private normalizeAdmissionSubmissionDocs(input: {
+    documentsUrl?: string;
+    documentPhotos?: Array<{ label: string; url: string }>;
+  }): {
+    documentsUrl: string | null;
+    documentPhotos: Array<{ label: string; url: string }> | null;
+  } {
+    const cleanedPhotos = Array.isArray(input.documentPhotos)
+      ? input.documentPhotos
+          .map((item) => ({
+            label: (item?.label ?? '').trim() || 'Giấy tờ pháp lý',
+            url: (item?.url ?? '').trim(),
+          }))
+          .filter((item) => item.url.length > 0)
+          .slice(0, 3)
+      : null;
+
+    const explicitUrl = input.documentsUrl?.trim() || '';
+    const primaryUrl = explicitUrl || cleanedPhotos?.[0]?.url || null;
+    const finalPhotos =
+      cleanedPhotos && cleanedPhotos.length > 0
+        ? cleanedPhotos
+        : explicitUrl
+          ? [{ label: 'Giấy tờ pháp lý đính kèm', url: explicitUrl }]
+          : null;
+
+    return {
+      documentsUrl: primaryUrl,
+      documentPhotos: finalPhotos,
+    };
+  }
+
+  /** Che giấu ghi chú thẩm định nội bộ trước khi trả hồ sơ tiếp nhận cho Chủ ngựa. */
+  private sanitizeAdmissionForRole(record: any, user: CurrentUserPayload): any {
+    if (!record || user.role !== UserRole.HORSE_OWNER) return record;
+    const {
+      legalDocumentsNote: _legalNote,
+      healthCheckNotes: _healthNote,
+      healthReviews: _healthReviews,
+      isHealthEligible: _healthEligible,
+      ...ownerSafe
+    } = record;
+    return ownerSafe;
+  }
+
   /**
    * Áp dụng chính sách bảo mật dữ liệu và che giấu trường nhạy cảm theo vai trò người dùng.
    */
@@ -408,6 +456,13 @@ export class HorsesService {
       cloned.owner = null;
       cloned.ownerName = null;
       cloned.ownerId = null;
+    }
+
+    if (Array.isArray(cloned.admissionRecords)) {
+      cloned.admissionRecords = cloned.admissionRecords.map((adm: any) =>
+        this.sanitizeAdmissionForRole(adm, user),
+      );
+      cloned.latestAdmission = cloned.admissionRecords[0] ?? null;
     }
 
     return cloned;
@@ -484,6 +539,11 @@ export class HorsesService {
 
     const breed = await this.catalogs.resolveName(HorseCatalogType.BREED, dto.breed);
     const color = await this.catalogs.resolveName(HorseCatalogType.COLOR, dto.color);
+    const normalizedDocs = this.normalizeAdmissionSubmissionDocs({
+      documentsUrl: dto.documentsUrl,
+      documentPhotos: dto.documentPhotos,
+    });
+    const normalizedOwnerNotes = dto.ownerNotes?.trim() || null;
 
     let horse: any;
     let admission: any;
@@ -594,10 +654,15 @@ export class HorsesService {
               ownerId: user.userId,
               status: AdmissionStatus.PENDING_VERIFICATION,
               declaredMicrochip: microchip,
-              documentsUrl: (dto as any).documentsUrl || null,
+              documentsUrl: normalizedDocs.documentsUrl,
+              ...(normalizedDocs.documentPhotos
+                ? { documentPhotos: normalizedDocs.documentPhotos as Prisma.InputJsonValue }
+                : {}),
+              ...(normalizedOwnerNotes ? { ownerNotes: normalizedOwnerNotes } : {}),
             },
           });
 
+          const reapplyDocCount = normalizedDocs.documentPhotos?.length ?? 0;
           await tx.admissionHistoryLog.create({
             data: {
               admissionId: createdAdm.id,
@@ -605,7 +670,10 @@ export class HorsesService {
               toStatus: AdmissionStatus.PENDING_VERIFICATION,
               actorUserId: user.userId,
               actorName: user.fullName || user.email || 'Chủ ngựa',
-              note: 'Chủ ngựa nộp đơn đăng ký lại tiếp nhận vào CLB',
+              note:
+                reapplyDocCount > 0
+                  ? `Chủ ngựa nộp đơn đăng ký lại tiếp nhận vào CLB (kèm ${reapplyDocCount} ảnh giấy tờ pháp lý)`
+                  : 'Chủ ngựa nộp đơn đăng ký lại tiếp nhận vào CLB',
             },
           });
 
@@ -677,10 +745,15 @@ export class HorsesService {
             ownerId: user.userId,
             status: AdmissionStatus.PENDING_VERIFICATION,
             declaredMicrochip: microchip,
-            documentsUrl: (dto as any).documentsUrl || null,
+            documentsUrl: normalizedDocs.documentsUrl,
+            ...(normalizedDocs.documentPhotos
+              ? { documentPhotos: normalizedDocs.documentPhotos as Prisma.InputJsonValue }
+              : {}),
+            ...(normalizedOwnerNotes ? { ownerNotes: normalizedOwnerNotes } : {}),
           },
         });
 
+        const initialDocCount = normalizedDocs.documentPhotos?.length ?? 0;
         await tx.admissionHistoryLog.create({
           data: {
             admissionId: createdAdm.id,
@@ -688,7 +761,10 @@ export class HorsesService {
             toStatus: AdmissionStatus.PENDING_VERIFICATION,
             actorUserId: user.userId,
             actorName: user.fullName || user.email || 'Chủ ngựa',
-            note: 'Chủ ngựa nộp đơn đăng ký tiếp nhận vào CLB',
+            note:
+              initialDocCount > 0
+                ? `Chủ ngựa nộp hồ sơ đăng ký tiếp nhận vào CLB (kèm ${initialDocCount} ảnh giấy tờ pháp lý)`
+                : 'Chủ ngựa nộp đơn đăng ký tiếp nhận vào CLB',
           },
         });
 
@@ -1139,6 +1215,16 @@ export class HorsesService {
             fromManager: { select: USER_SAFE_SELECT },
           },
         },
+        admissionRecords: {
+          take: 5,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            manager: { select: USER_SAFE_SELECT },
+            veterinarian: { select: USER_SAFE_SELECT },
+            approvedBy: { select: USER_SAFE_SELECT },
+            history: { orderBy: { createdAt: 'asc' } },
+          },
+        },
       },
     });
 
@@ -1212,9 +1298,10 @@ export class HorsesService {
 
     const where: Prisma.HorseAdmissionRecordWhereInput = {};
     if (user.role === UserRole.VETERINARIAN) where.veterinarianUserId = user.userId;
+    if (user.role === UserRole.HORSE_OWNER) where.ownerId = user.userId;
 
     if (query.recent7Days) {
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const sevenDaysAgo = new Date(effectiveNow().getTime() - 7 * 24 * 60 * 60 * 1000);
       where.status = AdmissionStatus.APPROVED;
       where.admittedAt = { gte: sevenDaysAgo };
     } else if (query.status) {
@@ -1235,7 +1322,7 @@ export class HorsesService {
       ];
     }
 
-    const [total, data] = await Promise.all([
+    const [total, rawData] = await Promise.all([
       this.prisma.horseAdmissionRecord.count({ where }),
       this.prisma.horseAdmissionRecord.findMany({
         where,
@@ -1254,17 +1341,21 @@ export class HorsesService {
               gender: true,
               dob: true,
               color: true,
+              weightKg: true,
               microchip: true,
               avatarUrl: true,
               status: true,
             },
           },
           owner: { select: USER_SAFE_SELECT },
+          manager: { select: USER_SAFE_SELECT },
           veterinarian: { select: USER_SAFE_SELECT },
           approvedBy: { select: USER_SAFE_SELECT },
         },
       }),
     ]);
+
+    const data = rawData.map((rec) => this.sanitizeAdmissionForRole(rec, user));
 
     return {
       data,
@@ -1284,9 +1375,22 @@ export class HorsesService {
       include: {
         healthReviews: { orderBy: { createdAt: 'desc' } },
         horse: {
-          select: { id: true, name: true, horseCode: true, microchip: true, status: true },
+          select: {
+            id: true,
+            name: true,
+            horseCode: true,
+            breed: true,
+            gender: true,
+            dob: true,
+            color: true,
+            weightKg: true,
+            microchip: true,
+            avatarUrl: true,
+            status: true,
+          },
         },
         owner: { select: USER_SAFE_SELECT },
+        manager: { select: USER_SAFE_SELECT },
         veterinarian: { select: USER_SAFE_SELECT },
         approvedBy: { select: USER_SAFE_SELECT },
       },
@@ -1294,7 +1398,8 @@ export class HorsesService {
 
     if (
       !admission ||
-      (user.role === UserRole.VETERINARIAN && admission.veterinarianUserId !== user.userId)
+      (user.role === UserRole.VETERINARIAN && admission.veterinarianUserId !== user.userId) ||
+      (user.role === UserRole.HORSE_OWNER && admission.ownerId !== user.userId)
     ) {
       throw apiError(
         HttpStatus.NOT_FOUND,
@@ -1309,7 +1414,7 @@ export class HorsesService {
     });
 
     return {
-      admission,
+      admission: this.sanitizeAdmissionForRole(admission, user),
       history,
     };
   }
@@ -1374,7 +1479,7 @@ export class HorsesService {
         appointmentDate,
         dto.appointmentEndDate ?? new Date(appointmentDate.getTime() + 3600000),
       );
-      if (startsAt <= new Date()) {
+      if (startsAt <= effectiveNow()) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'APPOINTMENT_IN_PAST',
@@ -1495,6 +1600,14 @@ export class HorsesService {
       message: `Quản lý đã phân công bạn khám thẩm định ${updated.horse.name} (${updated.admissionCode}).`,
       link: `/medical/admissions?inspection=${updated.id}`,
       dedupeKey: `admission-vet:${updated.id}:${updated.updatedAt?.getTime() ?? appointmentDate.getTime()}`,
+    });
+    await this.notifications.notifyUsers([updated.ownerId], {
+      type: 'ADMISSION_APPOINTMENT_SCHEDULED',
+      category: 'HORSE',
+      title: 'CLB đã xếp lịch hẹn tiếp nhận ngựa',
+      message: `Hồ sơ ${updated.admissionCode} (${updated.horse.name}) đã có lịch hẹn thẩm định. Vui lòng xem chi tiết và hướng dẫn đón tiếp.`,
+      link: `/horses/${updated.horseId}`,
+      dedupeKey: `admission-owner-schedule:${updated.id}:${updated.updatedAt?.getTime() ?? appointmentDate.getTime()}`,
     });
     await this.safeSendMail({
       eventCode: 'ADMISSION_APPOINTMENT_SCHEDULED',
@@ -2143,7 +2256,7 @@ export class HorsesService {
         );
       }
 
-      assertValidCancelTransition(record, user);
+      assertValidCancelTransition(record, user, effectiveNow());
 
       const reason =
         (dto.reason != null ? dto.reason.trim() : null) ||
@@ -2212,6 +2325,151 @@ export class HorsesService {
       },
     );
     return updated;
+  }
+
+  /**
+   * 8. PATCH /horses/admissions/:id/submission: Chủ ngựa cập nhật ghi chú mong muốn / bổ sung ảnh giấy tờ
+   * khi hồ sơ vẫn ở trạng thái PENDING_VERIFICATION (chưa xếp lịch hẹn).
+   */
+  async updateOwnerSubmission(
+    admissionId: string,
+    dto: UpdateOwnerAdmissionSubmissionDto,
+    user: CurrentUserPayload,
+  ) {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const pre = await tx.horseAdmissionRecord.findUnique({
+        where: { id: admissionId },
+        select: { id: true, horseId: true },
+      });
+      if (!pre) {
+        throw apiError(
+          HttpStatus.NOT_FOUND,
+          'ADMISSION_NOT_FOUND',
+          'Không tìm thấy hồ sơ tiếp nhận.',
+        );
+      }
+
+      await tx.$queryRaw`SELECT "id" FROM "Horse" WHERE "id" = ${pre.horseId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "HorseAdmissionRecord" WHERE "id" = ${pre.id} FOR UPDATE`;
+
+      const record = await tx.horseAdmissionRecord.findUnique({
+        where: { id: admissionId },
+        include: {
+          horse: {
+            select: {
+              id: true,
+              name: true,
+              horseCode: true,
+              breed: true,
+              gender: true,
+              dob: true,
+              color: true,
+              weightKg: true,
+              microchip: true,
+              avatarUrl: true,
+              status: true,
+            },
+          },
+          owner: { select: USER_SAFE_SELECT },
+        },
+      });
+
+      if (!record) {
+        throw apiError(
+          HttpStatus.NOT_FOUND,
+          'ADMISSION_NOT_FOUND',
+          'Không tìm thấy hồ sơ tiếp nhận.',
+        );
+      }
+
+      if (record.ownerId !== user.userId) {
+        throw apiError(
+          HttpStatus.FORBIDDEN,
+          'NOT_ADMISSION_OWNER',
+          'Bạn chỉ được cập nhật hồ sơ đăng ký của chính mình.',
+        );
+      }
+
+      if (record.status !== AdmissionStatus.PENDING_VERIFICATION) {
+        throw apiError(
+          HttpStatus.BAD_REQUEST,
+          'ADMISSION_SUBMISSION_LOCKED',
+          'Hồ sơ đã có lịch hẹn hoặc đang xử lý, không thể sửa tờ khai đã nộp.',
+        );
+      }
+
+      const data: Prisma.HorseAdmissionRecordUpdateInput = {};
+      if (dto.ownerNotes !== undefined) {
+        data.ownerNotes = dto.ownerNotes.trim() || null;
+      }
+      if (dto.documentPhotos !== undefined || dto.documentsUrl !== undefined) {
+        const normalizedDocs = this.normalizeAdmissionSubmissionDocs({
+          documentsUrl: dto.documentsUrl,
+          documentPhotos: dto.documentPhotos,
+        });
+        data.documentsUrl = normalizedDocs.documentsUrl;
+        data.documentPhotos = normalizedDocs.documentPhotos
+          ? (normalizedDocs.documentPhotos as Prisma.InputJsonValue)
+          : Prisma.DbNull;
+      }
+
+      const res = await tx.horseAdmissionRecord.update({
+        where: { id: admissionId },
+        data,
+        include: {
+          horse: {
+            select: {
+              id: true,
+              name: true,
+              horseCode: true,
+              breed: true,
+              gender: true,
+              dob: true,
+              color: true,
+              weightKg: true,
+              microchip: true,
+              avatarUrl: true,
+              status: true,
+            },
+          },
+          owner: { select: USER_SAFE_SELECT },
+          manager: { select: USER_SAFE_SELECT },
+          veterinarian: { select: USER_SAFE_SELECT },
+          approvedBy: { select: USER_SAFE_SELECT },
+          history: { orderBy: { createdAt: 'asc' } },
+        },
+      });
+
+      await tx.admissionHistoryLog.create({
+        data: {
+          admissionId,
+          fromStatus: record.status,
+          toStatus: record.status,
+          actorUserId: user.userId,
+          actorName: user.fullName || user.email || 'Chủ ngựa',
+          note: 'Chủ ngựa cập nhật ghi chú mong muốn / bổ sung ảnh giấy tờ pháp lý',
+        },
+      });
+
+      await this.auditService.record(
+        { id: user.userId, name: user.fullName || user.email },
+        'ADMISSION_SUBMISSION_UPDATED',
+        `Chủ ngựa bổ sung tờ khai hồ sơ ${record.admissionCode}`,
+        admissionId,
+        {
+          entityName: 'HorseAdmissionRecord',
+          newValues: {
+            hasOwnerNotes: Boolean(res.ownerNotes),
+            documentPhotoCount: Array.isArray(res.documentPhotos) ? res.documentPhotos.length : 0,
+          },
+        },
+        tx,
+      );
+
+      return res;
+    });
+
+    return this.sanitizeAdmissionForRole(updated, user);
   }
 
   // =========================================================================
