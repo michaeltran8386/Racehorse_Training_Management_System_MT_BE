@@ -322,14 +322,22 @@ async function runVerification(databaseUrl, directUrl, options = {}) {
   console.log(diffOut || 'No difference detected.');
   console.log(`[HARNESS STEP 4] Schema equivalence PASSED: Zero difference detected.`);
 
-  // Step 5: Seed baseline and manual-QA fixtures if requested
+  // Step 5: Run the single canonical seed twice to verify idempotency.
   if (options.seed !== false) {
-    console.log(`\n[HARNESS STEP 5a] Seeding baseline fixtures ('ts-node prisma/seed.ts')...`);
-    spawnProcess(process.execPath, [TS_NODE_PATH, 'prisma/seed.ts'], { env: childEnv, stdio: 'inherit' });
-
-    console.log(`\n[HARNESS STEP 5b] Seeding manual QA fixtures ('ts-node prisma/seed-manual-qa.ts --confirm-local-qa')...`);
-    spawnProcess(process.execPath, [TS_NODE_PATH, 'prisma/seed-manual-qa.ts', '--confirm-local-qa'], { env: childEnv, stdio: 'inherit' });
-    console.log(`[HARNESS STEP 5] Seeding completed successfully.`);
+    for (let run = 1; run <= 2; run++) {
+      console.log(`\n[HARNESS STEP 5] Canonical seed, run ${run}/2...`);
+      spawnProcess(
+        process.execPath,
+        ['-r', 'tsconfig-paths/register', TS_NODE_PATH, 'prisma/seed.ts'],
+        { env: childEnv, stdio: 'inherit' },
+      );
+    }
+    spawnProcess(
+      process.execPath,
+      ['-r', 'tsconfig-paths/register', TS_NODE_PATH, 'test/seed-lifecycle.check.ts'],
+      { env: childEnv, stdio: 'inherit' },
+    );
+    console.log(`[HARNESS STEP 5] Seeding and lifecycle verification completed successfully.`);
   }
 
   const finalTableCount = await queryTableCountFn(databaseUrl, target.schema);

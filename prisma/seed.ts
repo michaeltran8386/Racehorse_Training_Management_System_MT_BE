@@ -1,4 +1,12 @@
 import {
+  AdmissionStatus,
+  CareCostEntryType,
+  ComplaintStatus,
+  HandoverStatus,
+  HorseTransferStatus,
+  InvoiceBillingMethod,
+  MailingStatus,
+  TrainerAssignmentStatus,
   BodySide,
   DailyTaskType,
   HorseCatalogType,
@@ -35,6 +43,7 @@ import {
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import { existsSync } from 'fs';
+import { invoiceUsageSnapshot } from '../src/financial/invoice-line-items.service';
 import { yymm } from '../src/common/utils/input';
 import { planDailyTasks, ScheduleHorse } from '../src/daily-tasks/daily-schedule';
 import {
@@ -50,8 +59,9 @@ import { calculatePrizeSplit } from '../src/tournaments/tournaments.service';
 import {
   clubDate,
   clubTime,
+  effectiveIntensity,
+  effectiveSurface,
   GROOM_BUFFER_MINUTES,
-  TRIAL_SLOT_MINUTES,
   workoutDurationMinutes,
 } from '../src/training/training-rules';
 
@@ -82,6 +92,9 @@ function sha256Hex(raw: string): string {
 }
 
 const now = new Date();
+const BUSINESS_START = new Date('2025-12-01T00:00:00+07:00');
+const BILLING_CUTOVER = '2026-09';
+const LAST_INVOICE_PERIOD = '2026-10';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const days = (offsetDays: number, hour = 0, minute = 0): Date => {
   const base = clubDate(new Date(now.getTime() + offsetDays * DAY_MS));
@@ -159,6 +172,22 @@ const preventiveTypeIds = {
 };
 
 async function clearFixtures(tx: Tx) {
+  await tx.careCostClaim.deleteMany();
+  await tx.invoiceLineItem.deleteMany();
+  await tx.careCostEntry.deleteMany({ where: { entryType: CareCostEntryType.REVERSAL } });
+  await tx.careCostEntry.deleteMany();
+  await tx.careBillingPolicy.deleteMany();
+  await tx.businessMailing.deleteMany();
+  await tx.complaint.deleteMany();
+  await tx.staffWorkItem.deleteMany();
+  await tx.admissionHealthReview.deleteMany();
+  await tx.admissionHistoryLog.deleteMany();
+  await tx.horseAdmissionRecord.deleteMany();
+  await tx.horseHandoverRequest.deleteMany();
+  await tx.horseTransferRequest.deleteMany();
+  await tx.trainerReview.deleteMany();
+  await tx.medicalLock.deleteMany();
+  await tx.incidentReport.updateMany({ data: { parentIncidentId: null } });
   await tx.auditLog.deleteMany();
   await tx.notification.deleteMany();
   await tx.financialInvoice.deleteMany();
@@ -167,7 +196,12 @@ async function clearFixtures(tx: Tx) {
   await tx.tournament.deleteMany();
   await tx.simulatorSession.deleteMany();
   await tx.workoutSession.deleteMany();
+  await tx.trainingTrack.deleteMany();
   await tx.trainingPlan.deleteMany();
+  await tx.incidentReport.updateMany({
+    where: { parentIncidentId: { not: null } },
+    data: { parentIncidentId: null },
+  });
   await tx.incidentReport.deleteMany();
   await tx.dailyCareTask.deleteMany();
   await tx.dailyGroomingLog.deleteMany();
@@ -391,7 +425,7 @@ const HORSES: HorseSpec[] = [
     gender: 'Mare',
     color: 'Palomino',
     weightKg: 440,
-    status: HorseStatus.IN_TRAINING,
+    status: HorseStatus.ACTIVE,
     ownerId: userIds.owners[3],
     stallId: stallIds.B[3],
     groomId: userIds.grooms[5],
@@ -531,7 +565,7 @@ const HORSES: HorseSpec[] = [
 ];
 
 async function seedClub(tx: Tx, passwordHash: string) {
-  const createdBase = days(-150);
+  const createdBase = BUSINESS_START;
 
   const users: Prisma.UserCreateManyInput[] = [
     // 2 Managers
@@ -588,7 +622,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
       phoneNumber: '0902000003',
       role: Role.HEAD_TRAINER,
       status: UserStatus.ACTIVE,
-      createdAt: days(-120),
+      createdAt: createdBase,
       lastActive: days(-1, 17),
     },
     {
@@ -599,7 +633,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
       phoneNumber: '0902000004',
       role: Role.HEAD_TRAINER,
       status: UserStatus.ACTIVE,
-      createdAt: days(-90),
+      createdAt: createdBase,
       lastActive: days(-1, 15),
     },
     // 4 Veterinarians (> 2)
@@ -633,7 +667,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
       phoneNumber: '0903000003',
       role: Role.VETERINARIAN,
       status: UserStatus.ACTIVE,
-      createdAt: days(-110),
+      createdAt: createdBase,
       lastActive: days(0, 8),
     },
     {
@@ -644,7 +678,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
       phoneNumber: '0903000004',
       role: Role.VETERINARIAN,
       status: UserStatus.ACTIVE,
-      createdAt: days(-95),
+      createdAt: createdBase,
       lastActive: days(-1, 14),
     },
     // 10 Active Grooms
@@ -825,7 +859,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
         purpose: OtpPurpose.SIGNUP,
         codeHash: sha256Hex('654321'),
         sentAt: days(-2),
-        expiresAt: days(1),
+        expiresAt: days(-1),
         resendAt: days(-2, 1),
         attempts: 1,
       },
@@ -843,7 +877,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
         purpose: OtpPurpose.INVITE,
         codeHash: sha256Hex('112233'),
         sentAt: days(-3),
-        expiresAt: days(4),
+        expiresAt: days(-1),
         resendAt: days(-3, 1),
         attempts: 0,
       },
@@ -874,7 +908,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
       {
         tokenHash: sha256Hex('canonical-reset-active-token'),
         email: 'owner2@gmail.com',
-        expiresAt: days(2),
+        expiresAt: days(-1),
       },
       {
         tokenHash: sha256Hex('canonical-reset-expired-token'),
@@ -891,8 +925,8 @@ async function seedClub(tx: Tx, passwordHash: string) {
         id: id('refresh:owner1'),
         tokenHash: sha256Hex('canonical-refresh-owner1'),
         userId: userIds.owners[0],
-        revoked: false,
-        expiresAt: days(7),
+        revoked: true,
+        expiresAt: days(-1),
         createdAt: days(-1),
       },
       {
@@ -1125,7 +1159,7 @@ async function seedClub(tx: Tx, passwordHash: string) {
   });
 
   // Stall Allocations (17 active + 3 historical/released for BR-STL-07 & relocation trace)
-  const stayStart = new Date('2026-06-01T00:00:00+07:00');
+  const stayStart = BUSINESS_START;
   const allocations: Prisma.StallAllocationCreateManyInput[] = [
     ...HORSES.filter((h) => h.stallId !== null).map((h) => ({
       id: id(`alloc:active:${h.id}`),
@@ -1169,701 +1203,287 @@ async function seedClub(tx: Tx, passwordHash: string) {
   await tx.stallAllocation.createMany({ data: allocations, skipDuplicates: true });
 }
 
-async function seedTraining(tx: Tx) {
-  const planSpecs: Array<{
-    key: string;
-    code: string;
-    horseId: string;
-    trainerId: string;
-    phaseName: string;
-    objective: string;
-    surface: TrackSurface;
-    status: PlanStatus;
-    targetSpeed: number;
-    targetDistance: number;
-    startOffset: number;
-    endOffset: number;
-    cancelReason?: string;
-    completionSummary?: string;
-  }> = [
+function trainerFor(horseIndex: number): string {
+  return horseIndex < 4
+    ? userIds.trainer
+    : horseIndex < 7
+      ? userIds.trainer2
+      : horseIndex < 9
+        ? userIds.trainer3
+        : userIds.trainer4;
+}
+
+function zoneFor(h: HorseSpec): string {
+  return Object.entries(stallIds).find(([, ids]) => ids.includes(h.stallId!))?.[0] ?? 'B';
+}
+
+function phaseFor(planCode: string, start: Date, end: Date, speed = 38) {
+  return [
     {
-      key: 'tp-h1-active',
-      code: 'GA-000001',
-      horseId: horseIds[0],
-      trainerId: userIds.trainer,
-      phaseName: 'Nước rút & Bứt tốc Cúp Mùa Đông',
-      objective: 'Tối ưu pha nước rút 400m cuối cho Cúp Mùa Đông',
-      surface: TrackSurface.TURF,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 64,
-      targetDistance: 1600,
-      startOffset: -40,
-      endOffset: 30,
-    },
-    {
-      key: 'tp-h1-completed',
-      code: 'GA-000002',
-      horseId: horseIds[0],
-      trainerId: userIds.trainer,
-      phaseName: 'Nền tảng Mùa Hè – Thu 2026',
-      objective: 'Xây dựng sức bền tim mạch & duy trì ACWR vùng an toàn',
-      surface: TrackSurface.TURF,
-      status: PlanStatus.COMPLETED,
-      targetSpeed: 58,
-      targetDistance: 2000,
-      startOffset: -135,
-      endOffset: -42,
-      completionSummary: 'Đạt chuẩn vô địch Cúp Mùa Thu, nhịp tim hồi phục đạt 44 bpm.',
-    },
-    {
-      key: 'tp-h2-active',
-      code: 'GA-000003',
-      horseId: horseIds[1],
-      trainerId: userIds.trainer,
-      phaseName: 'Tập nhẹ dưới Khóa Y Tế',
-      objective: 'Giữ nhịp vận động nhẹ tránh teo cơ trong lúc theo dõi gân khoeo',
-      surface: TrackSurface.DIRT,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 18,
-      targetDistance: 800,
-      startOffset: -20,
-      endOffset: 20,
-    },
-    {
-      key: 'tp-h3-active',
-      code: 'GA-000004',
-      horseId: horseIds[2],
-      trainerId: userIds.trainer,
-      phaseName: 'Nâng tải Sân Cỏ 1800m',
-      objective: 'Chuẩn bị bước vào giải hạng A cự ly trung bình',
-      surface: TrackSurface.TURF,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 60,
-      targetDistance: 1800,
-      startOffset: -35,
-      endOffset: 25,
-    },
-    {
-      key: 'tp-h4-active',
-      code: 'GA-000005',
-      horseId: horseIds[3],
-      trainerId: userIds.trainer2,
-      phaseName: 'Ổn định nhịp bước Sân Tổng Hợp',
-      objective: 'Cân bằng sức bền & kỹ năng đổi chân trong khúc cua',
-      surface: TrackSurface.SYNTHETIC,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 57,
-      targetDistance: 1400,
-      startOffset: -30,
-      endOffset: 30,
-    },
-    {
-      key: 'tp-h5-active',
-      code: 'GA-000006',
-      horseId: horseIds[4],
-      trainerId: userIds.trainer2,
-      phaseName: 'Tốc độ Cự ly Trung bình 1600m',
-      objective: 'Hoàn thiện xuất phát hộp & tăng tốc giữa đường đua',
-      surface: TrackSurface.DIRT,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 62,
-      targetDistance: 1600,
-      startOffset: -35,
-      endOffset: 25,
-    },
-    {
-      key: 'tp-h6-active',
-      code: 'GA-000007',
-      horseId: horseIds[5],
-      trainerId: userIds.trainer2,
-      phaseName: 'Bền bỉ Đường trường 2200m',
-      objective: 'Chuẩn bị thể lực cho Cúp Quốc Gia Mùa Đông',
-      surface: TrackSurface.DIRT,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 59,
-      targetDistance: 2200,
-      startOffset: -30,
-      endOffset: 30,
-    },
-    {
-      key: 'tp-h7-active',
-      code: 'GA-000008',
-      horseId: horseIds[6],
-      trainerId: userIds.trainer3,
-      phaseName: 'Tăng tốc Khởi động 1200m',
-      objective: 'Nâng tốc độ tối đa trên 300m đầu tiên',
-      surface: TrackSurface.SYNTHETIC,
-      status: PlanStatus.COMPLETED,
-      targetSpeed: 63,
-      targetDistance: 1200,
-      startOffset: -40,
-      endOffset: -1,
-      completionSummary: 'Đã hoàn thành giáo án trước khi HLV chuyển sang phụ trách khu B.',
-    },
-    {
-      key: 'tp-h8-draft',
-      code: 'GA-000009',
-      horseId: horseIds[7],
-      trainerId: userIds.trainer3,
-      phaseName: 'Dự thảo Giáo án Chạy Thử Mùa Đông',
-      objective: 'Chờ HLV trưởng chốt lịch sau kiểm tra thể lực tuần tới',
-      surface: TrackSurface.TURF,
-      status: PlanStatus.DRAFT,
-      targetSpeed: 56,
-      targetDistance: 1500,
-      startOffset: 3,
-      endOffset: 45,
-    },
-    {
-      key: 'tp-h9-active',
-      code: 'GA-000010',
-      horseId: horseIds[8],
-      trainerId: userIds.trainer3,
-      phaseName: 'Huấn luyện Chuyển tiếp 1400m',
-      objective: 'Chuyển từ đi bộ & nước kiệu sang chạy nước đại tốc độ',
-      surface: TrackSurface.SYNTHETIC,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 55,
-      targetDistance: 1400,
-      startOffset: -25,
-      endOffset: 35,
-    },
-    {
-      key: 'tp-h10-active',
-      code: 'GA-000011',
-      horseId: horseIds[9],
-      trainerId: userIds.trainer4,
-      phaseName: 'Duy trì Phong độ Sân Cỏ',
-      objective: 'Duy trì điểm thể trạng >= 8.5/10 và kiểm soát nhịp tim',
-      surface: TrackSurface.TURF,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 60,
-      targetDistance: 1600,
-      startOffset: -32,
-      endOffset: 28,
-    },
-    {
-      key: 'tp-h12-active',
-      code: 'GA-000012',
-      horseId: horseIds[11],
-      trainerId: userIds.trainer4,
-      phaseName: 'Tập Sức mạnh Cơ Lưng & Đùi Sau',
-      objective: 'Củng cố sức bật hộp xuất phát cho ngựa đường trường',
-      surface: TrackSurface.DIRT,
-      status: PlanStatus.ACTIVE,
-      targetSpeed: 58,
-      targetDistance: 1800,
-      startOffset: -26,
-      endOffset: 34,
-    },
-    {
-      key: 'tp-h16-cancelled',
-      code: 'GA-000013',
-      horseId: horseIds[15],
-      trainerId: userIds.trainer4,
-      phaseName: 'Giáo án Tốc độ Cũ (Đã hủy do chấn thương)',
-      objective: 'Tạm dừng hoàn toàn để điều trị tổn thương khớp cổ chân',
-      surface: TrackSurface.DIRT,
-      status: PlanStatus.CANCELLED,
-      targetSpeed: 61,
-      targetDistance: 1600,
-      startOffset: -55,
-      endOffset: -10,
-      cancelReason: 'Chuyển sang điều trị chấn thương & Khóa Y Tế dài ngày',
+      id: `${planCode}-PH1`,
+      name: 'Nền tảng và duy trì thể lực',
+      type: 'FOUNDATION',
+      focus: 'FOUNDATION',
+      startDate: clubDate(start),
+      endDate: clubDate(end),
+      durationDays: Math.round((+end - +start) / DAY_MS) + 1,
+      sessionsPerWeek: 3,
+      maxWeeklyDistance: 6000,
+      surface: 'TURF',
+      targetSpeedKmh: speed,
+      targetDistanceM: 1400,
     },
   ];
+}
 
-  await tx.trainingPlan.createMany({
-    data: planSpecs.map((p) => ({
-      id: id(p.key),
-      horseId: p.horseId,
-      trainerUserId: p.trainerId,
-      planCode: p.code,
-      phaseName: p.phaseName,
-      objective: p.objective,
-      trackSurface: p.surface,
-      targetSpeed: p.targetSpeed,
-      targetDistance: p.targetDistance,
-      startDate: days(p.startOffset),
-      endDate: days(p.endOffset),
-      status: p.status,
-      cancelReason: p.cancelReason ?? null,
-      completionSummary: p.completionSummary ?? null,
-      phases: [
+async function seedTraining(tx: Tx) {
+  const tracks = [
+    { code: 'TRK-TURF', name: 'Đường cỏ chính', surface: 'TURF', capacity: 6 },
+    { code: 'TRK-DIRT', name: 'Đường cát thể lực', surface: 'DIRT', capacity: 6 },
+    { code: 'TRK-SYNTHETIC', name: 'Đường tổng hợp', surface: 'SYNTHETIC', capacity: 4 },
+    { code: 'TRK-REHAB', name: 'Khu đi bộ phục hồi', surface: 'DIRT', capacity: 2 },
+  ];
+  await tx.trainingTrack.createMany({
+    data: tracks.map((t) => ({ ...t, id: id(t.code) })),
+    skipDuplicates: true,
+  });
+  for (const [trainerId, barn] of [
+    [userIds.trainer, zoneIds.A],
+    [userIds.trainer2, zoneIds.A],
+    [userIds.trainer3, zoneIds.B],
+    [userIds.trainer4, zoneIds.B],
+  ])
+    await tx.user.update({ where: { id: trainerId }, data: { assignedBarnId: barn } });
+  const groomZones = ['A', 'B', 'C', 'A', 'A', 'B', 'B', 'C', 'H', 'H'] as const;
+  for (const [i, groomId] of userIds.grooms.entries())
+    await tx.user.update({
+      where: { id: groomId },
+      data: { assignedBarnId: zoneIds[groomZones[i]] },
+    });
+
+  const workouts: Prisma.WorkoutSessionCreateManyInput[] = [];
+  for (const [i, h] of HORSES.entries()) {
+    if (h.status === HorseStatus.RETIRED || i >= 14) continue;
+    const trainerId = trainerFor(i);
+    const draft = i === 7;
+    const unassigned = [10, 12, 13].includes(i);
+    if (unassigned) continue;
+    const code = `GA-${String(i + 1).padStart(6, '0')}`;
+    const planId = id(`plan:current:${h.id}`);
+    const start = days(draft ? 1 : -42),
+      end = days(28);
+    await tx.trainingPlan.createMany({
+      data: [
         {
-          id: `${p.code}-PH1`,
-          name: 'Giai đoạn Nền tảng',
-          type: 'FOUNDATION',
-          focus: 'FOUNDATION',
-          startDate: days(p.startOffset).toISOString().slice(0, 10),
-          endDate: days(p.startOffset + 14)
-            .toISOString()
-            .slice(0, 10),
-          durationDays: 14,
-          sessionsPerWeek: 5,
-          maxWeeklyDistance: Math.max(5000, Math.round(p.targetDistance * 5)),
-          surface: 'TURF',
-          targetSpeedKmh: Math.max(12, Math.round(p.targetSpeed * 0.72)),
-          targetDistanceM: Math.max(400, Math.round(p.targetDistance * 0.8)),
-        },
-        {
-          id: `${p.code}-PH2`,
-          name: 'Giai đoạn Tốc độ & Bứt tốc',
-          type: 'SPEED',
-          focus: 'SPEED',
-          startDate: days(p.startOffset + 15)
-            .toISOString()
-            .slice(0, 10),
-          endDate: days(p.startOffset + 29)
-            .toISOString()
-            .slice(0, 10),
-          durationDays: 14,
-          sessionsPerWeek: 5,
-          maxWeeklyDistance: Math.max(6000, Math.round(p.targetDistance * 6)),
-          surface: 'DIRT',
-          targetSpeedKmh: p.targetSpeed,
-          targetDistanceM: p.targetDistance,
-        },
-        {
-          id: `${p.code}-PH3`,
-          name: 'Giai đoạn Thả lỏng Phục hồi',
-          type: 'RECOVERY',
-          focus: 'RECOVERY',
-          startDate: days(p.startOffset + 30)
-            .toISOString()
-            .slice(0, 10),
-          endDate: days(p.endOffset).toISOString().slice(0, 10),
-          durationDays: 7,
-          sessionsPerWeek: 3,
-          maxWeeklyDistance: 3000,
-          surface: 'TURF',
-          targetSpeedKmh: 15,
-          targetDistanceM: 600,
+          id: planId,
+          planCode: code,
+          horseId: h.id,
+          trainerUserId: trainerId,
+          phaseName: `${h.name} – ${draft ? 'Dự thảo chu kỳ mới' : h.isMedicalLocked ? 'Phục hồi có giám sát' : 'Chu kỳ thể lực cuối năm'}`,
+          objective: h.isMedicalLocked
+            ? 'Duy trì vận động nhẹ theo chỉ định thú y'
+            : 'Cải thiện sức bền, theo dõi tốc độ và hồi phục hàng tuần',
+          startDate: start,
+          endDate: end,
+          status: draft ? PlanStatus.DRAFT : PlanStatus.ACTIVE,
+          phases: phaseFor(code, start, end),
+          trackSurface: TrackSurface.TURF,
+          targetSpeed: 38,
+          targetDistance: 1400,
+          createdAt: days(-43),
         },
       ],
-    })),
-    skipDuplicates: true,
-  });
-
-  // Chủ ngựa đánh giá HLV cho vài giáo án đang chạy / đã xong (xóa theo giáo án nhờ onDelete: Cascade).
-  const reviewable = await tx.trainingPlan.findMany({
-    where: {
-      status: { in: [PlanStatus.ACTIVE, PlanStatus.COMPLETED] },
-      horse: { ownerId: { not: null } },
-    },
-    select: { id: true, trainerUserId: true, horse: { select: { ownerId: true } } },
-    orderBy: { planCode: 'asc' },
-    take: 6,
-  });
-  const reviewTexts: Array<[number, string | null]> = [
-    [5, 'Ngựa tiến bộ rõ, HLV báo cáo đều đặn sau mỗi buổi.'],
-    [4, 'Giáo án hợp lý, mong được cập nhật số liệu nhanh hơn.'],
-    [3, 'Ngựa có lúc quá tải, cần điều chỉnh cường độ.'],
-    [5, null],
-    [4, 'Tốc độ cải thiện tốt trước giải.'],
-    [2, 'Ít trao đổi với chủ ngựa, kết quả chưa như kỳ vọng.'],
-  ];
-  await tx.trainerReview.createMany({
-    data: reviewable.map((p, i) => ({
-      trainingPlanId: p.id,
-      trainerUserId: p.trainerUserId,
-      ownerUserId: p.horse.ownerId as string,
-      rating: reviewTexts[i][0],
-      comment: reviewTexts[i][1],
-    })),
-    skipDuplicates: true,
-  });
-
-  // Build rich WorkoutSessions spanning T7–today + upcoming 5 days
-  const workouts: Prisma.WorkoutSessionCreateManyInput[] = [];
-  const activeRunners = [
-    {
-      horseIdx: 0,
-      planKey: 'tp-h1-active',
-      trainerId: userIds.trainer,
-      baseSpeed: 61,
-      dist: 1600,
-      jockey: 'Trần Văn Kiên',
-    },
-    {
-      horseIdx: 2,
-      planKey: 'tp-h3-active',
-      trainerId: userIds.trainer,
-      baseSpeed: 57,
-      dist: 1600,
-      jockey: 'Lê Minh Quân',
-    },
-    {
-      horseIdx: 3,
-      planKey: 'tp-h4-active',
-      trainerId: userIds.trainer2,
-      baseSpeed: 55,
-      dist: 1400,
-      jockey: 'Nguyễn Tấn Lộc',
-    },
-    {
-      horseIdx: 4,
-      planKey: 'tp-h5-active',
-      trainerId: userIds.trainer2,
-      baseSpeed: 60,
-      dist: 1600,
-      jockey: 'Trần Văn Kiên',
-    },
-    {
-      horseIdx: 5,
-      planKey: 'tp-h6-active',
-      trainerId: userIds.trainer2,
-      baseSpeed: 58,
-      dist: 2000,
-      jockey: 'Phạm Hữu Đạt',
-    },
-    {
-      horseIdx: 6,
-      planKey: 'tp-h7-active',
-      trainerId: userIds.trainer3,
-      baseSpeed: 62,
-      dist: 1200,
-      jockey: 'Lê Minh Quân',
-    },
-    {
-      horseIdx: 8,
-      planKey: 'tp-h9-active',
-      trainerId: userIds.trainer3,
-      baseSpeed: 54,
-      dist: 1400,
-      jockey: 'Nguyễn Tấn Lộc',
-    },
-    {
-      horseIdx: 9,
-      planKey: 'tp-h10-active',
-      trainerId: userIds.trainer4,
-      baseSpeed: 58,
-      dist: 1600,
-      jockey: 'Phạm Hữu Đạt',
-    },
-    {
-      horseIdx: 11,
-      planKey: 'tp-h12-active',
-      trainerId: userIds.trainer4,
-      baseSpeed: 56,
-      dist: 1800,
-      jockey: 'Trần Văn Kiên',
-    },
-  ];
-
-  // Completed sessions over last 35 days (provides >= 5 completed sessions/horse for ACWR & tournament eligibility)
-  const pastOffsets = [-34, -27, -20, -14, -9, -4, -1];
-  for (const runner of activeRunners) {
-    pastOffsets.forEach((off, idx) => {
-      const isTrial = idx % 3 === 2;
-      const wType = isTrial ? 'TRIAL' : idx % 2 === 0 ? 'BREEZE' : 'CANTER';
-      const intensity = wType === 'CANTER' ? 'MEDIUM' : 'HEAVY';
-      const speed = Number((runner.baseSpeed - (isTrial ? 0 : 3) + (idx % 3) * 1.1).toFixed(1));
-      const dist = wType === 'CANTER' ? Math.max(800, runner.dist - 200) : runner.dist;
-      const duration = Number(((dist / 1000 / speed) * 3600).toFixed(1));
-      const isAbnormalSample = runner.horseIdx === 6 && off === -4;
-      workouts.push({
-        id: id(`workout:hist:${runner.horseIdx}:${off}`),
-        trainingPlanId: id(runner.planKey),
-        horseId: horseIds[runner.horseIdx],
-        assignedStaffUserId: runner.trainerId,
-        scheduledDate: days(off, 6 + (runner.horseIdx % 3), 0),
-        phaseId: `${runner.planKey.toUpperCase()}-PH2`,
-        distanceMeters: dist,
-        repetitions: 1,
-        targetSpeedKmh: speed,
-        targetDurationSeconds: Math.round(duration),
-        actualTimeSeconds: duration,
-        actualDistanceMeters: dist,
-        averageSpeedKmh: speed,
-        topSpeedKmh: Number((speed + 4.5).toFixed(1)),
-        heartRatePeak: isAbnormalSample ? 228 : 184 + (idx % 12),
-        heartRateRecovery: isAbnormalSample ? 132 : 44 + (idx % 8),
-        recoveryTimeMinutes: isAbnormalSample ? 16 : 7.5,
-        staminaScore: isAbnormalSample
-          ? 6.4
-          : Number((8.4 + ((idx + runner.horseIdx) % 12) * 0.1).toFixed(1)),
-        performanceScore: isAbnormalSample
-          ? 6.8
-          : Number((8.2 + ((idx + runner.horseIdx) % 14) * 0.1).toFixed(1)),
-        injuryRiskLevel: isAbnormalSample ? 'MEDIUM' : 'LOW',
-        status: WorkoutStatus.COMPLETED,
-        workoutType: wType,
-        intensity,
-        trackSurface: runner.horseIdx % 2 === 0 ? 'TURF' : 'DIRT',
-        actualSurface: runner.horseIdx % 2 === 0 ? 'TURF' : 'DIRT',
-        trackCondition: 'GOOD',
-        completionLevel: 'FULL',
-        jockeyName: runner.jockey,
-        gateNumber: (runner.horseIdx % 8) + 1,
-        resultRecordedAt: days(off, 8, 15),
-        resultRecordedById: runner.trainerId,
-        abnormalSigns: isAbnormalSample,
-        abnormalSignTypes: isAbnormalSample ? ['SLOW_RECOVERY', 'ELEVATED_HR'] : [],
-        abnormalNotes: isAbnormalSample
-          ? 'Nhịp tim hồi phục sau 10 phút còn cao (132 bpm), đã báo bác sĩ thú y kiểm tra.'
-          : null,
-        vetAcknowledgedAt: isAbnormalSample ? days(-3, 10, 0) : null,
-        vetNotes: isAbnormalSample ? 'Đã bổ sung điện giải & giảm tải 2 ngày tới.' : null,
-      });
+      skipDuplicates: true,
     });
-
-    if (planSpecs.find((plan) => plan.key === runner.planKey)?.status !== PlanStatus.ACTIVE)
-      continue;
-
-    // Scheduled sessions for today & next 6 days (covering 14/11/2026 to 20/11/2026)
-    [0, 1, 2, 3, 4, 5, 6].forEach((off, idx) => {
-      const hour = 6 + ((runner.horseIdx + idx) % 4);
-      const wTypes: Array<'BREEZE' | 'TROT' | 'CANTER' | 'TRIAL'> = [
-        'BREEZE',
-        'TROT',
-        'CANTER',
-        'TRIAL',
-        'BREEZE',
-        'CANTER',
-        'TRIAL',
+    await tx.horse.update({
+      where: { id: h.id },
+      data: {
+        assignedTrainerId: trainerId,
+        trainerAssignmentStatus: TrainerAssignmentStatus.ASSIGNED,
+        trainerAssignedAt: days(-44),
+        trainerRespondedAt: days(-44, 10),
+        ...(!draft && !h.isMedicalLocked ? { status: HorseStatus.IN_TRAINING } : {}),
+      },
+    });
+    if (draft) continue;
+    for (let d = -42; d <= 21; d += 2) {
+      const afternoon = i % 7 >= 4;
+      const scheduledDate = days(d, afternoon ? 13 : 6, 0);
+      const locked = Boolean(h.isMedicalLocked) && d >= -10;
+      const status = locked
+        ? WorkoutStatus.BLOCKED
+        : scheduledDate < now
+          ? d === -4 && i === 8
+            ? WorkoutStatus.MISSED
+            : d === -6 && i === 9
+              ? WorkoutStatus.CANCELLED
+              : WorkoutStatus.COMPLETED
+          : WorkoutStatus.SCHEDULED;
+      const completed = status === WorkoutStatus.COMPLETED;
+      const workoutType = ['WALK', 'TROT', 'CANTER', 'BREEZE', 'TRIAL', 'SWIM', 'TREADMILL'][
+        (i + d + 105) % 7
       ];
-      const wType = wTypes[idx % wTypes.length];
-      const intensity = wType === 'TROT' ? 'LIGHT' : wType === 'CANTER' ? 'MEDIUM' : 'HEAVY';
+      const surface = effectiveSurface(workoutType, zoneFor(h) === 'A' ? 'TURF' : 'DIRT');
       const speed =
-        wType === 'TROT' ? 24 : wType === 'CANTER' ? runner.baseSpeed - 6 : runner.baseSpeed;
-      const dist =
-        wType === 'TROT'
-          ? 800
-          : wType === 'CANTER'
-            ? Math.max(1000, runner.dist - 200)
-            : runner.dist;
+        workoutType === 'WALK'
+          ? 6
+          : workoutType === 'SWIM'
+            ? 4
+            : workoutType === 'TROT' || workoutType === 'TREADMILL'
+              ? 18
+              : workoutType === 'CANTER'
+                ? 36
+                : 56 + (i % 5);
+      const distance = workoutType === 'SWIM' ? 200 : workoutType === 'WALK' ? 600 : 1400;
+      const abnormal = completed && d === -4 && i === 6;
       workouts.push({
-        id: id(`workout:sched:${runner.horseIdx}:${off}`),
-        trainingPlanId: id(runner.planKey),
-        horseId: horseIds[runner.horseIdx],
-        assignedStaffUserId: runner.trainerId,
-        scheduledDate: days(off, hour, 0),
-        phaseId: `${runner.planKey.toUpperCase()}-PH2`,
-        distanceMeters: dist,
+        id: id(`workout:${h.id}:${clubDate(scheduledDate)}`),
+        trainingPlanId: planId,
+        horseId: h.id,
+        assignedStaffUserId:
+          userIds.grooms[zoneFor(h) === 'A' ? (i % 7 >= 4 ? 3 : 0) : i % 7 >= 4 ? 5 : 1],
+        scheduledDate,
+        phaseId: `${code}-PH1`,
+        trackId: surface === 'NONE' ? null : id(`TRK-${surface}`),
+        distanceMeters: distance,
         repetitions: 1,
         targetSpeedKmh: speed,
-        targetDurationSeconds: Math.round((dist / 1000 / speed) * 3600),
-        status: WorkoutStatus.SCHEDULED,
-        workoutType: wType,
-        intensity,
-        trackSurface: runner.horseIdx % 2 === 0 ? 'TURF' : 'DIRT',
-        jockeyName: runner.jockey,
-        gateNumber: (runner.horseIdx % 8) + 1,
-        trainerNotes:
-          off === 6
-            ? 'Buổi chạy nước rút chuẩn bị Cúp Tri Ân 20/11 - Tôn Vinh Huấn Luyện Viên.'
-            : 'Kiểm tra nhịp tim trước và sau khi về đích.',
+        workoutType,
+        intensity: effectiveIntensity(
+          workoutType,
+          ['WALK', 'TROT', 'SWIM', 'TREADMILL'].includes(workoutType) ? 'LIGHT' : 'MEDIUM',
+        ),
+        trackSurface: surface,
+        status,
+        statusReason: locked
+          ? 'Khóa y tế đang hiệu lực; chờ bác sĩ cho phép trở lại'
+          : status === WorkoutStatus.MISSED
+            ? 'Mưa lớn, chưa ghi nhận kết quả'
+            : status === WorkoutStatus.CANCELLED
+              ? 'Điều chỉnh lịch theo yêu cầu chủ ngựa'
+              : null,
+        actualTimeSeconds: completed ? Number(((distance * 3.6) / speed).toFixed(2)) : null,
+        actualDistanceMeters: completed ? distance : null,
+        averageSpeedKmh: completed ? speed : null,
+        topSpeedKmh: completed ? speed + 4 : null,
+        heartRatePeak: completed ? 175 + i : null,
+        heartRateRecovery: completed ? (abnormal ? 132 : 42 + i) : null,
+        performanceScore: completed ? 7.2 + (i % 4) * 0.4 : null,
+        staminaScore: completed ? 8 : null,
+        recoveryTimeMinutes: completed ? 8 : null,
+        injuryRiskLevel: abnormal ? 'MEDIUM' : 'LOW',
+        abnormalSigns: abnormal,
+        abnormalSignTypes: abnormal ? ['SLOW_RECOVERY', 'ELEVATED_HR'] : [],
+        abnormalNotes: abnormal
+          ? 'Nhịp tim hồi phục chậm, đã báo bác sĩ kiểm tra và giảm tải.'
+          : null,
+        vetAcknowledgedAt: abnormal ? days(-3, 10) : null,
+        vetNotes: abnormal
+          ? 'Đã kiểm tra, theo dõi thân nhiệt và điều chỉnh bài tập trong hai ngày.'
+          : null,
+        actualSurface: completed ? surface : null,
+        completionLevel: completed ? 'FULL' : null,
+        resultNotes: completed ? 'Hoàn thành đủ cự ly, ăn uống và dáng đi ổn định sau tập.' : null,
+        resultRecordedAt: completed
+          ? new Date(+scheduledDate + (workoutDurationMinutes(workoutType) + 5) * 60000)
+          : null,
+        resultRecordedById: completed ? trainerId : null,
+        createdAt: days(Math.min(d - 1, -43)),
       });
-    });
+    }
   }
-
-  // Light rehab/walk for Xich Tho (horseIds[1]) under MedicalLock across every day up to 20/11
-  [0, 1, 2, 3, 4, 5, 6].forEach((off) => {
-    workouts.push({
-      id: id(`workout:h2-walk:d${off}`),
-      trainingPlanId: id('tp-h2-active'),
-      horseId: horseIds[1],
-      assignedStaffUserId: userIds.trainer,
-      scheduledDate: days(off, 7, 30),
-      distanceMeters: 600,
-      repetitions: 1,
-      status: WorkoutStatus.SCHEDULED,
-      workoutType: 'WALK',
-      intensity: 'LIGHT',
-      trackSurface: 'DIRT',
-      trainerNotes: 'Dắt đi bộ nhẹ 15 phút theo phác đồ khóa y tế (theo dõi gân chân trước).',
-    });
-  });
-
-  // Coverage for BLOCKED/MISSED/CANCELLED sessions
-  workouts.push(
-    {
-      id: id('workout:h2-blocked-breeze'),
-      trainingPlanId: id('tp-h2-active'),
-      horseId: horseIds[1],
-      assignedStaffUserId: userIds.trainer,
-      scheduledDate: days(-1, 6, 30),
-      distanceMeters: 1200,
-      repetitions: 1,
-      targetSpeedKmh: 58,
-      targetDurationSeconds: 75,
-      status: WorkoutStatus.BLOCKED,
-      workoutType: 'BREEZE',
-      intensity: 'HEAVY',
-      trackSurface: 'TURF',
-      statusReason: 'Tự động khóa do Xích Thố đang có Khóa Y Tế (MLK-2026-002).',
-    },
-    {
-      id: id('workout:h12-missed'),
-      trainingPlanId: id('tp-h12-active'),
-      horseId: horseIds[11],
-      assignedStaffUserId: userIds.trainer4,
-      scheduledDate: days(-2, 16, 0),
-      distanceMeters: 1200,
-      repetitions: 1,
-      targetSpeedKmh: 50,
-      targetDurationSeconds: 86,
-      status: WorkoutStatus.MISSED,
-      workoutType: 'CANTER',
-      intensity: 'MEDIUM',
-      trackSurface: 'DIRT',
-      statusReason: 'Bỏ lỡ do mưa lớn làm trơn mặt sân đất buổi chiều.',
-    },
-    {
-      id: id('workout:h16-cancelled'),
-      trainingPlanId: id('tp-h16-cancelled'),
-      horseId: horseIds[15],
-      assignedStaffUserId: userIds.trainer4,
-      scheduledDate: days(-12, 7, 0),
-      distanceMeters: 1600,
-      repetitions: 1,
-      targetSpeedKmh: 60,
-      targetDurationSeconds: 96,
-      status: WorkoutStatus.CANCELLED,
-      workoutType: 'TRIAL',
-      intensity: 'HEAVY',
-      trackSurface: 'DIRT',
-      statusReason: 'Hủy giáo án sau khi ghi nhận chấn thương khớp cổ chân trái.',
-    },
-    // Long-horizon T7 & T8 workouts for 6-month continuous chart
-    {
-      id: id('workout:t7-h1'),
-      trainingPlanId: id('tp-h1-completed'),
-      horseId: horseIds[0],
-      assignedStaffUserId: userIds.trainer,
-      scheduledDate: days(-120, 6, 0),
-      distanceMeters: 1600,
-      repetitions: 1,
-      targetSpeedKmh: 60,
-      actualTimeSeconds: 94.5,
-      actualDistanceMeters: 1600,
-      averageSpeedKmh: 60.9,
-      heartRatePeak: 192,
-      heartRateRecovery: 48,
-      performanceScore: 8.7,
-      status: WorkoutStatus.COMPLETED,
-      workoutType: 'TRIAL',
-      intensity: 'HEAVY',
-      trackSurface: 'TURF',
-      resultRecordedAt: days(-120, 7, 0),
-      resultRecordedById: userIds.trainer,
-    },
-  );
-
-  // Buổi tập do groom của ngựa phụ trách (BE chỉ nhận GROOM ở assignedStaffUserId), rồi dời giờ
-  // từng 15' cho tới khi không vi phạm luật xếp lịch của workouts.service: groom bận theo thời lượng
-  // + GROOM_BUFFER_MINUTES, cùng ngựa cách nhau ≥ 30', chạy thử cùng mặt sân không chung khung 15'.
-  const groomOfHorse = new Map(HORSES.map((h) => [h.id, h.groomId ?? null]));
-  // HLV cưỡi mọi buổi của giáo án mình: hai buổi của cùng HLV không được chồng giờ (TRAINER_TIME_CONFLICT).
-  const trainerOfPlan = new Map(
-    (await tx.trainingPlan.findMany({ select: { id: true, trainerUserId: true } })).map((p) => [
-      p.id,
-      p.trainerUserId,
-    ]),
-  );
-  const placed: Array<{
-    start: number;
-    end: number;
-    staff: string | null;
-    trainer: string | null;
-    horse: string;
-    trial: string | null;
-  }> = [];
-  const MIN = 60 * 1000;
+  // The groom and trainer both need a free slot, including preparation and recovery.
+  const placed: Array<{ start: number; end: number; groom: string | null; trainer: string }> = [];
   workouts.sort((a, b) => +new Date(a.scheduledDate) - +new Date(b.scheduledDate));
   for (const w of workouts) {
-    w.assignedStaffUserId = groomOfHorse.get(w.horseId) ?? w.assignedStaffUserId;
-    if (w.status === WorkoutStatus.CANCELLED) continue;
-    const original = +new Date(w.scheduledDate);
-    const span = (workoutDurationMinutes(w.workoutType) + GROOM_BUFFER_MINUTES) * MIN;
-    const trial = w.workoutType === 'TRIAL' ? (w.trackSurface ?? null) : null;
-    const trainer = (w.trainingPlanId && trainerOfPlan.get(w.trainingPlanId)) || null;
-    let start = original;
-    const clashes = (s: number) =>
+    if ([WorkoutStatus.CANCELLED, WorkoutStatus.BLOCKED].includes(w.status as any)) continue;
+    const trainer = trainerFor(HORSES.findIndex((h) => h.id === w.horseId));
+    const duration = (workoutDurationMinutes(w.workoutType) + GROOM_BUFFER_MINUTES) * 60000;
+    let start = +new Date(w.scheduledDate);
+    while (
       placed.some(
         (p) =>
-          (w.assignedStaffUserId &&
-            p.staff === w.assignedStaffUserId &&
-            s < p.end &&
-            p.start < s + span) ||
-          (trainer && p.trainer === trainer && s < p.end && p.start < s + span) ||
-          (p.horse === w.horseId && Math.abs(p.start - s) < 30 * MIN) ||
-          (trial && p.trial === trial && Math.abs(p.start - s) < TRIAL_SLOT_MINUTES * MIN),
-      );
-    while (clashes(start)) start += 15 * MIN;
-    placed.push({
-      start,
-      end: start + span,
-      staff: w.assignedStaffUserId ?? null,
-      trainer,
-      horse: w.horseId,
-      trial,
-    });
-    const shift = start - original;
-    if (shift) {
-      w.scheduledDate = new Date(start);
-      if (w.resultRecordedAt) w.resultRecordedAt = new Date(+new Date(w.resultRecordedAt) + shift);
+          start < p.end &&
+          p.start < start + duration &&
+          (p.groom === w.assignedStaffUserId || p.trainer === trainer),
+      )
+    )
+      start += 15 * 60000;
+    placed.push({ start, end: start + duration, groom: w.assignedStaffUserId ?? null, trainer });
+    w.scheduledDate = new Date(start);
+    if (w.resultRecordedAt)
+      w.resultRecordedAt = new Date(start + (workoutDurationMinutes(w.workoutType) + 5) * 60000);
+    if (w.status === WorkoutStatus.COMPLETED && w.resultRecordedAt! > now) {
+      w.status = WorkoutStatus.SCHEDULED;
+      for (const field of [
+        'resultRecordedAt',
+        'resultRecordedById',
+        'actualTimeSeconds',
+        'actualDistanceMeters',
+        'averageSpeedKmh',
+        'topSpeedKmh',
+        'heartRatePeak',
+        'heartRateRecovery',
+        'performanceScore',
+        'staminaScore',
+        'recoveryTimeMinutes',
+        'actualSurface',
+        'completionLevel',
+        'resultNotes',
+      ])
+        w[field] = null;
     }
   }
   await tx.workoutSession.createMany({ data: workouts, skipDuplicates: true });
-  // Buổi tập đã có từ lần seed trước: cập nhật người phụ trách và giờ theo bản đã xếp lại ở trên.
-  for (const w of workouts) {
-    await tx.workoutSession.updateMany({
-      where: { id: w.id },
-      data: {
-        assignedStaffUserId: w.assignedStaffUserId,
-        scheduledDate: w.scheduledDate,
-        resultRecordedAt: w.resultRecordedAt,
-      },
-    });
-  }
-
-  // SimulatorSessions (covering WORKOUT, RACE, EXAM + COMPLETED, RUNNING, PENDING, ABORTED_INJURY)
+  const completed = workouts.filter((w) => w.status === WorkoutStatus.COMPLETED);
   await tx.simulatorSession.createMany({
     data: [
       {
-        id: id('sim:workout-h1-completed'),
+        id: id('sim:workout'),
         type: SimulatorSessionType.WORKOUT,
         status: SimulatorSessionStatus.COMPLETED,
+        actorUserId: userIds.trainer,
+        horseIds: [completed[0].horseId],
+        workoutSessionId: completed[0].id,
+        lastSnapshot: { distanceMeters: completed[0].distanceMeters, completed: true },
+        createdAt: completed[0].scheduledDate,
+      },
+      {
+        id: id('sim:exam'),
+        type: SimulatorSessionType.EXAM,
+        status: SimulatorSessionStatus.COMPLETED,
+        actorUserId: userIds.vet,
         horseIds: [horseIds[0]],
-        actorUserId: userIds.trainer,
-        workoutSessionId: id('workout:hist:0:-1'),
-        startedAt: days(-1, 6, 0),
-        finishedAt: days(-1, 6, 5),
-        lastSnapshot: { distanceM: 1600, speedKmh: 62.4, heartRate: 186, stamina: 88 },
-        result: { finishTimeSeconds: 92.3, avgSpeedKmh: 62.4, peakHeartRate: 190 },
+        medicalRecordId: id('medrec:closed:h1'),
+        lastSnapshot: { temperature: 37.8, heartRate: 42 },
+        createdAt: days(-75),
       },
       {
-        id: id('sim:workout-h3-running'),
-        type: SimulatorSessionType.WORKOUT,
-        status: SimulatorSessionStatus.RUNNING,
-        horseIds: [horseIds[2]],
-        actorUserId: userIds.trainer,
-        workoutSessionId: id('workout:sched:2:0'),
-        startedAt: days(0, 6, 15),
-        lastSnapshot: { distanceM: 940, speedKmh: 58.1, heartRate: 179, stamina: 76 },
-      },
-      {
-        id: id('sim:race-cup-t11-pending'),
+        id: id('sim:race'),
         type: SimulatorSessionType.RACE,
         status: SimulatorSessionStatus.PENDING,
-        horseIds: [horseIds[0], horseIds[2], horseIds[4], horseIds[5]],
-        actorUserId: userIds.trainer2,
-        startedAt: days(0, 9, 0),
-        lastSnapshot: { stage: 'STARTING_GATE', distanceM: 1600, fieldSize: 4 },
+        actorUserId: userIds.trainer,
+        horseIds: [horseIds[0], horseIds[2]],
+        lastSnapshot: { horseIds: [horseIds[0], horseIds[2]], distanceMeters: 1600 },
       },
       {
-        id: id('sim:exam-h2-aborted'),
+        id: id('sim:running'),
+        type: SimulatorSessionType.EXAM,
+        status: SimulatorSessionStatus.RUNNING,
+        actorUserId: userIds.vet,
+        horseIds: [horseIds[1]],
+        medicalRecordId: id('medrec:open:h2'),
+        lastSnapshot: { stage: 'VITALS' },
+      },
+      {
+        id: id('sim:aborted'),
         type: SimulatorSessionType.EXAM,
         status: SimulatorSessionStatus.ABORTED_INJURY,
-        horseIds: [horseIds[1]],
         actorUserId: userIds.vet,
+        horseIds: [horseIds[1]],
         medicalRecordId: id('medrec:open:h2'),
-        startedAt: days(-10, 8, 30),
-        finishedAt: days(-10, 8, 34),
-        lastSnapshot: { distanceM: 420, anomaly: 'GAIT_ASYMMETRY', heartRate: 196 },
-        result: { abortedReason: 'Phát hiện lệch bước nhẹ chân trước phải lúc chạy kiểm tra' },
+        lastSnapshot: { reason: 'Ngừng kiểm tra vận động do đau gân' },
+        createdAt: days(-10),
       },
     ],
     skipDuplicates: true,
@@ -2103,7 +1723,14 @@ async function seedMedical(tx: Tx) {
       treatmentProtocol: 'Cập nhật ngay sau khi có chỉ số huyết học chiều nay.',
     },
   ];
-  await tx.medicalRecord.createMany({ data: medicalRecords, skipDuplicates: true });
+  await tx.medicalRecord.createMany({
+    data: medicalRecords.map((record, index) => ({
+      ...record,
+      recordNumber: `BA-${clubDate(new Date(record.examinationDate!)).slice(2, 7).replace('-', '')}-${900 + index}`,
+      createdAt: record.examinationDate,
+    })),
+    skipDuplicates: true,
+  });
 
   // InjuryLogs across LEFT / RIGHT / BILATERAL and ACTIVE / HEALING / RESOLVED
   await tx.injuryLog.createMany({
@@ -2343,7 +1970,7 @@ async function seedMedical(tx: Tx) {
               ? 'Eqvalan Ivermectin Paste'
               : 'Quy trình chuẩn CLB EquiFlow',
         batchNumber: `LOT-2026-${String(idx + 10).padStart(3, '0')}`,
-        performedByMode: 'INTERNAL',
+        performedByMode: 'SELF',
         performedByName: 'BS. Trần Đình Khôi',
         status,
       });
@@ -2353,7 +1980,7 @@ async function seedMedical(tx: Tx) {
 }
 
 async function seedStableCare(tx: Tx) {
-  // Original 4 sample supplies (matching origin/dev)
+  // Preserve the canonical supplies and cover every current supply category.
   const supplies: Array<Prisma.SupplyCatalogCreateManyInput & { id: string }> = [
     {
       id: supplyIds.timothyHay,
@@ -2389,6 +2016,32 @@ async function seedStableCare(tx: Tx) {
       withdrawalDays: 7,
     },
   ];
+  supplies.push(
+    {
+      id: id('supply:vitamin-e'),
+      code: 'VITAMIN_E',
+      name: 'Vitamin E hỗ trợ hồi phục',
+      category: SupplyCategory.SUPPLEMENT_VITAMIN,
+      unit: SupplyUnit.PACKET,
+      unitPrice: 55000,
+    },
+    {
+      id: id('supply:mineral'),
+      code: 'MINERAL',
+      name: 'Khoáng tổng hợp cho ngựa',
+      category: SupplyCategory.SUPPLEMENT_MINERAL,
+      unit: SupplyUnit.KG,
+      unitPrice: 95000,
+    },
+    {
+      id: id('supply:probiotic'),
+      code: 'PROBIOTIC',
+      name: 'Men vi sinh hỗ trợ tiêu hóa',
+      category: SupplyCategory.SUPPLEMENT_GENERAL,
+      unit: SupplyUnit.PACKET,
+      unitPrice: 35000,
+    },
+  );
   await tx.supplyCatalog.createMany({ data: supplies, skipDuplicates: true });
 
   // StockBalances across Zones A, B, C, H (mix of healthy and low-stock triggers)
@@ -2627,11 +2280,10 @@ async function seedStableCare(tx: Tx) {
     skipDuplicates: true,
   });
 
-  // ShiftRoster covering ALL 10 Active Grooms over rolling window (-2..+7, covering through 21/11/2026)
+  // Recent and upcoming roster assignments for all ten active grooms.
   const rosterAssignments: Array<[string, string, string]> = [
     [zoneIds.A, shiftIds.MORNING, userIds.grooms[0]],
-    [zoneIds.A, shiftIds.MORNING, userIds.grooms[3]],
-    [zoneIds.A, shiftIds.AFTERNOON, userIds.grooms[9]],
+    [zoneIds.A, shiftIds.AFTERNOON, userIds.grooms[3]],
     [zoneIds.A, shiftIds.NIGHT, userIds.grooms[4]],
     [zoneIds.B, shiftIds.MORNING, userIds.grooms[1]],
     [zoneIds.B, shiftIds.AFTERNOON, userIds.grooms[5]],
@@ -2639,9 +2291,10 @@ async function seedStableCare(tx: Tx) {
     [zoneIds.C, shiftIds.MORNING, userIds.grooms[2]],
     [zoneIds.C, shiftIds.AFTERNOON, userIds.grooms[7]],
     [zoneIds.H, shiftIds.MORNING, userIds.grooms[8]],
+    [zoneIds.H, shiftIds.AFTERNOON, userIds.grooms[9]],
   ];
   const rosters: Prisma.ShiftRosterCreateManyInput[] = [];
-  for (let d = -2; d <= 7; d++) {
+  for (let d = -14; d <= 21; d++) {
     const rDate = new Date(`${dateStrOffset(d)}T00:00:00.000Z`);
     rosterAssignments.forEach(([zoneId, shiftId, groomUserId], idx) => {
       rosters.push({
@@ -2656,7 +2309,7 @@ async function seedStableCare(tx: Tx) {
   }
   await tx.shiftRoster.createMany({ data: rosters, skipDuplicates: true });
 
-  // DailyCareTasks for days 0 to 6 (14/11/2026 through 20/11/2026) excluding RETIRED horses (BR-STL-07)
+  // Detailed recent and upcoming care; retired horses receive no new tasks.
   const activeHorses = HORSES.filter((h) => h.status !== HorseStatus.RETIRED);
   const scheduleHorses: ScheduleHorse[] = activeHorses.map((h) => {
     const zCode: 'A' | 'B' | 'C' | 'H' =
@@ -2725,7 +2378,7 @@ async function seedStableCare(tx: Tx) {
     [shiftIds.NIGHT]: { startTime: '21:00', endTime: '05:00', isOvernight: true },
   };
   const scheduledWorkouts = await tx.workoutSession.findMany({
-    where: { status: WorkoutStatus.SCHEDULED, scheduledDate: { gte: days(0, 0), lt: days(7, 0) } },
+    where: { status: WorkoutStatus.SCHEDULED, scheduledDate: { gte: days(0, 0), lt: days(22, 0) } },
     select: { id: true, horseId: true, scheduledDate: true },
   });
   const plannedRosters = rosterAssignments.map(([zoneId, shiftId, groomUserId]) => ({
@@ -2738,7 +2391,7 @@ async function seedStableCare(tx: Tx) {
   const dailyTasks: Prisma.DailyCareTaskCreateManyInput[] = [];
   let taskCounter = 1;
 
-  for (let d = 0; d <= 6; d++) {
+  for (let d = -14; d <= 21; d++) {
     const date = dateStrOffset(d);
     const taskDate = new Date(`${date}T00:00:00.000Z`);
     const planned = planDailyTasks(
@@ -2759,9 +2412,9 @@ async function seedStableCare(tx: Tx) {
       plannedRosters,
     );
     planned.forEach((t) => {
-      // On day 0 (today), morning tasks (< 12:00) are completed.
-      // On future days (d > 0: 15/11 .. 20/11), tasks are pending (isCompleted = false).
-      const done = d === 0 && !!t.assignedGroomUserId && t.scheduledTime < '12:00';
+      // Complete only tasks whose scheduled time has passed in club time.
+      const scheduledAt = new Date(`${date}T${t.scheduledTime}:00+07:00`);
+      const done = !!t.assignedGroomUserId && scheduledAt.getTime() + 15 * 60000 <= now.getTime();
       dailyTasks.push({
         id: id(`task:d${d}:${t.horseId}:${t.taskType}:${t.mealType ?? 'none'}:${t.scheduledTime}`),
         taskCode: t.taskCode ?? `TSK-${yymm()}-${String(taskCounter++).padStart(5, '0')}`,
@@ -2775,11 +2428,16 @@ async function seedStableCare(tx: Tx) {
         mealType: t.mealType ?? null,
         scheduledTime: t.scheduledTime,
         shiftId: t.shiftId ?? null,
-        nutritionPlanId: id(`nutri:approved:${t.horseId}`),
+        nutritionPlanId:
+          nutritionPlans.find(
+            (np) => np.horseId === t.horseId && np.status === NutritionPlanStatus.APPROVED,
+          )?.id ?? null,
         isMedicalLocked: Boolean(activeHorses.find((h) => h.id === t.horseId)?.isMedicalLocked),
         itemsSnapshotJson: (t.itemsSnapshotJson as Prisma.InputJsonValue) ?? Prisma.JsonNull,
         isCompleted: done,
-        completedAt: done ? days(d, 8, 45) : null,
+        completedAt: done ? new Date(scheduledAt.getTime() + 15 * 60000) : null,
+        completionVersion: done ? 1 : 0,
+        createdAt: days(d, 0),
         completedById: done ? t.assignedGroomUserId : null,
         assignedGroomUserId: t.assignedGroomUserId ?? null,
       });
@@ -2807,7 +2465,7 @@ async function seedStableCare(tx: Tx) {
   dailyTasks.push({
     id: id('task:historical:ice-boot:h2'),
     taskCode: 'TSK-2609-90001',
-    date: new Date('2026-09-15T00:00:00+07:00'),
+    date: new Date('2026-09-15T00:00:00.000Z'),
     horseId: horseIds[1],
     stallZoneId: zoneIds.B,
     stallId: HORSES[1].stallId,
@@ -2825,7 +2483,7 @@ async function seedStableCare(tx: Tx) {
 
   // DailyGroomingLog across MORNING / AFTERNOON / EVENING
   const groomingLogs: Prisma.DailyGroomingLogCreateManyInput[] = [];
-  [-1, 0].forEach((d) => {
+  [-2, -1].forEach((d) => {
     groomingLogs.push(
       {
         id: id(`groomlog:h1:d${d}`),
@@ -2877,7 +2535,7 @@ async function seedStableCare(tx: Tx) {
         supplyId: supplyIds.electrolyte,
         requestedQuantity: 60,
         status: RestockStatus.PENDING,
-        urgencyReason: 'Tồn kho điện giải khu A sắp xuống dưới ngưỡng tối thiểu trước giải T11',
+        urgencyReason: 'Tồn kho điện giải khu A xuống dưới ngưỡng dự phòng cho tuần tập tới',
         requestedById: userIds.grooms[0],
       },
       {
@@ -2942,7 +2600,7 @@ async function seedStableCare(tx: Tx) {
         requestedQuantity: 200,
         approvedQuantity: 200,
         status: RestockStatus.DELIVERED,
-        urgencyReason: 'Nhập cám yến mạch phục vụ chế độ tập tăng tải tuần đua 15-20/11',
+        urgencyReason: 'Nhập cám yến mạch theo dự trù khẩu phần tuần tập tới',
         requestedById: userIds.grooms[0],
         reviewedById: userIds.manager,
         reviewedAt: days(-1, 10, 0),
@@ -2969,7 +2627,7 @@ async function seedStableCare(tx: Tx) {
         supplyId: supplyIds.timothyHay,
         requestedQuantity: 150,
         status: RestockStatus.PENDING,
-        urgencyReason: 'Đề xuất dự trữ cỏ khô Timothy chuẩn bị đại lễ 20/11',
+        urgencyReason: 'Đề xuất dự trữ cỏ khô Timothy cho mùa giải cuối năm',
         requestedById: userIds.grooms[2],
       },
     ],
@@ -3012,9 +2670,10 @@ async function seedStableCare(tx: Tx) {
         symptomsJson: ['OTHER'],
         description: 'Ghi nhận phân lỏng sau buổi chiều đổi lô cỏ mới.',
         status: IncidentStatus.UNDER_REVIEW,
+        createdAt: days(-3),
         reviewedById: userIds.vet3,
         reviewedAt: days(-2),
-        vetNotes: 'Đã mở hồ sơ theo dõi MED-2026-008 & bổ sung men vi sinh.',
+        vetNotes: 'Đã mở hồ sơ theo dõi cho Hỏa Phụng và bổ sung men vi sinh.',
         medicalRecordId: id('medrec:open:h13'),
       },
       {
@@ -3028,6 +2687,8 @@ async function seedStableCare(tx: Tx) {
         symptomsJson: ['WOUND'],
         description: 'Vết xước nhẹ do cọ vào thành cửa chuồng, đã vệ sinh sát khuẩn.',
         status: IncidentStatus.RESOLVED,
+        resolvedAt: days(-73),
+        createdAt: days(-75),
         reviewedById: userIds.vet,
         reviewedAt: days(-74),
         vetNotes: 'Vết thương đã lành hoàn toàn.',
@@ -3044,6 +2705,7 @@ async function seedStableCare(tx: Tx) {
         symptomsJson: ['COUGHING'],
         description: 'Hắt hơi thoáng qua khi vừa rải rơm mới.',
         status: IncidentStatus.DISMISSED,
+        createdAt: days(-10),
         reviewedById: userIds.vet2,
         reviewedAt: days(-9),
         vetNotes: 'Phản ứng bụi rơm bình thường, không có dấu hiệu bệnh lý.',
@@ -3054,743 +2716,1167 @@ async function seedStableCare(tx: Tx) {
 }
 
 async function seedRacingAndInvoices(tx: Tx) {
-  // 16 Tournaments covering all 5 TournamentStatus & all 3 TrackSurface (spans 2 pages @ 10/page)
-  const tIds = {
-    may: id('tour:2026-05'),
-    junA: id('tour:2026-06a'),
-    junB: id('tour:2026-06b'),
-    july: id('tour:2026-07'),
-    aug: id('tour:2026-08'),
-    sep: id('tour:2026-09'),
-    oct: id('tour:2026-10'),
-    closedReg: id('tour:2026-11-closed'),
-    closedRegB: id('tour:2026-11-closed-b'),
-    t20Nov: id('tour:2026-11-20'),
-    openReg: id('tour:2026-11-open'),
-    openRegB: id('tour:2026-11-open-b'),
-    openRegC: id('tour:2026-11-open-c'),
-    upcoming: id('tour:2026-12-upcoming'),
-    upcomingB: id('tour:2026-12-b'),
-    upcomingC: id('tour:2027-01'),
-    cancelled: id('tour:2026-cancelled'),
-  };
+  const runners = [0, 2, 3, 4, 5, 6, 8, 9, 11];
+  for (let m = 0; m < 12; m++) {
+    const period = clubDate(new Date(Date.UTC(2025, 11 + m, 1))).slice(0, 7);
+    const raceDate = new Date(`${period}-20T15:00:00+07:00`);
+    if (raceDate >= now) continue;
+    const tourId = id(`tour:${period}`);
+    await tx.tournament.createMany({
+      data: [
+        {
+          id: tourId,
+          code: `CUP-${period}`,
+          name: `Cúp giao hữu EquiFlow tháng ${period.slice(5)}/${period.slice(0, 4)}`,
+          raceDate,
+          location: m % 2 ? 'Trường đua Đại Nam' : 'Trường đua Thiên Mã',
+          distanceMeters: 1600,
+          trackType: [TrackSurface.TURF, TrackSurface.DIRT, TrackSurface.SYNTHETIC][m % 3],
+          entryFee: 2_000_000,
+          prizePool: 55_000_000,
+          maxFieldSize: 10,
+          minAgeYears: 3,
+          registrationDeadline: new Date(+raceDate - 7 * DAY_MS),
+          status: TournamentStatus.COMPLETED,
+          createdAt: new Date(+raceDate - 30 * DAY_MS),
+        },
+      ],
+      skipDuplicates: true,
+    });
+    const registrations = runners.map((i, n) => ({
+      id: id(`treg:${period}:${i}`),
+      tournamentId: tourId,
+      horseId: horseIds[i],
+      registeredByTrainerId: trainerFor(i),
+      status: RegistrationStatus.CONFIRMED,
+      entryFeeBilled: 2_000_000,
+      registrationDate: new Date(+raceDate - (8 + (n % 3)) * DAY_MS),
+    }));
+    await tx.tournamentRegistration.createMany({ data: registrations, skipDuplicates: true });
+    await tx.tournamentResult.createMany({
+      data: registrations.map((r, n) => {
+        const rank = ((n + m) % registrations.length) + 1;
+        const gross =
+          rank === 1 ? 30_000_000 : rank === 2 ? 15_000_000 : rank === 3 ? 10_000_000 : 0;
+        const time = 96 + rank * 0.7;
+        return {
+          id: id(`tres:${period}:${r.horseId}`),
+          registrationId: r.id,
+          finalRank: rank,
+          finishTimeSeconds: time,
+          avgSpeedKmh: Number((5760 / time).toFixed(2)),
+          prizeMoneyWon: gross,
+          ...calculatePrizeSplit(gross, 2_000_000),
+          settledAt: new Date(+raceDate + DAY_MS),
+          officialNotes: rank <= 3 ? `Hạng ${rank}, đã đối soát tiền thưởng` : 'Hoàn thành cự ly',
+        };
+      }),
+      skipDuplicates: true,
+    });
+  }
+  const futureStatuses = [
+    TournamentStatus.OPEN_REGISTRATION,
+    TournamentStatus.CLOSED_REGISTRATION,
+    TournamentStatus.UPCOMING,
+    TournamentStatus.CANCELLED,
+    TournamentStatus.UPCOMING,
+    TournamentStatus.OPEN_REGISTRATION,
+  ];
+  for (const [i, status] of futureStatuses.entries()) {
+    const tourId = id(`tour:upcoming:${i}`);
+    const raceDate = days(7 + i * 5, 15);
+    await tx.tournament.createMany({
+      data: [
+        {
+          id: tourId,
+          code: `CUP-NEXT-${i + 1}`,
+          name: [
+            'Cúp Mùa Đông Thiên Mã',
+            'Giải Tốc Độ Đại Nam',
+            'Cúp Giao Hữu Cuối Năm',
+            'Giải Mở Rộng Miền Đông',
+            'Cúp Năm Mới',
+            'Giải Trẻ EquiFlow',
+          ][i],
+          raceDate,
+          location: i % 2 ? 'Trường đua Đại Nam' : 'Trường đua Thiên Mã',
+          distanceMeters: 1400 + (i % 3) * 200,
+          trackType: [TrackSurface.TURF, TrackSurface.DIRT, TrackSurface.SYNTHETIC][i % 3],
+          entryFee: 3_000_000,
+          prizePool: 90_000_000,
+          maxFieldSize: 12,
+          minAgeYears: 3,
+          registrationDeadline:
+            status === TournamentStatus.CLOSED_REGISTRATION ? days(-1) : days(3 + i * 4),
+          status,
+          createdAt: days(-20),
+        },
+      ],
+      skipDuplicates: true,
+    });
+    if (
+      status !== TournamentStatus.OPEN_REGISTRATION &&
+      status !== TournamentStatus.CLOSED_REGISTRATION
+    )
+      continue;
+    await tx.tournamentRegistration.createMany({
+      data: runners
+        .slice(0, 5)
+        .map<Prisma.TournamentRegistrationCreateManyInput>((idx, n) => ({
+          id: id(`treg:upcoming:${i}:${idx}`),
+          tournamentId: tourId,
+          horseId: horseIds[idx],
+          registeredByTrainerId: trainerFor(idx),
+          entryFeeBilled: 3_000_000,
+          status:
+            n === 4
+              ? RegistrationStatus.DISQUALIFIED
+              : status === TournamentStatus.CLOSED_REGISTRATION
+                ? RegistrationStatus.CONFIRMED
+                : RegistrationStatus.REGISTERED,
+          registrationDate: days(-3),
+        }))
+        .concat([
+          {
+            id: id(`treg:upcoming:${i}:medical`),
+            tournamentId: tourId,
+            horseId: horseIds[1],
+            registeredByTrainerId: userIds.trainer,
+            entryFeeBilled: 3_000_000,
+            status: RegistrationStatus.SCRATCHED_MEDICAL,
+            registrationDate: days(-12),
+          },
+        ]),
+      skipDuplicates: true,
+    });
+  }
 
-  await tx.tournament.createMany({
+  await tx.careBillingPolicy.upsert({
+    where: { id: 'club' },
+    update: {},
+    create: {
+      id: 'club',
+      cutoverPeriod: BILLING_CUTOVER,
+      examUnitPrice: 3_000_000,
+      updatedById: userIds.manager,
+    },
+  });
+  const entries = await tx.careCostEntry.findMany();
+  const allocations = await tx.stallAllocation.findMany();
+  const results = await tx.tournamentResult.findMany();
+  const registrations = await tx.tournamentRegistration.findMany();
+  const plans = await tx.trainingPlan.findMany();
+  const medical = await tx.medicalRecord.findMany();
+  const policy = await tx.careBillingPolicy.findUnique({ where: { id: 'club' } });
+  for (let m = 0; m < 11; m++) {
+    const period = clubDate(new Date(Date.UTC(2025, 11 + m, 1))).slice(0, 7);
+    if (period > LAST_INVOICE_PERIOD) throw new Error('Seed invoice exceeds October 2026');
+    const { start, end } = boardingMonth(period);
+    for (const [i, h] of HORSES.entries()) {
+      const stay = allocations.filter((a) => a.horseId === h.id);
+      const { boardingDays, boardingFee } = calculateBoardingFee(period, stay);
+      if (!boardingDays) continue;
+      const actual = Boolean(policy?.cutoverPeriod && period >= policy.cutoverPeriod);
+      const usage = entries.filter(
+        (e) => e.horseId === h.id && e.performedAt >= start && e.performedAt < end,
+      );
+      const snapshot = invoiceUsageSnapshot(usage);
+      const medicalFee = actual
+        ? snapshot.medicalFee.toNumber()
+        : medical.some(
+              (r) => r.horseId === h.id && r.examinationDate >= start && r.examinationDate < end,
+            )
+          ? MEDICAL_MONTHLY_PACKAGE_FEE
+          : 0;
+      const trainingFee = plans.some(
+        (p) =>
+          p.horseId === h.id &&
+          p.status !== PlanStatus.DRAFT &&
+          p.status !== PlanStatus.CANCELLED &&
+          p.startDate < end &&
+          p.endDate >= start,
+      )
+        ? TRAINING_MONTHLY_RATE
+        : 0;
+      const regIds = new Set(registrations.filter((r) => r.horseId === h.id).map((r) => r.id));
+      const prizeCredit = results
+        .filter(
+          (r) =>
+            regIds.has(r.registrationId) &&
+            r.settledAt &&
+            r.settledAt >= start &&
+            r.settledAt < end,
+        )
+        .reduce((sum, r) => sum + Number(r.netOwnerPayout), 0);
+      const netAmount = boardingFee.toNumber() + medicalFee + trainingFee - prizeCredit;
+      let status: InvoiceStatus = InvoiceStatus.PAID;
+      if (i === 16 && period >= '2026-08' && netAmount > 0) status = InvoiceStatus.OVERDUE;
+      else if (period === LAST_INVOICE_PERIOD && i === 14) status = InvoiceStatus.DRAFT;
+      else if (period === LAST_INVOICE_PERIOD && i === 15) status = InvoiceStatus.CANCELLED;
+      else if (period === LAST_INVOICE_PERIOD && i === 9 && netAmount > 0)
+        status = InvoiceStatus.SENT;
+      const invId = id(`inv:${period}:${h.id}`);
+      if (await tx.financialInvoice.findUnique({ where: { id: invId } })) continue;
+      await tx.financialInvoice.createMany({
+        data: [
+          {
+            id: invId,
+            horseId: h.id,
+            ownerId: h.ownerId,
+            billingPeriod: period,
+            boardingFee,
+            boardingDays,
+            boardingMonthlyRate: BOARDING_MONTHLY_RATE,
+            medicalFee,
+            trainingFee,
+            prizeCredit,
+            netAmount,
+            status,
+            billingMethod: actual
+              ? InvoiceBillingMethod.ACTUAL_USAGE
+              : InvoiceBillingMethod.LEGACY_PACKAGE,
+            dueAt:
+              status === InvoiceStatus.DRAFT || status === InvoiceStatus.CANCELLED
+                ? null
+                : status === InvoiceStatus.SENT
+                  ? days(5, 17)
+                  : new Date(+end + 7 * DAY_MS),
+            createdAt: end,
+            paidAt:
+              status === InvoiceStatus.PAID && netAmount > 0 ? new Date(+end + 3 * DAY_MS) : null,
+            paymentMethod: status === InvoiceStatus.PAID && netAmount > 0 ? 'BANK_TRANSFER' : null,
+            paymentRef:
+              status === InvoiceStatus.PAID && netAmount > 0 ? `EQ-${period}-${h.horseCode}` : null,
+            paidConfirmedById:
+              status === InvoiceStatus.PAID && netAmount > 0 ? userIds.manager : null,
+            paidConfirmedByName:
+              status === InvoiceStatus.PAID && netAmount > 0 ? 'Trần Quang Minh' : null,
+            paymentReportedAt: status === InvoiceStatus.SENT ? days(-1, 16) : null,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      if (!actual || !usage.length) continue;
+      await tx.invoiceLineItem.createMany({
+        data: snapshot.lines.map((line) => ({
+          ...line,
+          id: id(`line:${invId}:${line.careCostEntryId}`),
+          invoiceId: invId,
+        })),
+        skipDuplicates: true,
+      });
+      if (status !== InvoiceStatus.CANCELLED)
+        await tx.careCostClaim.createMany({
+          data: usage.map((e) => ({ invoiceId: invId, careCostEntryId: e.id })),
+          skipDuplicates: true,
+        });
+    }
+  }
+}
+
+async function seedOperatingHistory(tx: Tx) {
+  const tasks: Prisma.DailyCareTaskCreateManyInput[] = [];
+  const logs: Prisma.DailyGroomingLogCreateManyInput[] = [];
+  const costs: Prisma.CareCostEntryCreateManyInput[] = [];
+  const rosters: Prisma.ShiftRosterCreateManyInput[] = [];
+  const medical: Prisma.MedicalRecordCreateManyInput[] = [];
+  const plans: Prisma.TrainingPlanCreateManyInput[] = [];
+  const workouts: Prisma.WorkoutSessionCreateManyInput[] = [];
+  const restocks: Prisma.RestockRequestCreateManyInput[] = [];
+  const preventive: Prisma.PreventiveScheduleCreateManyInput[] = [];
+  const monthNames = [
+    'Xây nền thể lực',
+    'Ổn định nhịp bước',
+    'Phát triển sức bền',
+    'Chuẩn bị mùa giải',
+  ];
+  const morningGrooms = {
+    A: userIds.grooms[0],
+    B: userIds.grooms[1],
+    C: userIds.grooms[2],
+    H: userIds.grooms[8],
+  };
+  const afternoonGrooms = {
+    A: userIds.grooms[3],
+    B: userIds.grooms[5],
+    C: userIds.grooms[7],
+    H: userIds.grooms[9],
+  };
+  const dateAt = (date: string, time: string) => new Date(`${date}T${time}:00+07:00`);
+  for (let d = new Date(BUSINESS_START); d < days(-14); d = new Date(+d + DAY_MS)) {
+    const date = clubDate(d);
+    const day = new Date(`${date}T00:00:00.000Z`);
+    for (const [barn, groomUserId] of Object.entries(morningGrooms)) {
+      rosters.push({
+        id: id(`roster:history:${date}:${barn}:morning`),
+        date: day,
+        zoneId: zoneIds[barn],
+        shiftId: shiftIds.MORNING,
+        groomUserId,
+        createdById: userIds.manager,
+        createdAt: d,
+      });
+      rosters.push({
+        id: id(`roster:history:${date}:${barn}:afternoon`),
+        date: day,
+        zoneId: zoneIds[barn],
+        shiftId: shiftIds.AFTERNOON,
+        groomUserId: afternoonGrooms[barn],
+        createdById: userIds.manager,
+        createdAt: d,
+      });
+    }
+    for (const [i, h] of HORSES.entries()) {
+      if (!h.stallId) continue;
+      // Dạ Nguyệt moved to the debt barn recently; earlier history remains in B10.
+      const barn = i === 16 && d < days(-20) ? 'B' : zoneFor(h);
+      const stallId = i === 16 && d < days(-20) ? stallIds.B[9] : h.stallId;
+      const meals = [
+        { time: '05:30', meal: 'MORNING', hay: 3.2, grain: 1.5 },
+        { time: '11:30', meal: 'NOON', hay: 2, grain: 0 },
+        { time: '18:00', meal: 'EVENING', hay: 2.8, grain: 1.5 },
+      ];
+      for (const meal of meals) {
+        const groom = meal.meal === 'EVENING' ? afternoonGrooms[barn] : morningGrooms[barn];
+        const performedAt = new Date(+dateAt(date, meal.time) + 15 * 60000);
+        const taskId = id(`task:history:${date}:${h.id}:${meal.meal}`);
+        const items = [
+          {
+            supplyId: supplyIds.timothyHay,
+            supplyName: 'Cỏ khô Timothy',
+            amount: meal.hay,
+            unit: 'KG',
+            price: 20_000,
+          },
+          ...(meal.grain
+            ? [
+                {
+                  supplyId: supplyIds.oatGrain,
+                  supplyName: 'Cám yến mạch',
+                  amount: meal.grain,
+                  unit: 'KG',
+                  price: 24_000,
+                },
+              ]
+            : []),
+        ];
+        tasks.push({
+          id: taskId,
+          date: day,
+          horseId: h.id,
+          stallZoneId: zoneIds[barn],
+          stallId,
+          taskCode: `TASK-${date.replaceAll('-', '')}-${String(i + 1).padStart(3, '0')}-${meal.meal}`,
+          taskType: DailyTaskType.FEEDING,
+          mealType: meal.meal,
+          title: `Cho ăn ${meal.meal === 'MORNING' ? 'sáng' : meal.meal === 'NOON' ? 'trưa' : 'tối'} – ${h.name}`,
+          scheduledTime: meal.time,
+          shiftId: meal.meal === 'EVENING' ? shiftIds.AFTERNOON : shiftIds.MORNING,
+          assignedGroomUserId: groom,
+          completedById: groom,
+          isCompleted: true,
+          completedAt: performedAt,
+          completionVersion: 1,
+          itemsSnapshotJson: items.map(({ price: _price, ...item }) => item),
+          createdAt: d,
+        });
+        if (date.slice(0, 7) >= BILLING_CUTOVER)
+          for (const item of items)
+            costs.push({
+              id: id(`cost:${taskId}:${item.supplyId}`),
+              operationKey: `seed:${taskId}:1:${item.supplyId}`,
+              horseId: h.id,
+              sourceTaskId: taskId,
+              completionVersion: 1,
+              supplyId: item.supplyId,
+              stockZoneId: zoneIds[barn],
+              performedAt,
+              quantity: item.amount,
+              unit: item.unit,
+              unitPriceSnapshot: item.price,
+              amount: item.amount * item.price,
+              entryType: CareCostEntryType.CONSUMPTION,
+              actorId: groom,
+              supplyName: item.supplyName,
+              createdAt: performedAt,
+            });
+      }
+      for (const [taskType, time, title] of [
+        [DailyTaskType.CLEANING, '12:00', 'Thay độn và vệ sinh máng nước'],
+        [DailyTaskType.GROOMING, '16:00', 'Chải lông và kiểm tra móng'],
+      ]) {
+        const groom = time < '13:00' ? morningGrooms[barn] : afternoonGrooms[barn];
+        tasks.push({
+          id: id(`task:history:${date}:${h.id}:${taskType}`),
+          date: day,
+          horseId: h.id,
+          stallZoneId: zoneIds[barn],
+          stallId,
+          taskType: taskType as DailyTaskType,
+          title: `${title} – ${h.name}`,
+          scheduledTime: time,
+          shiftId: time < '13:00' ? shiftIds.MORNING : shiftIds.AFTERNOON,
+          assignedGroomUserId: groom,
+          completedById: groom,
+          isCompleted: true,
+          completionVersion: 1,
+          completedAt: new Date(+dateAt(date, time) + 15 * 60000),
+          createdAt: d,
+        });
+      }
+      logs.push({
+        id: id(`groomlog:history:${date}:${h.id}`),
+        horseId: h.id,
+        groomUserId: morningGrooms[barn],
+        shiftDate: dateAt(date, '12:30'),
+        shiftType: ShiftType.MORNING,
+        feedCompleted: true,
+        cleaningCompleted: true,
+        groomingCompleted: false,
+        healthObservations: [
+          'Ăn đủ khẩu phần, phân và nước uống bình thường.',
+          'Tinh thần tỉnh táo, không ghi nhận vết trầy mới.',
+          'Máng ăn sạch; đã bàn giao lượng thức ăn còn lại cho ca chiều.',
+        ][(i + d.getUTCDate()) % 3],
+        createdAt: d,
+      });
+    }
+  }
+  for (let m = 0; m < 12; m++) {
+    const period = clubDate(new Date(Date.UTC(2025, 11 + m, 1))).slice(0, 7);
+    const { start, end } = boardingMonth(period);
+    if (start > now) continue;
+    for (const [i, h] of HORSES.entries()) {
+      const examDate = new Date(
+        `${period}-${String(3 + (i % 10)).padStart(2, '0')}T13:30:00+07:00`,
+      );
+      if (
+        examDate >= now ||
+        (i === 17 && examDate >= days(-18)) ||
+        (i === 18 && examDate >= days(-32))
+      )
+        continue;
+      const medId = id(`medrec:history:${period}:${h.id}`);
+      medical.push({
+        id: medId,
+        horseId: h.id,
+        veterinarianUserId: [userIds.vet, userIds.vet2, userIds.vet3, userIds.vet4][i % 4],
+        recordNumber: `BA-${period.slice(2).replace('-', '')}-${String(i + 1).padStart(3, '0')}`,
+        examinationDate: examDate,
+        examinationType: 'ROUTINE',
+        status: MedicalRecordStatus.CLOSED,
+        severity: SeverityLevel.MILD,
+        temperature: 37.6 + (i % 4) * 0.1,
+        restingHeartRate: 38 + (i % 8),
+        respiratoryRate: 12 + (i % 5),
+        weightKg: h.weightKg - 8 + (m % 5) * 2,
+        symptoms: 'Kiểm tra sức khỏe định kỳ hàng tháng.',
+        clinicalDiagnosis: 'Thể trạng ổn định, chưa ghi nhận dấu hiệu cấp tính.',
+        treatmentProtocol: 'Duy trì khẩu phần đã duyệt, theo dõi cân nặng và lượng nước uống.',
+        conclusion: 'Đã hoàn tất kiểm tra và bàn giao kết quả cho chủ ngựa.',
+        treatmentResult: 'Ổn định',
+        closedAt: new Date(+examDate + 30 * 60000),
+        createdAt: examDate,
+      });
+      if (period >= BILLING_CUTOVER)
+        costs.push({
+          id: id(`cost:exam:${medId}`),
+          operationKey: `seed:exam:${medId}`,
+          horseId: h.id,
+          medicalRecordId: medId,
+          performedAt: examDate,
+          quantity: 1,
+          unit: 'Lần khám',
+          unitPriceSnapshot: 3_000_000,
+          amount: 3_000_000,
+          entryType: CareCostEntryType.EXAM,
+          actorId: medical[medical.length - 1].veterinarianUserId,
+          supplyName: 'Khám định kỳ',
+          recordNumber: medical[medical.length - 1].recordNumber,
+          veterinarianName: [
+            'BS. Phạm Minh Trí',
+            'BS. Nguyễn Thảo Vy',
+            'BS. Trần Đình Khôi',
+            'BS. Lê Phương Anh',
+          ][i % 4],
+          createdAt: examDate,
+        });
+      if (h.stallId && m % 3 === 0)
+        preventive.push({
+          id: id(`preventive:history:${period}:${h.id}`),
+          horseId: h.id,
+          typeCatalogId: preventiveTypeIds.DEWORMING,
+          scheduleType: PreventiveType.DEWORMING,
+          notes: 'Tẩy giun định kỳ theo quý',
+          dueDate: examDate,
+          status: PreventiveStatus.COMPLETED,
+          completedDate: examDate,
+          veterinarianUserId: userIds.vet,
+          productAdministered: 'Thuốc tẩy giun theo chỉ định',
+          performedByMode: 'SELF',
+        });
+      if (i >= 14 || h.status === HorseStatus.RETIRED || start >= days(-42)) continue;
+      const planEnd = new Date(Math.min(+end - DAY_MS, +days(-43)));
+      const code = `GA-${String(100 + m * 20 + i).padStart(6, '0')}`;
+      const planId = id(`plan:history:${period}:${h.id}`);
+      plans.push({
+        id: planId,
+        planCode: code,
+        horseId: h.id,
+        trainerUserId: trainerFor(i),
+        phaseName: `${monthNames[m % 4]} – ${h.name} – ${period}`,
+        objective: 'Theo dõi tiến bộ theo chu kỳ và phối hợp bộ phận thú y',
+        startDate: start,
+        endDate: planEnd,
+        status: i === 13 && m === 9 ? PlanStatus.CANCELLED : PlanStatus.COMPLETED,
+        cancelReason: i === 13 && m === 9 ? 'Chủ ngựa yêu cầu chuyển sang nghỉ dưỡng' : null,
+        completionSummary:
+          i === 13 && m === 9
+            ? null
+            : 'Đã hoàn thành chu kỳ; nhịp tim hồi phục và dáng chạy ổn định.',
+        phases: phaseFor(code, start, planEnd),
+        trackSurface: TrackSurface.TURF,
+        createdAt: start,
+      });
+      for (let date = new Date(+start + DAY_MS); date <= planEnd; date = new Date(+date + DAY_MS)) {
+        if (![1, 3, 5].includes(date.getUTCDay()) || (i === 13 && m === 9)) continue;
+        const afternoon = i % 7 >= 4;
+        const slot = (i % 7) % 4;
+        const scheduledDate = dateAt(
+          clubDate(date),
+          `${String((afternoon ? 13 : 6) + Math.floor((slot * 75) / 60)).padStart(2, '0')}:${String((slot * 75) % 60).padStart(2, '0')}`,
+        );
+        const speed = 30 + (m % 4) * 2 + (i % 5);
+        workouts.push({
+          id: id(`workout:history:${clubDate(date)}:${h.id}`),
+          trainingPlanId: planId,
+          horseId: h.id,
+          phaseId: `${code}-PH1`,
+          trackId: id(zoneFor(h) === 'A' ? 'TRK-TURF' : 'TRK-DIRT'),
+          assignedStaffUserId:
+            userIds.grooms[zoneFor(h) === 'A' ? (i % 7 >= 4 ? 3 : 0) : i % 7 >= 4 ? 5 : 1],
+          scheduledDate,
+          distanceMeters: 1400,
+          repetitions: 1,
+          targetSpeedKmh: speed,
+          status: WorkoutStatus.COMPLETED,
+          workoutType: 'CANTER',
+          intensity: 'MEDIUM',
+          trackSurface: zoneFor(h) === 'A' ? 'TURF' : 'DIRT',
+          actualSurface: zoneFor(h) === 'A' ? 'TURF' : 'DIRT',
+          actualDistanceMeters: 1400,
+          actualTimeSeconds: Number((5040 / speed).toFixed(2)),
+          averageSpeedKmh: speed,
+          topSpeedKmh: speed + 4,
+          heartRatePeak: 170 + i,
+          heartRateRecovery: 42 + (i % 8),
+          performanceScore: 7 + (m % 3) * 0.5,
+          completionLevel: 'FULL',
+          resultNotes: 'Hoàn tất cự ly; đã đi bộ hạ nhiệt và kiểm tra chân.',
+          resultRecordedAt: new Date(+scheduledDate + 65 * 60000),
+          resultRecordedById: trainerFor(i),
+          createdAt: date,
+        });
+      }
+    }
+    for (const barn of ['A', 'B', 'C', 'H'] as const) {
+      for (const [supplyId, name, quantity] of [
+        [supplyIds.timothyHay, 'cỏ khô Timothy', 2400],
+        [supplyIds.oatGrain, 'yến mạch', 900],
+      ] as const) {
+        const deliveredAt = new Date(`${period}-01T04:00:00+07:00`);
+        restocks.push({
+          id: id(`restock:history:${period}:${barn}:${supplyId}`),
+          requestNumber: `RST-${period.replace('-', '')}-${barn}-${supplyId.slice(0, 4)}`,
+          zoneId: zoneIds[barn],
+          supplyId,
+          requestedQuantity: quantity,
+          approvedQuantity: quantity,
+          status: RestockStatus.DELIVERED,
+          urgencyReason: `Bổ sung ${name} theo dự trù tháng ${period}`,
+          requestedById: morningGrooms[barn],
+          reviewedById: userIds.manager,
+          reviewedAt: new Date(+deliveredAt - 12 * 3600000),
+          deliveredAt,
+          deliveredById: morningGrooms[barn],
+          createdAt: new Date(+deliveredAt - DAY_MS),
+        });
+      }
+    }
+  }
+  // Batch inserts stay below PostgreSQL's parameter limit for a full year of care records.
+  const insert = async (
+    delegate: { createMany: (...args: any[]) => Promise<any> },
+    data: any[],
+  ) => {
+    for (let offset = 0; offset < data.length; offset += 500)
+      await delegate.createMany({ data: data.slice(offset, offset + 500), skipDuplicates: true });
+  };
+  await insert(tx.shiftRoster, rosters);
+  await insert(tx.medicalRecord, medical);
+  await insert(tx.preventiveSchedule, preventive);
+  await insert(tx.trainingPlan, plans);
+  await insert(tx.workoutSession, workouts);
+  await insert(tx.dailyCareTask, tasks);
+  await insert(tx.dailyGroomingLog, logs);
+  const supplies = await tx.supplyCatalog.findMany();
+  const recentTasks = await tx.dailyCareTask.findMany({
+    where: { isCompleted: true, date: { gte: days(-15) } },
+  });
+  for (const task of recentTasks) {
+    if (!task.completedAt || !task.completedById || !Array.isArray(task.itemsSnapshotJson))
+      continue;
+    for (const item of task.itemsSnapshotJson as Array<{
+      supplyId?: string;
+      amount?: number;
+      dosage?: string;
+    }>) {
+      const supply = supplies.find((s) => s.id === item.supplyId);
+      const quantity = Number(item.amount ?? item.dosage);
+      if (!supply || !Number.isFinite(quantity) || quantity <= 0) continue;
+      costs.push({
+        id: id(`cost:${task.id}:${supply.id}`),
+        operationKey: `seed:${task.id}:1:${supply.id}`,
+        horseId: task.horseId,
+        sourceTaskId: task.id,
+        completionVersion: task.completionVersion,
+        supplyId: supply.id,
+        stockZoneId: task.stallZoneId,
+        performedAt: task.completedAt,
+        quantity,
+        unit: supply.unit,
+        unitPriceSnapshot: supply.unitPrice,
+        amount: Number(supply.unitPrice) * quantity,
+        entryType: CareCostEntryType.CONSUMPTION,
+        actorId: task.completedById,
+        supplyName: supply.name,
+        createdAt: task.completedAt,
+      });
+    }
+  }
+  await insert(tx.careCostEntry, costs);
+  await insert(tx.restockRequest, restocks);
+  // A completed care action corrected once; the charge and its reversal remain auditable.
+  const original = costs.find(
+    (c) =>
+      c.entryType === CareCostEntryType.CONSUMPTION &&
+      monthOf(new Date(c.performedAt)) === '2026-10',
+  );
+  if (original)
+    await tx.careCostEntry.createMany({
+      data: [
+        {
+          ...original,
+          id: id('cost:reversal'),
+          operationKey: 'seed:cost:reversal',
+          reversesEntryId: original.id,
+          entryType: CareCostEntryType.REVERSAL,
+          quantity: -Number(original.quantity),
+          amount: -Number(original.amount),
+          performedAt: new Date(+new Date(original.performedAt) + 5 * 60000),
+        },
+      ],
+      skipDuplicates: true,
+    });
+  await tx.trainerReview.createMany({
+    data: plans
+      .filter((p) => p.status === PlanStatus.COMPLETED)
+      .map((p, i) => ({
+        id: id(`review:${p.id}`),
+        trainingPlanId: p.id!,
+        trainerUserId: p.trainerUserId,
+        ownerUserId: HORSES.find((h) => h.id === p.horseId)!.ownerId,
+        rating: [5, 4, 5, 3, 4, 2][i % 6],
+        comment: [
+          'Ngựa tiến bộ đều, báo cáo rõ ràng.',
+          'Phối hợp tốt với bác sĩ và nhân viên chăm sóc.',
+          'Cần cập nhật kết quả nhanh hơn sau buổi tập.',
+          'Khối lượng tập cần cân đối thêm thời gian phục hồi.',
+        ][i % 4],
+        createdAt: new Date(+new Date(p.endDate) + DAY_MS),
+      })),
+    skipDuplicates: true,
+  });
+}
+
+async function seedAdmissionsAndPeople(tx: Tx) {
+  // Intake profiles cover each pending and unsuccessful admission stage.
+  const states = [
+    AdmissionStatus.PENDING_VERIFICATION,
+    AdmissionStatus.APPOINTED,
+    AdmissionStatus.INSPECTION_IN_PROGRESS,
+    AdmissionStatus.REJECTED,
+    AdmissionStatus.CANCELLED,
+  ];
+  for (const [i, status] of states.entries()) {
+    const horseId = id(`horse:intake:${i}`),
+      admissionId = id(`admission:intake:${i}`);
+    const chip = `98500000000100${i}`;
+    await tx.horse.createMany({
+      data: [
+        {
+          id: horseId,
+          horseCode: `HR-${String(20 + i).padStart(6, '0')}`,
+          name: ['Ánh Dương', 'Ngân Hà', 'Hắc Long Mã', 'Sơn Tùng', 'Bình Minh'][i],
+          ownerId: userIds.owners[i % 3],
+          microchip: chip,
+          microchipRfid: chip,
+          breed: 'Thoroughbred',
+          color: 'Bay',
+          gender: i % 2 ? 'Mare' : 'Stallion',
+          dob: new Date('2022-04-15T00:00:00+07:00'),
+          weightKg: 460 + i * 7,
+          avatarUrl: `/images/horses/horse-${String(i + 1).padStart(2, '0')}.jpg`,
+          status:
+            status === AdmissionStatus.REJECTED
+              ? HorseStatus.REJECTED
+              : HorseStatus.PENDING_ADMISSION,
+          createdAt: days(-6),
+        },
+      ],
+      skipDuplicates: true,
+    });
+    const inspected =
+      status === AdmissionStatus.INSPECTION_IN_PROGRESS || status === AdmissionStatus.REJECTED;
+    const appointed = status === AdmissionStatus.APPOINTED || inspected;
+    await tx.horseAdmissionRecord.createMany({
+      data: [
+        {
+          id: admissionId,
+          admissionCode: `ADM-2026-${String(20 + i).padStart(3, '0')}`,
+          horseId,
+          ownerId: userIds.owners[i % 3],
+          status,
+          declaredMicrochip: chip,
+          scannedMicrochip: inspected ? chip : null,
+          microchipVerified: inspected,
+          legalVerified: inspected,
+          legalDocumentsNote: inspected
+            ? 'Đã đối chiếu hộ chiếu ngựa và xác nhận quyền sở hữu.'
+            : null,
+          appointmentDate: appointed
+            ? days(status === AdmissionStatus.APPOINTED ? 2 : -1, 14, i * 10)
+            : null,
+          appointmentEndDate: appointed
+            ? days(status === AdmissionStatus.APPOINTED ? 2 : -1, 14, i * 10 + 10)
+            : null,
+          managerUserId: appointed ? userIds.manager : null,
+          veterinarianUserId: inspected ? userIds.vet : null,
+          isHealthEligible: inspected ? status !== AdmissionStatus.REJECTED : null,
+          healthFinalizedAt: inspected ? days(-1, 16) : null,
+          healthCheckNotes: inspected
+            ? status === AdmissionStatus.REJECTED
+              ? 'Chưa đạt điều kiện kiểm dịch; cần hoàn thiện hồ sơ xét nghiệm.'
+              : 'Đủ điều kiện tiếp nhận sau thẩm định.'
+            : null,
+          rejectionReason:
+            status === AdmissionStatus.REJECTED
+              ? 'Chưa hoàn thành yêu cầu kiểm dịch đầu vào'
+              : null,
+          ownerNotes:
+            'Đăng ký chăm sóc lưu chuồng và huấn luyện dài hạn, cập nhật sức khỏe hàng tuần.',
+          createdAt: days(-6),
+        },
+      ],
+      skipDuplicates: true,
+    });
+    const path = [
+      AdmissionStatus.PENDING_VERIFICATION,
+      ...(appointed ? [AdmissionStatus.APPOINTED] : []),
+      ...(inspected ? [AdmissionStatus.INSPECTION_IN_PROGRESS] : []),
+      ...([AdmissionStatus.REJECTED, AdmissionStatus.CANCELLED].includes(status as any)
+        ? [status]
+        : []),
+    ];
+    await tx.admissionHistoryLog.createMany({
+      data: path.map((step, n) => ({
+        id: id(`admission:log:${admissionId}:${n}`),
+        admissionId,
+        fromStatus: n ? path[n - 1] : null,
+        toStatus: step,
+        actorUserId: n ? userIds.manager : userIds.owners[i % 3],
+        actorName: n
+          ? 'Trần Quang Minh'
+          : ['Phạm Gia Bảo', 'Đặng Hoàng Yến', 'Vũ Quốc Hưng'][i % 3],
+        note: n ? 'Cập nhật kết quả xử lý hồ sơ tiếp nhận.' : 'Chủ ngựa nộp hồ sơ đăng ký.',
+        createdAt: days(-6 + n, 10),
+      })),
+      skipDuplicates: true,
+    });
+    if (inspected)
+      await tx.admissionHealthReview.createMany({
+        data: [
+          {
+            id: id(`admission:health:${admissionId}`),
+            admissionId,
+            veterinarianUserId: userIds.vet,
+            veterinarianName: 'BS. Phạm Minh Trí',
+            isHealthEligible: status !== AdmissionStatus.REJECTED,
+            notes:
+              status === AdmissionStatus.REJECTED
+                ? 'Cần bổ sung xét nghiệm kiểm dịch.'
+                : 'Sinh hiệu và khả năng vận động đạt yêu cầu.',
+            createdAt: days(-1, 15),
+          },
+        ],
+        skipDuplicates: true,
+      });
+  }
+  // Approved intake histories explain how the resident herd entered the club.
+  for (const [i, h] of HORSES.entries()) {
+    const admissionId = id(`admission:resident:${h.id}`);
+    await tx.horseAdmissionRecord.createMany({
+      data: [
+        {
+          id: admissionId,
+          admissionCode: `ADM-2025-${String(i + 1).padStart(3, '0')}`,
+          horseId: h.id,
+          ownerId: h.ownerId,
+          status: AdmissionStatus.APPROVED,
+          declaredMicrochip: h.microchip,
+          scannedMicrochip: h.microchip,
+          microchipVerified: true,
+          legalVerified: true,
+          isHealthEligible: true,
+          veterinarianUserId: userIds.vet,
+          approvedByUserId: userIds.manager,
+          healthCheckNotes: 'Đạt điều kiện lưu chuồng; đã bàn giao kết quả khám đầu vào.',
+          healthFinalizedAt: BUSINESS_START,
+          admittedAt: BUSINESS_START,
+          createdAt: new Date(+BUSINESS_START - 3 * DAY_MS),
+        },
+      ],
+      skipDuplicates: true,
+    });
+    const path = [
+      AdmissionStatus.PENDING_VERIFICATION,
+      AdmissionStatus.APPOINTED,
+      AdmissionStatus.INSPECTION_IN_PROGRESS,
+      AdmissionStatus.APPROVED,
+    ];
+    await tx.admissionHistoryLog.createMany({
+      data: path.map((step, n) => ({
+        id: id(`admission:resident:log:${h.id}:${n}`),
+        admissionId,
+        fromStatus: n ? path[n - 1] : null,
+        toStatus: step,
+        actorUserId: userIds.manager,
+        actorName: 'Trần Quang Minh',
+        note: [
+          'Tiếp nhận hồ sơ chủ ngựa',
+          'Hẹn kiểm tra pháp lý và sức khỏe',
+          'Đã đối chiếu vi mạch và kết quả khám',
+          'Phê duyệt tiếp nhận; bàn giao nhân viên chăm sóc',
+        ][n],
+        createdAt: new Date(+BUSINESS_START - (3 - n) * DAY_MS),
+      })),
+      skipDuplicates: true,
+    });
+    await tx.admissionHealthReview.createMany({
+      data: [
+        {
+          id: id(`admission:resident:health:${h.id}`),
+          admissionId,
+          veterinarianUserId: userIds.vet,
+          veterinarianName: 'BS. Phạm Minh Trí',
+          isHealthEligible: true,
+          notes: 'Hoàn thành khám sàng lọc và xác nhận đủ điều kiện nhập trại.',
+          createdAt: BUSINESS_START,
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+  const handovers: Array<[number, HandoverStatus, number]> = [
+    [10, HandoverStatus.PENDING, 36],
+    [13, HandoverStatus.PENDING, 6],
+    [8, HandoverStatus.ACCEPTED, -24],
+    [12, HandoverStatus.REJECTED, -24],
+    [7, HandoverStatus.EXPIRED, -24],
+    [13, HandoverStatus.CANCELLED, -48],
+  ];
+  for (const [n, [i, status, hours]] of handovers.entries()) {
+    const expiresAt = new Date(+now + hours * 3600000),
+      trainer = trainerFor(i);
+    await tx.horseHandoverRequest.createMany({
+      data: [
+        {
+          id: id(`handover:${n}`),
+          horseId: horseIds[i],
+          fromManagerId: userIds.manager,
+          toTrainerId: trainer,
+          status,
+          token: sha256Hex(`seed:handover:${n}`),
+          expiresAt,
+          acceptedAt: status === HandoverStatus.ACCEPTED ? days(-3) : null,
+          planDeadlineAt: status === HandoverStatus.ACCEPTED ? days(-1) : null,
+          notes:
+            status === HandoverStatus.REJECTED
+              ? 'Đề nghị bàn giao lại khi hoàn tất đánh giá thể lực.'
+              : 'Bàn giao hồ sơ sức khỏe, khẩu phần và lịch sử vận động.',
+          createdAt: new Date(+expiresAt - 48 * 3600000),
+        },
+      ],
+      skipDuplicates: true,
+    });
+    if (status === HandoverStatus.PENDING || status === HandoverStatus.REJECTED)
+      await tx.horse.update({
+        where: { id: horseIds[i] },
+        data: {
+          assignedTrainerId: trainer,
+          trainerAssignmentStatus:
+            status === HandoverStatus.PENDING
+              ? TrainerAssignmentStatus.PENDING_ACCEPTANCE
+              : TrainerAssignmentStatus.DECLINED,
+          trainerAssignedAt: new Date(+expiresAt - 48 * 3600000),
+          trainerResponseDeadline: expiresAt,
+          trainerRespondedAt: status === HandoverStatus.REJECTED ? days(-2) : null,
+          trainerDeclineReason:
+            status === HandoverStatus.REJECTED ? 'Chưa đủ kết quả đánh giá thể lực' : null,
+        },
+      });
+  }
+  for (const [i, status] of Object.values(HorseTransferStatus).entries()) {
+    const h = HORSES[[11, 6, 5, 4][i]];
+    await tx.horseTransferRequest.createMany({
+      data: [
+        {
+          id: id(`transfer:${status}`),
+          horseId: h.id,
+          fromOwnerId: status === HorseTransferStatus.APPROVED ? userIds.owners[5] : h.ownerId,
+          toOwnerId: status === HorseTransferStatus.APPROVED ? h.ownerId : userIds.owners[5],
+          requestedById: userIds.manager,
+          reason: 'Điều chỉnh danh mục chiến mã theo thỏa thuận giữa hai chủ ngựa.',
+          status,
+          fromConfirmedAt: status === HorseTransferStatus.APPROVED ? days(-31) : null,
+          toConfirmedAt: status === HorseTransferStatus.APPROVED ? days(-30) : null,
+          decidedAt: status === HorseTransferStatus.PENDING ? null : days(-30),
+          rejectedById: status === HorseTransferStatus.REJECTED ? h.ownerId : null,
+          rejectReason:
+            status === HorseTransferStatus.REJECTED
+              ? 'Hai bên chưa thống nhất điều kiện chuyển nhượng.'
+              : null,
+          createdAt: days(-32),
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+  const complaintReasons = [
+    'Kết quả buổi tập cập nhật chậm; đề nghị đối chiếu nhật ký và giải trình.',
+    'Ca chăm sóc bàn giao thiếu thông tin về lượng thức ăn còn lại.',
+    'Chưa ghi đầy đủ chỉ số hồi phục sau buổi tập theo quy trình.',
+    'Phản ánh thay đổi giờ tập; đã kiểm tra và xác nhận quản lý duyệt trước.',
+  ];
+  for (const [i, status] of Object.values(ComplaintStatus).entries()) {
+    const closed =
+      status === ComplaintStatus.VIOLATION_CONFIRMED || status === ComplaintStatus.DISMISSED;
+    await tx.complaint.createMany({
+      data: [
+        {
+          id: id(`complaint:${status}`),
+          code: `CMP-${dateStrOffset(-6 - i).replaceAll('-', '')}-${String(i + 1).padStart(3, '0')}`,
+          subjectUserId: [userIds.trainer2, userIds.grooms[1], userIds.trainer3, userIds.trainer][
+            i
+          ],
+          reporterId: userIds.manager2,
+          reason: complaintReasons[i],
+          evidenceJson: [],
+          status,
+          reviewedById: i ? userIds.manager : null,
+          reviewedAt: i ? days(-2) : null,
+          responseDueAt: closed ? null : days(3, 17),
+          reviewNote: i ? 'Đã đối chiếu lịch làm việc và trao đổi với nhân viên liên quan.' : null,
+          conclusion: closed
+            ? status === ComplaintStatus.DISMISSED
+              ? 'Không có vi phạm; lịch đã được phê duyệt.'
+              : 'Xác nhận thiếu sót ghi nhận nhật ký sau tập.'
+            : null,
+          regulation:
+            status === ComplaintStatus.VIOLATION_CONFIRMED
+              ? 'Quy trình bàn giao và ghi nhận kết quả huấn luyện'
+              : null,
+          measures:
+            status === ComplaintStatus.VIOLATION_CONFIRMED
+              ? 'Nhắc nhở bằng văn bản, đào tạo lại và theo dõi hai tuần.'
+              : null,
+          createdAt: days(-6 - i),
+        },
+      ],
+      skipDuplicates: true,
+    });
+  }
+  const staff = [
+    userIds.manager,
+    userIds.manager2,
+    userIds.trainer,
+    userIds.trainer2,
+    userIds.trainer3,
+    userIds.trainer4,
+    userIds.vet,
+    userIds.vet2,
+    userIds.vet3,
+    userIds.vet4,
+  ];
+  await tx.staffWorkItem.createMany({
+    data: staff.flatMap((userId, i) =>
+      [-7, -3, 1, 4, 10, 17].map((d) => ({
+        id: id(`staff-work:${userId}:${dateStrOffset(d)}`),
+        userId,
+        title: [
+          'Đối soát hồ sơ và lịch vận hành',
+          'Họp phối hợp huấn luyện – thú y',
+          'Báo cáo tuần cho chủ ngựa',
+        ][Math.abs(d) % 3],
+        startsAt: days(d, 15, (i % 2) * 30),
+        endsAt: days(d, 15, (i % 2) * 30 + 25),
+        location: 'Phòng điều hành CLB',
+        status: d < 0 ? 'DONE' : 'PENDING',
+        notes: 'Kiểm tra các đầu việc tồn đọng và ghi nhận người chịu trách nhiệm.',
+        createdById: userIds.manager,
+        createdAt: days(-10),
+      })),
+    ),
+    skipDuplicates: true,
+  });
+  await tx.incidentReport.createMany({
     data: [
       {
-        id: tIds.may,
-        code: 'CUP-2026-05',
-        name: 'Giải Đua Mùa Xuân Phương Nam 2026',
-        raceDate: days(-175, 15, 0),
-        location: 'Trường đua Phú Thọ Mở Rộng',
-        distanceMeters: 1400,
-        trackType: TrackSurface.TURF,
-        entryFee: 3000000,
-        prizePool: 75000000,
-        trackCondition: 'GOOD',
-        maxFieldSize: 10,
-        minAgeYears: 3,
-        registrationDeadline: days(-182),
-        status: TournamentStatus.COMPLETED,
-      },
-      {
-        id: tIds.junA,
-        code: 'CUP-2026-06A',
-        name: 'Cúp Tốc Độ Thảo Nguyên Hè 2026',
-        raceDate: days(-152, 16, 0),
-        location: 'Trường đua Thiên Mã Đà Lạt',
-        distanceMeters: 1200,
-        trackType: TrackSurface.DIRT,
-        entryFee: 3500000,
-        prizePool: 90000000,
-        trackCondition: 'FAST',
-        maxFieldSize: 12,
-        minAgeYears: 3,
-        registrationDeadline: days(-159),
-        status: TournamentStatus.COMPLETED,
-      },
-      {
-        id: tIds.junB,
-        code: 'CUP-2026-06B',
-        name: 'Giải Vượt Chặng Miền Đông 2026',
-        raceDate: days(-135, 15, 30),
-        location: 'Trường đua Đại Nam Classic',
-        distanceMeters: 2000,
-        trackType: TrackSurface.SYNTHETIC,
-        entryFee: 4000000,
-        prizePool: 110000000,
-        trackCondition: 'STANDARD',
-        maxFieldSize: 12,
-        minAgeYears: 3,
-        registrationDeadline: days(-142),
-        status: TournamentStatus.COMPLETED,
-      },
-      {
-        id: tIds.july,
-        code: 'CUP-2026-07',
-        name: 'Giải Đua Mùa Hè Rực Lửa 2026',
-        raceDate: days(-115, 15, 0),
-        location: 'Trường đua Phú Thọ Mở Rộng',
-        distanceMeters: 1600,
-        trackType: TrackSurface.TURF,
-        entryFee: 3000000,
-        prizePool: 80000000,
-        trackCondition: 'GOOD',
-        maxFieldSize: 10,
-        minAgeYears: 3,
-        registrationDeadline: days(-122),
-        status: TournamentStatus.COMPLETED,
-      },
-      {
-        id: tIds.aug,
-        code: 'CUP-2026-08',
-        name: 'Cúp Quốc Gia 2026',
-        raceDate: days(-85, 15, 30),
-        location: 'Trường đua Thiên Mã Đà Lạt',
-        distanceMeters: 1800,
-        trackType: TrackSurface.DIRT,
-        entryFee: 5000000,
-        prizePool: 120000000,
-        trackCondition: 'FAST',
-        maxFieldSize: 12,
-        minAgeYears: 3,
-        registrationDeadline: days(-92),
-        status: TournamentStatus.COMPLETED,
-      },
-      {
-        id: tIds.sep,
-        code: 'CUP-2026-09',
-        name: 'Cúp Cự Ly Kinh Điển Mùa Thu',
-        raceDate: days(-55, 16, 0),
-        location: 'Trường đua Phú Thọ Mở Rộng',
-        distanceMeters: 2000,
-        trackType: TrackSurface.TURF,
-        entryFee: 4000000,
-        prizePool: 100000000,
-        trackCondition: 'FIRM',
-        maxFieldSize: 10,
-        minAgeYears: 3,
-        registrationDeadline: days(-62),
-        status: TournamentStatus.COMPLETED,
-      },
-      {
-        id: tIds.oct,
-        code: 'CUP-2026-10',
-        name: 'Giải Vô Địch Mùa Thu 2026',
-        raceDate: days(-22, 15, 0),
-        location: 'Trường đua Đại Nam Classic',
-        distanceMeters: 1600,
-        trackType: TrackSurface.SYNTHETIC,
-        entryFee: 5000000,
-        prizePool: 150000000,
-        trackCondition: 'STANDARD',
-        maxFieldSize: 12,
-        minAgeYears: 3,
-        registrationDeadline: days(-29),
-        status: TournamentStatus.COMPLETED,
-      },
-      {
-        id: tIds.closedReg,
-        code: 'CUP-2026-11A',
-        name: 'Giải Nước Rút Chốt Danh Sách T11',
-        raceDate: days(2, 15, 0),
-        location: 'Trường đua Đại Nam Classic',
-        distanceMeters: 1200,
-        trackType: TrackSurface.DIRT,
-        entryFee: 3500000,
-        prizePool: 70000000,
-        trackCondition: 'FAST',
-        maxFieldSize: 8,
-        minAgeYears: 3,
-        registrationDeadline: days(-1),
-        status: TournamentStatus.CLOSED_REGISTRATION,
-      },
-      {
-        id: tIds.closedRegB,
-        code: 'CUP-2026-11C',
-        name: 'Giải Bán Kết Cỏ Xanh T11',
-        raceDate: days(4, 15, 30),
-        location: 'Trường đua Phú Thọ Mở Rộng',
-        distanceMeters: 1800,
-        trackType: TrackSurface.TURF,
-        entryFee: 4000000,
-        prizePool: 115000000,
-        trackCondition: 'GOOD',
-        maxFieldSize: 10,
-        minAgeYears: 3,
-        registrationDeadline: days(-1),
-        status: TournamentStatus.CLOSED_REGISTRATION,
-      },
-      {
-        id: tIds.t20Nov,
-        code: 'CUP-2026-11-20',
-        name: 'Cúp Tri Ân 20/11 - Tôn Vinh Huấn Luyện Viên Thiên Mã 2026',
-        raceDate: new Date('2026-11-20T15:00:00+07:00'),
-        location: 'Trường đua Thiên Mã Đà Lạt',
-        distanceMeters: 1600,
-        trackType: TrackSurface.TURF,
-        entryFee: 5000000,
-        prizePool: 200000000,
-        trackCondition: 'GOOD',
-        maxFieldSize: 12,
-        minAgeYears: 3,
-        registrationDeadline: new Date('2026-11-18T00:00:00+07:00'),
-        status: TournamentStatus.CLOSED_REGISTRATION,
-      },
-      {
-        id: tIds.openReg,
-        code: 'CUP-2026-11B',
-        name: 'Cúp Mùa Đông EquiFlow 2026',
-        raceDate: days(12, 15, 30),
-        location: 'Trường đua Thiên Mã Đà Lạt',
-        distanceMeters: 1600,
-        trackType: TrackSurface.TURF,
-        entryFee: 5000000,
-        prizePool: 180000000,
-        trackCondition: 'GOOD',
-        maxFieldSize: 12,
-        minAgeYears: 3,
-        registrationDeadline: days(8),
-        status: TournamentStatus.OPEN_REGISTRATION,
-      },
-      {
-        id: tIds.openRegB,
-        code: 'CUP-2026-11D',
-        name: 'Giải Tốc Độ Sân Đất Miền Trung',
-        raceDate: new Date('2026-11-29T15:00:00+07:00'),
-        location: 'Trường đua Đại Nam Classic',
-        distanceMeters: 1200,
-        trackType: TrackSurface.DIRT,
-        entryFee: 3000000,
-        prizePool: 95000000,
-        trackCondition: 'FAST',
-        maxFieldSize: 10,
-        minAgeYears: 3,
-        registrationDeadline: new Date('2026-11-25T00:00:00+07:00'),
-        status: TournamentStatus.OPEN_REGISTRATION,
-      },
-      {
-        id: tIds.openRegC,
-        code: 'CUP-2026-11E',
-        name: 'Giải Bền Bỉ Cự Ly Trung Bình T11',
-        raceDate: new Date('2026-11-30T16:00:00+07:00'),
-        location: 'Trường đua Bình Dương',
-        distanceMeters: 2000,
-        trackType: TrackSurface.SYNTHETIC,
-        entryFee: 4500000,
-        prizePool: 135000000,
-        trackCondition: 'STANDARD',
-        maxFieldSize: 12,
-        minAgeYears: 4,
-        registrationDeadline: new Date('2026-11-26T00:00:00+07:00'),
-        status: TournamentStatus.OPEN_REGISTRATION,
-      },
-      {
-        id: tIds.upcoming,
-        code: 'CUP-2026-12',
-        name: 'Cúp Tân Niên Chung Kết Năm 2026',
-        raceDate: days(35, 16, 0),
-        location: 'Trường đua Phú Thọ Mở Rộng',
-        distanceMeters: 2200,
-        trackType: TrackSurface.TURF,
-        entryFee: 6000000,
-        prizePool: 250000000,
-        trackCondition: 'GOOD',
-        maxFieldSize: 12,
-        minAgeYears: 3,
-        registrationDeadline: days(25),
-        status: TournamentStatus.UPCOMING,
-      },
-      {
-        id: tIds.upcomingB,
-        code: 'CUP-2026-12B',
-        name: 'Giải Vô Địch Đêm Ánh Sáng T12',
-        raceDate: new Date('2026-12-27T18:00:00+07:00'),
-        location: 'Trường đua Đại Nam Classic',
-        distanceMeters: 1600,
-        trackType: TrackSurface.SYNTHETIC,
-        entryFee: 5000000,
-        prizePool: 160000000,
-        trackCondition: 'STANDARD',
-        maxFieldSize: 12,
-        minAgeYears: 3,
-        registrationDeadline: new Date('2026-12-20T00:00:00+07:00'),
-        status: TournamentStatus.UPCOMING,
-      },
-      {
-        id: tIds.upcomingC,
-        code: 'CUP-2026-12C',
-        name: 'Cúp Bế Mạc Vạn Lý 2026',
-        raceDate: new Date('2026-12-31T15:00:00+07:00'),
-        location: 'Trường đua Thiên Mã Đà Lạt',
-        distanceMeters: 2400,
-        trackType: TrackSurface.TURF,
-        entryFee: 7000000,
-        prizePool: 300000000,
-        trackCondition: 'GOOD',
-        maxFieldSize: 14,
-        minAgeYears: 4,
-        registrationDeadline: new Date('2026-12-24T00:00:00+07:00'),
-        status: TournamentStatus.UPCOMING,
-      },
-      {
-        id: tIds.cancelled,
-        code: 'CUP-2026-09X',
-        name: 'Giải Giao Hữu Sân Cỏ Phía Nam (Đã hoãn)',
-        raceDate: days(-40, 15, 0),
-        location: 'Trường đua Bình Dương',
-        distanceMeters: 1400,
-        trackType: TrackSurface.TURF,
-        entryFee: 2000000,
-        prizePool: 40000000,
-        maxFieldSize: 8,
-        minAgeYears: 3,
-        registrationDeadline: days(-47),
-        status: TournamentStatus.CANCELLED,
+        id: id('inc:merged'),
+        horseId: horseIds[1],
+        stallZoneId: zoneIds.A,
+        reportedById: userIds.grooms[3],
+        severity: SeverityLevel.MODERATE,
+        symptomsJson: ['LIMPING'],
+        description: 'Đi khập khiễng sau tập; đã chuyển bác sĩ theo dõi trong bệnh án hiện hành.',
+        status: IncidentStatus.MERGED_INTO_TREATMENT,
+        medicalRecordId: id('medrec:open:h2'),
+        reviewedById: userIds.vet,
+        reviewedAt: days(-9, 10),
+        createdAt: days(-10, 9),
+        vetNotes: 'Gộp vào đợt điều trị gân, tránh tạo hai bệnh án đang mở.',
       },
     ],
     skipDuplicates: true,
   });
-
-  // Registrations & 85/10/5 Results
-  const reg = (
-    tId: string,
-    hIdx: number,
-    status: RegistrationStatus,
-    fee: number,
-    off: number,
-  ) => ({
-    id: id(`treg:${tId}:${horseIds[hIdx]}`),
-    tournamentId: tId,
-    horseId: horseIds[hIdx],
-    registeredByTrainerId: userIds.trainer,
-    status,
-    entryFeeBilled: fee,
-    registrationDate: days(off),
-  });
-
-  const registrations: Prisma.TournamentRegistrationCreateManyInput[] = [
-    // T5 Completed
-    reg(tIds.may, 0, RegistrationStatus.CONFIRMED, 3000000, -183),
-    reg(tIds.may, 2, RegistrationStatus.CONFIRMED, 3000000, -183),
-    reg(tIds.may, 4, RegistrationStatus.CONFIRMED, 3000000, -183),
-    // T6A Completed
-    reg(tIds.junA, 3, RegistrationStatus.CONFIRMED, 3500000, -160),
-    reg(tIds.junA, 5, RegistrationStatus.CONFIRMED, 3500000, -160),
-    reg(tIds.junA, 6, RegistrationStatus.CONFIRMED, 3500000, -160),
-    // T6B Completed
-    reg(tIds.junB, 0, RegistrationStatus.CONFIRMED, 4000000, -143),
-    reg(tIds.junB, 4, RegistrationStatus.CONFIRMED, 4000000, -143),
-    reg(tIds.junB, 9, RegistrationStatus.CONFIRMED, 4000000, -143),
-    // T7
-    reg(tIds.july, 0, RegistrationStatus.CONFIRMED, 3000000, -125),
-    reg(tIds.july, 4, RegistrationStatus.CONFIRMED, 3000000, -125),
-    reg(tIds.july, 5, RegistrationStatus.CONFIRMED, 3000000, -125),
-    // T8
-    reg(tIds.aug, 4, RegistrationStatus.CONFIRMED, 5000000, -95),
-    reg(tIds.aug, 0, RegistrationStatus.CONFIRMED, 5000000, -95),
-    reg(tIds.aug, 6, RegistrationStatus.CONFIRMED, 5000000, -95),
-    reg(tIds.aug, 16, RegistrationStatus.DISQUALIFIED, 5000000, -95),
-    // T9
-    reg(tIds.sep, 5, RegistrationStatus.CONFIRMED, 4000000, -65),
-    reg(tIds.sep, 2, RegistrationStatus.CONFIRMED, 4000000, -65),
-    reg(tIds.sep, 9, RegistrationStatus.CONFIRMED, 4000000, -65),
-    // T10
-    reg(tIds.oct, 0, RegistrationStatus.CONFIRMED, 5000000, -32),
-    reg(tIds.oct, 2, RegistrationStatus.CONFIRMED, 5000000, -32),
-    reg(tIds.oct, 3, RegistrationStatus.CONFIRMED, 5000000, -32),
-    reg(tIds.oct, 1, RegistrationStatus.SCRATCHED_MEDICAL, 5000000, -32),
-    // T11 Closed A & B & 20/11 Special Cup
-    reg(tIds.closedReg, 4, RegistrationStatus.CONFIRMED, 3500000, -3),
-    reg(tIds.closedReg, 6, RegistrationStatus.CONFIRMED, 3500000, -3),
-    reg(tIds.closedReg, 11, RegistrationStatus.CONFIRMED, 3500000, -3),
-    reg(tIds.closedRegB, 0, RegistrationStatus.CONFIRMED, 4000000, -2),
-    reg(tIds.closedRegB, 2, RegistrationStatus.CONFIRMED, 4000000, -2),
-    reg(tIds.closedRegB, 5, RegistrationStatus.CONFIRMED, 4000000, -2),
-    reg(tIds.closedRegB, 9, RegistrationStatus.CONFIRMED, 4000000, -2),
-    reg(tIds.t20Nov, 0, RegistrationStatus.CONFIRMED, 5000000, -2),
-    reg(tIds.t20Nov, 2, RegistrationStatus.CONFIRMED, 5000000, -2),
-    reg(tIds.t20Nov, 3, RegistrationStatus.CONFIRMED, 5000000, -1),
-    reg(tIds.t20Nov, 4, RegistrationStatus.CONFIRMED, 5000000, -1),
-    reg(tIds.t20Nov, 5, RegistrationStatus.CONFIRMED, 5000000, 0),
-    // T11 Open B, D, E
-    reg(tIds.openReg, 0, RegistrationStatus.REGISTERED, 5000000, -1),
-    reg(tIds.openReg, 3, RegistrationStatus.REGISTERED, 5000000, -1),
-    reg(tIds.openReg, 5, RegistrationStatus.REGISTERED, 5000000, 0),
-    reg(tIds.openRegB, 2, RegistrationStatus.REGISTERED, 3000000, -1),
-    reg(tIds.openRegB, 4, RegistrationStatus.REGISTERED, 3000000, -1),
-    reg(tIds.openRegB, 6, RegistrationStatus.REGISTERED, 3000000, 0),
-    reg(tIds.openRegC, 9, RegistrationStatus.REGISTERED, 4500000, 0),
-    reg(tIds.openRegC, 11, RegistrationStatus.REGISTERED, 4500000, 0),
-  ];
-  await tx.tournamentRegistration.createMany({ data: registrations, skipDuplicates: true });
-
-  const makeResult = (
-    tId: string,
-    hIdx: number,
-    rank: number,
-    timeSec: number,
-    speed: number,
-    gross: number,
-    entryFee: number,
-    settledAt: Date,
-  ): Prisma.TournamentResultCreateManyInput => {
-    const split = calculatePrizeSplit(gross, entryFee);
-    return {
-      id: id(`tres:${tId}:${horseIds[hIdx]}`),
-      registrationId: id(`treg:${tId}:${horseIds[hIdx]}`),
-      finalRank: rank,
-      finishTimeSeconds: timeSec,
-      avgSpeedKmh: speed,
-      prizeMoneyWon: gross,
-      ...split,
-      settledAt,
-      officialNotes: rank === 1 ? 'Quán quân' : rank === 2 ? 'Á quân' : `Hạng ${rank}`,
-    };
-  };
-
-  const results: Prisma.TournamentResultCreateManyInput[] = [
-    makeResult(tIds.may, 0, 1, 82.6, 61.0, 40000000, 3000000, days(-174)),
-    makeResult(tIds.may, 2, 2, 83.4, 60.4, 25000000, 3000000, days(-174)),
-    makeResult(tIds.may, 4, 3, 84.5, 59.6, 10000000, 3000000, days(-174)),
-    makeResult(tIds.junA, 5, 1, 70.8, 61.0, 50000000, 3500000, days(-151)),
-    makeResult(tIds.junA, 3, 2, 71.5, 60.4, 25000000, 3500000, days(-151)),
-    makeResult(tIds.junA, 6, 3, 72.3, 59.8, 15000000, 3500000, days(-151)),
-    makeResult(tIds.junB, 4, 1, 118.2, 60.9, 60000000, 4000000, days(-134)),
-    makeResult(tIds.junB, 0, 2, 119.1, 60.4, 30000000, 4000000, days(-134)),
-    makeResult(tIds.junB, 9, 3, 120.4, 59.8, 20000000, 4000000, days(-134)),
-    makeResult(tIds.july, 0, 1, 93.4, 61.7, 50000000, 3000000, days(-114)),
-    makeResult(tIds.july, 4, 2, 94.2, 61.1, 20000000, 3000000, days(-114)),
-    makeResult(tIds.july, 5, 3, 95.1, 60.5, 10000000, 3000000, days(-114)),
-    makeResult(tIds.aug, 4, 1, 105.6, 61.4, 70000000, 5000000, days(-84)),
-    makeResult(tIds.aug, 0, 2, 106.2, 61.0, 35000000, 5000000, days(-84)),
-    makeResult(tIds.aug, 6, 3, 107.8, 60.1, 15000000, 5000000, days(-84)),
-    makeResult(tIds.sep, 5, 1, 118.4, 60.8, 60000000, 4000000, days(-54)),
-    makeResult(tIds.sep, 2, 2, 119.5, 60.2, 25000000, 4000000, days(-54)),
-    makeResult(tIds.sep, 9, 3, 120.7, 59.6, 15000000, 4000000, days(-54)),
-    makeResult(tIds.oct, 0, 1, 91.9, 62.7, 90000000, 5000000, days(-21)),
-    makeResult(tIds.oct, 2, 2, 93.0, 61.9, 40000000, 5000000, days(-21)),
-    makeResult(tIds.oct, 3, 3, 94.1, 61.2, 20000000, 5000000, days(-21)),
-  ];
-  await tx.tournamentResult.createMany({ data: results, skipDuplicates: true });
-  // Kết quả đã có từ lần seed trước: cập nhật ghi chú theo hạng và tiền chia theo calculatePrizeSplit.
-  for (const r of results) {
-    await tx.tournamentResult.updateMany({
-      where: { id: r.id },
-      data: {
-        officialNotes: r.officialNotes,
-        grossPrize: r.grossPrize,
-        entryFeeDeducted: r.entryFeeDeducted,
-        trainerCut: r.trainerCut,
-        jockeyCut: r.jockeyCut,
-        netOwnerPayout: r.netOwnerPayout,
-        settledAt: r.settledAt,
-      },
-    });
-  }
-
-  // Only closed demo months are billed; November/December remain scheduling data.
-  const stayStart = new Date('2026-06-01T00:00:00+07:00');
-  const periods = ['2026-07', '2026-08', '2026-09', '2026-10'];
-  const billedHorseIndices = [0, 1, 2, 3, 4, 5, 6, 9, 14, 15, 16];
-  // Remove only deterministic future invoice fixtures from the old seed, never live invoice IDs.
-  const invalidPeriods = ['2026-11', '2026-12'];
-  const removed = await tx.financialInvoice.deleteMany({
-    where: {
-      id: {
-        in: invalidPeriods.flatMap((period) =>
-          billedHorseIndices.map((hIdx) => id(`inv:${period}:${HORSES[hIdx].id}`)),
-        ),
-      },
-      billingPeriod: { in: invalidPeriods },
-    },
-  });
-  if (removed.count)
-    console.log(`[seed] Removed ${removed.count} obsolete future demo invoice fixtures.`);
-  const invoices: Prisma.FinancialInvoiceCreateManyInput[] = [];
-
-  for (const period of periods) {
-    // Include active showcase horses across owners
-    for (const hIdx of billedHorseIndices) {
-      const h = HORSES[hIdx];
-      const allocs =
-        hIdx === 16
-          ? [
-              { startDate: stayStart, endDate: days(-20) },
-              { startDate: days(-20), endDate: null },
-            ]
-          : [{ startDate: stayStart, endDate: null }];
-      const { boardingDays, boardingFee } = calculateBoardingFee(period, allocs);
-
-      let status: InvoiceStatus = InvoiceStatus.PAID;
-      let medicalFee = 0;
-      let trainingFee =
-        h.status === HorseStatus.INJURED || h.status === HorseStatus.ISOLATED
-          ? 0
-          : TRAINING_MONTHLY_RATE;
-      const horseRegistrationIds = new Set(
-        registrations.filter((r) => r.horseId === h.id).map((r) => r.id),
-      );
-      const prizeCredit = results
-        .filter(
-          (r) =>
-            horseRegistrationIds.has(r.registrationId) &&
-            r.settledAt &&
-            monthOf(new Date(r.settledAt)) === period,
-        )
-        .reduce((sum, r) => sum + Number(r.netOwnerPayout), 0);
-
-      if (hIdx === 1 && (period === '2026-09' || period === '2026-10')) {
-        status = InvoiceStatus.OVERDUE;
-        medicalFee = MEDICAL_MONTHLY_PACKAGE_FEE;
-      } else if (
-        hIdx === 16 &&
-        (period === '2026-08' || period === '2026-09' || period === '2026-10')
-      ) {
-        status = InvoiceStatus.OVERDUE;
-        medicalFee = MEDICAL_MONTHLY_PACKAGE_FEE;
-      } else if (period === '2026-10' && hIdx === 14) {
-        status = InvoiceStatus.DRAFT;
-      } else if (period === '2026-10' && hIdx === 15) {
-        status = InvoiceStatus.CANCELLED;
-        trainingFee = 0;
-      } else if (period === '2026-10' && hIdx === 9) {
-        status = InvoiceStatus.SENT;
-      }
-
-      const netAmount = boardingFee.toNumber() + medicalFee + trainingFee - prizeCredit;
-      invoices.push({
-        id: id(`inv:${period}:${h.id}`),
-        horseId: h.id,
-        ownerId: h.ownerId,
-        billingPeriod: period,
-        boardingFee,
-        boardingDays,
-        boardingMonthlyRate: BOARDING_MONTHLY_RATE,
-        dueAt:
-          status === InvoiceStatus.DRAFT || status === InvoiceStatus.CANCELLED
-            ? null
-            : status === InvoiceStatus.SENT
-              ? days(7, 17)
-              : new Date(boardingMonth(period).end.getTime() + 7 * DAY_MS),
-        medicalFee,
-        trainingFee,
-        prizeCredit,
-        netAmount,
-        status,
-        createdAt: boardingMonth(period).end,
-      });
-    }
-  }
-  await tx.financialInvoice.createMany({ data: invoices, skipDuplicates: true });
-  // Hóa đơn mẫu đã có từ lần seed trước: tính lại các khoản (nhất là tiền thưởng giải đã chốt trong tháng), giữ trạng thái.
-  for (const inv of invoices) {
-    await tx.financialInvoice.updateMany({
-      where: { id: inv.id },
-      data: {
-        boardingFee: inv.boardingFee,
-        boardingDays: inv.boardingDays,
-        medicalFee: inv.medicalFee,
-        trainingFee: inv.trainingFee,
-        prizeCredit: inv.prizeCredit,
-        netAmount: inv.netAmount,
-      },
-    });
-  }
-  // Ngựa có hóa đơn Quá hạn còn số dư dương thì bị lưu giữ nợ, giống FinancialService.applyDebtImpoundToHorses.
-  const overdueHorseIds = [
-    ...new Set(
-      invoices
-        .filter((i) => i.status === InvoiceStatus.OVERDUE && Number(i.netAmount) > 0)
-        .map((i) => i.horseId),
-    ),
-  ];
-  await tx.horse.updateMany({
-    where: { id: { in: overdueHorseIds }, isDebtImpounded: false },
-    data: {
-      isDebtImpounded: true,
-      debtImpoundedAt: days(-20),
-      debtImpoundReason: 'Overdue boarding / stabling fees.',
-    },
+  const invoices = await tx.financialInvoice.findMany();
+  await tx.businessMailing.createMany({
+    data: invoices
+      .filter((inv) => inv.status === InvoiceStatus.PAID)
+      .slice(0, 24)
+      .map((inv, i) => ({
+        id: id(`mail:invoice:${inv.id}`),
+        eventCode: 'INVOICE_PAID',
+        refId: inv.id,
+        userId: inv.ownerId,
+        toEmail: `owner${userIds.owners.indexOf(inv.ownerId) === 0 ? '' : userIds.owners.indexOf(inv.ownerId) + 1}@gmail.com`,
+        subject: `Xác nhận đối soát hóa đơn ${inv.billingPeriod}`,
+        bodyText: `CLB đã đối soát hóa đơn kỳ ${inv.billingPeriod}. Vui lòng xem chi tiết tại trang hóa đơn.`,
+        dedupeKey: `seed:mail:${inv.id}`,
+        status: i === 0 ? MailingStatus.FAILED : MailingStatus.SENT,
+        accepted: i !== 0,
+        attempts: 1,
+        lastError: i === 0 ? 'Mẫu lịch sử lỗi gửi thư; chưa gửi lại.' : null,
+        createdAt: new Date(+inv.createdAt + 3 * DAY_MS),
+      })),
+    skipDuplicates: true,
   });
 }
 
 async function seedActivityAndSupport(tx: Tx) {
-  // Notifications covering all 7 NotificationCategory values
-  await tx.notification.createMany({
-    data: [
-      {
-        id: id('notif:account'),
-        userId: userIds.manager,
-        type: 'ACCOUNT_PENDING',
-        category: NotificationCategory.ACCOUNT,
-        title: 'Hồ sơ tài khoản mới chờ duyệt',
-        message: 'Trương Quốc Khánh (GROOM) vừa xác thực email và đang chờ duyệt.',
-        link: '/accounts?highlight=REQ-GROOM-001',
-        params: { requestCode: 'REQ-GROOM-001' },
-        dedupeKey: `notif:account:${yymm()}`,
-      },
-      {
-        id: id('notif:horse'),
-        userId: userIds.owners[0],
-        type: 'HORSE_STATUS_UPDATE',
-        category: NotificationCategory.HORSE,
-        title: 'Cập nhật lịch đua Bạch Long Mã',
-        message: 'Bạch Long Mã đã được đăng ký tham gia Cúp Mùa Đông EquiFlow 2026.',
-        link: '/horses?highlight=HR-000001',
-        params: { horseCode: 'HR-000001' },
-        dedupeKey: 'notif:horse:h1-cup',
-        readAt: days(-1),
-      },
-      {
-        id: id('notif:training'),
-        userId: userIds.vet,
-        type: 'ABNORMAL_WORKOUT_SIGN',
-        category: NotificationCategory.TRAINING,
-        title: 'Cảnh báo nhịp tim hồi phục Hồng Kỳ',
-        message: 'Hồng Kỳ ghi nhận nhịp tim 10 phút sau tập ở mức 132 bpm.',
-        link: '/alerts?highlight=HR-000007',
-        params: { horseCode: 'HR-000007' },
-        dedupeKey: 'notif:training:h7-hr',
-      },
-      {
-        id: id('notif:lock'),
-        userId: userIds.trainer,
-        type: 'MEDICAL_LOCK_BLOCKED_SESSION',
-        category: NotificationCategory.LOCK,
-        title: 'Buổi tập tốc độ Xích Thố bị tự động chặn',
-        message: 'Buổi BREEZE bị chặn do chiến mã đang áp dụng Khóa Y Tế MLK-2026-002.',
-        link: '/locks?highlight=MLK-2026-002',
-        params: { lockCode: 'MLK-2026-002' },
-        dedupeKey: 'notif:lock:h2-breeze',
-      },
-      {
-        id: id('notif:medical'),
-        userId: userIds.vet2,
-        type: 'PREVENTIVE_OVERDUE',
-        category: NotificationCategory.MEDICAL,
-        title: 'Nhắc lịch gọt móng định kỳ quá hạn',
-        message: 'Chiến mã Bạch Long Mã cần được kiểm tra gọt móng trong tuần này.',
-        link: '/vaccine?highlight=HR-000001',
-        params: { horseCode: 'HR-000001' },
-        dedupeKey: 'notif:medical:farrier-due',
-      },
-      {
-        id: id('notif:nutrition'),
-        userId: userIds.vet,
-        type: 'NUTRITION_PENDING',
-        category: NotificationCategory.NUTRITION,
-        title: 'Thực đơn mới chờ bác sĩ phê duyệt',
-        message: 'Thực đơn NP-2026-101 cho Kim Long đang chờ duyệt.',
-        link: '/rations?highlight=NP-2026-101',
-        params: { planCode: 'NP-2026-101' },
-        dedupeKey: 'notif:nutrition:np-101',
-      },
-      {
-        id: id('notif:system'),
-        userId: userIds.owners[3],
-        type: 'INVOICE_OVERDUE',
-        category: NotificationCategory.SYSTEM,
-        title: 'Thông báo hóa đơn lưu chuồng quá hạn',
-        message: 'Tài khoản có hóa đơn quá hạn cho Dạ Nguyệt từ kỳ 2026-08 – 2026-10.',
-        link: '/billing?highlight=INV-2026-004',
-        params: { invoiceNumber: 'INV-2026-004' },
-        dedupeKey: 'notif:system:debt-owner4',
-      },
-      {
-        id: id('notif:cup20nov'),
-        userId: userIds.owners[0],
-        type: 'HORSE_STATUS_UPDATE',
-        category: NotificationCategory.HORSE,
-        title: 'Công bố danh sách Cúp Tri Ân 20/11',
-        message:
-          'Bạch Long Mã đã được xác nhận tham gia thi đấu Cúp Tri Ân 20/11 tại SVĐ Thiên Mã.',
-        link: '/racing',
-        params: { tournamentCode: 'CUP-2026-11-20' },
-        dedupeKey: 'notif:horse:cup20nov',
-      },
-    ],
-    skipDuplicates: true,
-  });
-
-  // AuditLogs
-  await tx.auditLog.createMany({
-    data: [
-      {
-        id: id('audit:1'),
-        userId: userIds.vet,
-        action: 'MEDICAL_LOCK_APPLIED',
-        entityName: 'Horse',
-        entityId: horseIds[1],
-        newValuesJson: JSON.stringify({ lockCode: 'MLK-2026-002', status: 'UNDER_OBSERVATION' }),
-        timestamp: days(-10, 9, 15),
-      },
-      {
-        id: id('audit:2'),
-        userId: userIds.manager,
-        action: 'DEBT_IMPOUND_APPLIED',
-        entityName: 'Horse',
-        entityId: horseIds[16],
-        newValuesJson: JSON.stringify({
-          stall: 'STALL-H01',
-          billingPeriods: ['2026-08', '2026-09', '2026-10'],
-        }),
-        timestamp: days(-20, 14, 0),
-      },
-      {
-        id: id('audit:3'),
-        userId: userIds.manager,
-        action: 'HORSE_RETIRED_STALL_RELEASED',
-        entityName: 'StallAllocation',
-        entityId: horseIds[17],
-        newValuesJson: JSON.stringify({ horseName: 'Lão Tướng', releasedStall: 'STALL-B08' }),
-        timestamp: days(-18, 10, 0),
-      },
-      {
-        id: id('audit:4'),
-        userId: userIds.trainer,
-        action: 'TOURNAMENT_SETTLED',
-        entityName: 'Tournament',
-        entityId: id('tour:2026-10'),
-        newValuesJson: JSON.stringify({
-          code: 'CUP-2026-10',
-          winner: 'Bạch Long Mã',
-          grossPrize: 90000000,
-        }),
-        timestamp: days(-21, 17, 0),
-      },
-      {
-        id: id('audit:5'),
-        userId: userIds.manager,
-        action: 'TOURNAMENT_ROSTER_FINALIZED',
-        entityName: 'Tournament',
-        entityId: id('tour:2026-11-20'),
-        newValuesJson: JSON.stringify({
-          code: 'CUP-2026-11-20',
-          title: 'Cúp Tri Ân 20/11 - Tôn Vinh Huấn Luyện Viên Thiên Mã 2026',
-          confirmedRunners: 5,
-        }),
-        timestamp: days(-2, 18, 0),
-      },
-    ],
-    skipDuplicates: true,
-  });
-
-  // Keep Counter service sequences ahead of seeded codes so live creates never collide
-  const counterTargets: Array<[string, number]> = [
-    ['horse_code', 30],
-    ['training_plan', 30],
-    ['request_code', 20],
-    ['forbidden_ref', 10],
+  const categories = Object.values(NotificationCategory);
+  const users = [
+    userIds.manager,
+    userIds.trainer,
+    userIds.vet,
+    ...userIds.grooms,
+    ...userIds.owners,
   ];
-  for (const [name, minValue] of counterTargets) {
+  await tx.notification.createMany({
+    data: users.flatMap((userId, i) =>
+      categories.map((category, n) => ({
+        id: id(`notif:${userId}:${category}`),
+        userId,
+        category,
+        type: `CLUB_${category}_UPDATE`,
+        title: [
+          'Cập nhật hồ sơ tài khoản',
+          'Cập nhật hồ sơ chiến mã',
+          'Báo cáo huấn luyện',
+          'Thông tin khóa y tế',
+          'Theo dõi sức khỏe định kỳ',
+          'Cập nhật thực đơn',
+          'Thông báo vận hành CLB',
+        ][n],
+        message:
+          'Có cập nhật thuộc phạm vi công việc của bạn. Vui lòng kiểm tra danh sách để xử lý và bàn giao.',
+        link: userIds.owners.includes(userId) ? '/horses' : '/notifications',
+        dedupeKey: `seed:notif:${userId}:${category}`,
+        readAt: (i + n) % 3 ? days(-1, 16) : null,
+        createdAt: days(-3 - n, 10),
+      })),
+    ),
+    skipDuplicates: true,
+  });
+  const plans = await tx.trainingPlan.findMany();
+  await tx.auditLog.createMany({
+    data: plans
+      .filter((p) => p.status === PlanStatus.COMPLETED)
+      .map((p) => ({
+        id: id(`audit:plan:${p.id}`),
+        userId: p.trainerUserId,
+        action: 'TRAINING_PLAN_COMPLETED',
+        entityName: 'TrainingPlan',
+        entityId: p.id,
+        timestamp: p.endDate,
+        newValuesJson: JSON.stringify({
+          planCode: p.planCode,
+          status: p.status,
+          summary: p.completionSummary,
+        }),
+      })),
+    skipDuplicates: true,
+  });
+  const invoices = await tx.financialInvoice.findMany();
+  await tx.auditLog.createMany({
+    data: invoices.map((inv) => ({
+      id: id(`audit:invoice:${inv.id}`),
+      userId: userIds.manager,
+      action: `INVOICE_${inv.status}`,
+      entityName: 'FinancialInvoice',
+      entityId: inv.id,
+      timestamp: inv.paidAt ?? inv.createdAt,
+      newValuesJson: JSON.stringify({
+        billingPeriod: inv.billingPeriod,
+        status: inv.status,
+        netAmount: Number(inv.netAmount),
+      }),
+    })),
+    skipDuplicates: true,
+  });
+  for (const [name, minValue] of [
+    ['horse_code', 100],
+    ['training_plan', 500],
+    ['request_code', 100],
+    ['forbidden_ref', 100],
+  ] as const) {
     const existing = await tx.counter.findUnique({ where: { name } });
-    if (!existing) {
-      await tx.counter.create({ data: { name, value: minValue } });
-    } else if (existing.value < minValue) {
+    if (!existing) await tx.counter.create({ data: { name, value: minValue } });
+    else if (existing.value < minValue)
       await tx.counter.update({ where: { name }, data: { value: minValue } });
-    }
   }
+}
+
+export async function seedFixtures(tx: Tx, passwordHash: string, reset = false) {
+  if (reset) await clearFixtures(tx);
+  await seedClub(tx, passwordHash);
+  await seedMedical(tx);
+  await seedTraining(tx);
+  await seedStableCare(tx);
+  await seedOperatingHistory(tx);
+  await seedRacingAndInvoices(tx);
+  await seedAdmissionsAndPeople(tx);
+  await seedActivityAndSupport(tx);
 }
 
 async function main() {
@@ -3805,18 +3891,9 @@ async function main() {
     const password = await bcrypt.hash('EquiFlow@2026', 10);
     await prisma.$transaction(
       async (tx) => {
-        if (RESET_FLAG) {
-          console.log('[seed] --reset flag detected: clearing existing fixture data...');
-          await clearFixtures(tx);
-        }
-        await seedClub(tx, password);
-        await seedMedical(tx);
-        await seedTraining(tx);
-        await seedStableCare(tx);
-        await seedRacingAndInvoices(tx);
-        await seedActivityAndSupport(tx);
+        await seedFixtures(tx, password, RESET_FLAG);
       },
-      { timeout: 60000 },
+      { timeout: 300000, maxWait: 10000 },
     );
 
     const modelCount = Prisma.dmmf.datamodel.models.length;
@@ -3824,14 +3901,15 @@ async function main() {
       `[seed] Canonical EquiFlow seed completed (${RESET_FLAG ? 'reset+seed' : 'idempotent'}) across all ${modelCount} Prisma models.`,
     );
     console.log(
-      '[seed] Demo coverage: July–December 2026; invoices: July–October 2026 only. 19 horses, 48 stalls, 10 active grooms, 4 vets, 4 trainers, 2 managers, 6 owners.',
+      '[seed] Business history: December 2025 onward; invoices: December 2025–October 2026 only. 24 horses, 48 stalls, 10 active grooms, 4 vets, 4 trainers, 2 managers, 6 owners.',
     );
   } finally {
     await prisma.$disconnect();
   }
 }
 
-main().catch((err) => {
-  console.error('[seed] Failed:', err);
-  process.exit(1);
-});
+if (require.main === module)
+  main().catch((err) => {
+    console.error('[seed] Failed:', err);
+    process.exit(1);
+  });
