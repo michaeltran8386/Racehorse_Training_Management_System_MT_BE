@@ -304,8 +304,32 @@ export function validatePhases(
             : `Giai đoạn rèn luyện "${p.name}" tối thiểu 7 ngày (1 tuần).`,
       );
     }
+    const maxDays = maxDaysForPhase(p.type);
+    if (maxDays && pDays > maxDays) {
+      return bad(
+        `Giai đoạn "${p.name}" (${p.type}) dài ${pDays} ngày, vượt quá trần sinh lý an toàn tối đa ${maxDays} ngày (${Math.round(maxDays / 7)} tuần).`,
+      );
+    }
   }
   return { phases };
+}
+
+/** Khung trần sinh lý an toàn tối đa cho từng loại giai đoạn huấn luyện (Equine Exercise Physiology). */
+export function maxDaysForPhase(type?: string | null): number {
+  switch (type) {
+    case 'BASE':
+      return 56; // 8 tuần
+    case 'BUILD':
+      return 42; // 6 tuần
+    case 'SPEED':
+      return 28; // 4 tuần
+    case 'PRE_RACE':
+      return 14; // 2 tuần
+    case 'RECOVERY':
+      return 21; // 3 tuần
+    default:
+      return 56;
+  }
 }
 
 // ---------------------------------------------------------------- Điểm tải (SC-2.01, SC-2.07)
