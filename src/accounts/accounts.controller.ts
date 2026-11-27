@@ -13,6 +13,8 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserRole } from '../common/enums/role.enum';
 import { toPublicUser } from '../users/public-user';
 import { AccountAction, AccountsService } from './accounts.service';
 import {
@@ -27,12 +29,12 @@ const actorOf = (user: CurrentUserPayload) => ({ id: user.userId, name: user.ful
 
 @ApiTags('Authentication')
 @ApiBearerAuth('JWT-auth')
-@RequirePermission('manageAccounts')
 @Controller('accounts')
 export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
 
   @Get()
+  @RequirePermission('manageAccounts')
   @ApiOperation({ summary: 'Danh sách mọi tài khoản' })
   async list() {
     const users = await this.accounts.list();
@@ -40,12 +42,14 @@ export class AccountsController {
   }
 
   @Get('barn-staffing')
+  @Roles(UserRole.CLUB_MANAGER, UserRole.HEAD_TRAINER, UserRole.VETERINARIAN, UserRole.GROOM)
   @ApiOperation({ summary: 'Lấy danh sách định mức nhân sự HLV của tất cả các Barn' })
   async getBarnStaffing() {
     return { barns: await this.accounts.getBarnStaffing() };
   }
 
   @Get('orphaned-horses')
+  @RequirePermission('manageAccounts')
   @ApiOperation({
     summary: 'Lấy danh sách các chiến mã đang ở trong ô chuồng nhưng chưa có HLV phụ trách',
   })
@@ -54,6 +58,7 @@ export class AccountsController {
   }
 
   @Post()
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mời nhân viên (tạo tài khoản INVITED + gửi mã mời qua email)' })
   async invite(@CurrentUser() user: CurrentUserPayload, @Body() dto: InviteAccountDto) {
@@ -61,6 +66,7 @@ export class AccountsController {
   }
 
   @Patch(':id/assigned-barn')
+  @RequirePermission('manageAccounts')
   @ApiOperation({ summary: 'Điều chuyển Khu chuồng cho Huấn luyện viên trưởng' })
   async assignTrainerBarn(
     @CurrentUser() user: CurrentUserPayload,
@@ -71,6 +77,7 @@ export class AccountsController {
   }
 
   @Post(':id/assign-barn')
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Điều chuyển Khu chuồng cho Huấn luyện viên trưởng (POST alias)' })
   async assignTrainerBarnPost(
@@ -82,12 +89,14 @@ export class AccountsController {
   }
 
   @Get(':id')
+  @RequirePermission('manageAccounts')
   @ApiOperation({ summary: 'Chi tiết một tài khoản' })
   async detail(@Param('id') id: string) {
     return { account: toPublicUser(await this.accounts.find(id)) };
   }
 
   @Put(':id')
+  @RequirePermission('manageAccounts')
   @ApiOperation({ summary: 'Sửa họ tên, số điện thoại' })
   async update(
     @CurrentUser() user: CurrentUserPayload,
@@ -98,6 +107,7 @@ export class AccountsController {
   }
 
   @Delete(':id')
+  @RequirePermission('manageAccounts')
   @ApiOperation({
     summary: 'Xóa hẳn tài khoản chưa từng hoạt động (INVITED, PENDING_EMAIL, REJECTED)',
   })
@@ -106,6 +116,7 @@ export class AccountsController {
   }
 
   @Post(':id/approve')
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Duyệt yêu cầu đăng ký' })
   approve(@CurrentUser() u: CurrentUserPayload, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -113,6 +124,7 @@ export class AccountsController {
   }
 
   @Post(':id/decline')
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Từ chối yêu cầu đăng ký (kèm lý do)' })
   decline(@CurrentUser() u: CurrentUserPayload, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -120,6 +132,7 @@ export class AccountsController {
   }
 
   @Post(':id/lock')
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Khóa tài khoản đang hoạt động' })
   lock(@CurrentUser() u: CurrentUserPayload, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -127,6 +140,7 @@ export class AccountsController {
   }
 
   @Post(':id/unlock')
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mở khóa tài khoản' })
   unlock(@CurrentUser() u: CurrentUserPayload, @Param('id') id: string, @Body() dto: ReasonDto) {
@@ -134,6 +148,7 @@ export class AccountsController {
   }
 
   @Post(':id/deactivate')
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Vô hiệu hóa tài khoản (giữ lịch sử)' })
   deactivate(
@@ -145,6 +160,7 @@ export class AccountsController {
   }
 
   @Post(':id/reactivate')
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Kích hoạt lại tài khoản đã vô hiệu hóa' })
   reactivate(
@@ -156,6 +172,7 @@ export class AccountsController {
   }
 
   @Post(':id/resend-invite')
+  @RequirePermission('manageAccounts')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Gửi lại email mời (mã mới)' })
   async resendInvite(@CurrentUser() user: CurrentUserPayload, @Param('id') id: string) {
@@ -164,12 +181,14 @@ export class AccountsController {
   }
 
   @Get(':id/active-assignments')
+  @RequirePermission('manageAccounts')
   @ApiOperation({ summary: 'Kiểm tra các công việc/ô chuồng/ca trực nhân viên đang giữ' })
   getActiveAssignments(@Param('id') id: string) {
     return this.accounts.getActiveAssignments(id);
   }
 
   @Put(':id/permissions')
+  @RequirePermission('manageAccounts')
   @ApiOperation({ summary: 'Bật/tắt công tắc quyền của một tài khoản' })
   async updatePermissions(
     @CurrentUser() user: CurrentUserPayload,
