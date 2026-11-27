@@ -820,7 +820,10 @@ export class AccountsService {
       }
 
       const handoverTrainer = await this.find(dto.handoverTrainerId);
-      if (handoverTrainer.role !== Role.HEAD_TRAINER || handoverTrainer.status !== UserStatus.ACTIVE) {
+      if (
+        handoverTrainer.role !== Role.HEAD_TRAINER ||
+        handoverTrainer.status !== UserStatus.ACTIVE
+      ) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'INVALID_HANDOVER_RECIPIENT',
