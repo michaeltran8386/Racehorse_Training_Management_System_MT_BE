@@ -155,13 +155,14 @@ Mỗi giáo án được chia thành từ 1 đến 12 giai đoạn kế tiếp n
   - Đối với giáo án ngắn (< 14 ngày): Mỗi giai đoạn tối thiểu 3 ngày.
   - Đối với giáo án thông thường (≥ 14 ngày): Giai đoạn Chuẩn bị thi đấu và Phục hồi tối thiểu 3 ngày; các giai đoạn rèn luyện nền tảng/thể lực/tốc độ tối thiểu **7 ngày (1 tuần)**.
 - **Khung trần sinh lý an toàn tối đa từng giai đoạn (`Physiological Ceiling`)**:
-  - Nhằm bảo vệ hệ gân cơ và chống chai lì phong độ, mỗi loại giai đoạn bị khống chế trần tối đa theo khoa học huấn luyện ngựa đua:
+  - Nhằm bảo vệ hệ gân cơ và chống chai lì phong độ, mỗi loại giai đoạn bị khống chế trần tối đa theo khoa học huấn luyện ngựa đua quốc tế (*Equine Exercise Physiology*):
     + **Nền tảng thể lực (`BASE`)**: Tối đa **56 ngày (8 tuần)** (tránh chai lì hiếu khí và ì phản xạ).
     + **Phát triển thể lực (`BUILD`)**: Tối đa **42 ngày (6 tuần)** (tránh viêm bao hoạt dịch khớp).
-    + **Rèn luyện tốc độ (`SPEED`)**: Tối đa **28 ngày (4 tuần)** (bảo vệ gân gót gập SDFT và xương mè).
-    + **Chuẩn bị thi đấu (`PRE_RACE`)**: Tối đa **14 ngày (2 tuần)** (điểm rơi phong độ tối ưu).
+    + **Rèn luyện tốc độ (`SPEED`)**: Tối đa **28 ngày (4 tuần)** (bảo vệ gân gót gập SDFT và xương mè trước áp lực nước rút).
+    + **Chuẩn bị thi đấu (`PRE_RACE`)**: Tối đa **14 ngày (2 tuần)** (điểm rơi phong độ tối ưu, xả cơ tích lũy glycogen).
     + **Phục hồi thể trạng (`RECOVERY`)**: Tối đa **21 ngày (3 tuần)** (tránh teo cơ do thả lỏng quá lâu).
-  - Khi người dùng điều chỉnh ngày, giao diện tự động khóa cứng (clamping) không cho chọn vượt trần sinh lý. Nếu gửi payload vi phạm, Backend chặn với mã lỗi `INVALID_PHASE`.
+  - Khi người dùng điều chỉnh ngày, giao diện tự động khóa cứng (*clamping*) không cho chọn vượt trần sinh lý. Nếu gửi payload vi phạm, Backend chặn với mã lỗi `INVALID_PHASE`.
+  - Đối với giáo án siêu dài (> 140 ngày), hệ thống yêu cầu cấu hình tối thiểu nhiều giai đoạn để đảm bảo tổng thời lượng không vượt quá tổng trần sinh lý của các giai đoạn cộng lại.
 - **Ràng buộc Chống đè lấn Thời gian**: Ngày bắt đầu của giai đoạn kế tiếp phải lớn hơn ngày kết thúc của giai đoạn liền trước.
   - **Trường hợp Hợp lệ**: Các giai đoạn nối tiếp liên tục, hệ thống chuyển sang bước lên lịch tập con.
   - **Trường hợp Vi phạm (Thời gian bị trùng)**: Hệ thống chặn lưu cấu trúc, báo lỗi trực tiếp trên giao diện: *"Giai đoạn bị trùng thời gian với giai đoạn [Tên giai đoạn liền trước]."*
