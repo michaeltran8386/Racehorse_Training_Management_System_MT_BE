@@ -1467,9 +1467,11 @@ async function main() {
   if (activePlanA) {
     // Ca 1: 07:00 - 07:45 (Sân Cỏ - TURF) cho Phong Lôi
     const workout1Time = new Date(`${todayStr}T07:00:00+07:00`);
+    const planAPhaseId = (activePlanA.phases as any[])?.[0]?.id ?? `${activePlanA.planCode}-PH1`;
     await prisma.workoutSession.create({
       data: {
         trainingPlanId: activePlanA.id,
+        phaseId: planAPhaseId,
         horseId: activePlanA.horseId,
         assignedStaffUserId: trainerA.id,
         scheduledDate: workout1Time,
@@ -1490,10 +1492,12 @@ async function main() {
     // Ca 2: 08:30 - 09:15 (Sân Cát - DIRT) cho Tuyết Ảnh -> Cách Ca 1 kết thúc (07:45) đúng 45 phút đệm an toàn
     const horseA2 = groom1Horses[1]?.horse ?? activePlanA.horse;
     const planA2 = (await prisma.trainingPlan.findFirst({ where: { horseId: horseA2.id, status: PlanStatus.ACTIVE } })) ?? activePlanA;
+    const planA2PhaseId = (planA2.phases as any[])?.[0]?.id ?? `${planA2.planCode}-PH1`;
     const workout2Time = new Date(`${todayStr}T08:30:00+07:00`);
     await prisma.workoutSession.create({
       data: {
         trainingPlanId: planA2.id,
+        phaseId: planA2PhaseId,
         horseId: horseA2.id,
         assignedStaffUserId: trainerA.id,
         scheduledDate: workout2Time,
@@ -1510,10 +1514,12 @@ async function main() {
     // Ca 3: 15:30 - 16:15 (Sân Cát - DIRT) cho Lôi Chấn
     const horseA3 = groom1Horses[2]?.horse ?? activePlanA.horse;
     const planA3 = (await prisma.trainingPlan.findFirst({ where: { horseId: horseA3.id, status: PlanStatus.ACTIVE } })) ?? activePlanA;
+    const planA3PhaseId = (planA3.phases as any[])?.[0]?.id ?? `${planA3.planCode}-PH1`;
     const workout3Time = new Date(`${todayStr}T15:30:00+07:00`);
     await prisma.workoutSession.create({
       data: {
         trainingPlanId: planA3.id,
+        phaseId: planA3PhaseId,
         horseId: horseA3.id,
         assignedStaffUserId: trainerA.id,
         scheduledDate: workout3Time,
@@ -1530,10 +1536,12 @@ async function main() {
     // Ca 4: 17:00 - 17:45 (Sân Cỏ - TURF) cho Dạ Nguyệt -> Cách Ca 3 kết thúc (16:15) đúng 45 phút đệm an toàn
     const horseA4 = groom1Horses[3]?.horse ?? activePlanA.horse;
     const planA4 = (await prisma.trainingPlan.findFirst({ where: { horseId: horseA4.id, status: PlanStatus.ACTIVE } })) ?? activePlanA;
+    const planA4PhaseId = (planA4.phases as any[])?.[0]?.id ?? `${planA4.planCode}-PH1`;
     const workout4Time = new Date(`${todayStr}T17:00:00+07:00`);
     await prisma.workoutSession.create({
       data: {
         trainingPlanId: planA4.id,
+        phaseId: planA4PhaseId,
         horseId: horseA4.id,
         assignedStaffUserId: trainerA.id,
         scheduledDate: workout4Time,
@@ -1557,6 +1565,7 @@ async function main() {
       await prisma.workoutSession.create({
         data: {
           trainingPlanId: planA2.id,
+          phaseId: planA2PhaseId,
           horseId: horseA2.id,
           assignedStaffUserId: trainerA.id,
           scheduledDate: new Date(`${dStr}T08:00:00+07:00`),
@@ -1574,6 +1583,7 @@ async function main() {
       await prisma.workoutSession.create({
         data: {
           trainingPlanId: planA3.id,
+          phaseId: planA3PhaseId,
           horseId: horseA3.id,
           assignedStaffUserId: trainerA.id,
           scheduledDate: new Date(`${dStr}T15:30:00+07:00`),
@@ -1594,10 +1604,12 @@ async function main() {
       include: { horse: true },
     });
     if (activePlanQuan) {
+      const planQuanPhaseId = (activePlanQuan.phases as any[])?.[0]?.id ?? `${activePlanQuan.planCode}-PH1`;
       for (const dStr of testDates) {
         await prisma.workoutSession.create({
           data: {
             trainingPlanId: activePlanQuan.id,
+            phaseId: planQuanPhaseId,
             horseId: activePlanQuan.horseId,
             assignedStaffUserId: trainerQuan.id,
             scheduledDate: new Date(`${dStr}T08:30:00+07:00`),
