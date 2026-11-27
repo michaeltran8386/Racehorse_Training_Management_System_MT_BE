@@ -18,6 +18,21 @@ describe('demo-clock', () => {
     expect(parseDemoDate('2026-12-15')).toBeNull();
   });
 
+  it('accepts an exact club time, rejects invalid calendar dates, and remains request scoped', () => {
+    process.env.NODE_ENV = 'development';
+    expect(parseDemoDate('2026-11-29T15:30')?.toISOString()).toBe('2026-11-29T08:30:00.000Z');
+    for (const value of ['2026-02-30', '2026-13-01', '2026-11-29T24:00', '2026-11-29T15:60'])
+      expect(parseDemoDate(value)).toBeNull();
+    demoClockMiddleware(
+      { headers: { 'x-demo-date': '2026-11-29T15:30' } } as any,
+      {} as any,
+      () => {
+        expect(effectiveNow().toISOString()).toBe('2026-11-29T08:30:00.000Z');
+      },
+    );
+    process.env.NODE_ENV = 'production';
+    expect(parseDemoDate('2026-11-29T15:30')).toBeNull();
+  });
   it('scopes effectiveNow() per request via demoClockMiddleware in development', () => {
     process.env.NODE_ENV = 'development';
     let capturedInside: Date | null = null;

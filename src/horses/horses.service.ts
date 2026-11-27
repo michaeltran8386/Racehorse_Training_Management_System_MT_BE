@@ -5,7 +5,7 @@ import {
   transferPendingCare,
   MAX_CARE_STALLS,
 } from '../stalls/groom-care.rules';
-import { onDutyGrooms, rosterDay } from '../shift-rosters/groom-zones';
+import { onDutyGrooms, rosterDay, shiftInterval } from '../shift-rosters/groom-zones';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import {
@@ -420,13 +420,8 @@ export class HorsesService {
       }
     }
 
-    // 2. Ẩn thông tin ô chuồng và người chăm sóc đối với HORSE_OWNER (Flow 1 Section 2)
-    if (user.role === UserRole.HORSE_OWNER) {
-      delete cloned.stallAllocations;
-      cloned.stallCode = null;
-      cloned.zone = null;
-      cloned.primaryGroom = null;
-    } else if (cloned.stallAllocations && cloned.stallAllocations.length > 0) {
+    // 2. Gắn thông tin ô chuồng và người chăm sóc hiện tại cho ngựa
+    if (cloned.stallAllocations && cloned.stallAllocations.length > 0) {
       const activeStall = cloned.stallAllocations.find((a: any) => a.isActive !== false);
       cloned.allocationId = activeStall?.id ?? null;
       cloned.stallId = activeStall?.stallId ?? activeStall?.stall?.id ?? null;
@@ -434,6 +429,9 @@ export class HorsesService {
       cloned.stallCode = activeStall?.stall?.code || null;
       cloned.zone = activeStall?.stall?.zone || null;
       cloned.primaryGroom = activeStall?.assignedGroom?.fullName || null;
+    }
+    if (user.role === UserRole.HORSE_OWNER) {
+      delete cloned.stallAllocations;
     }
 
     if (cloned.trainingPlans) {
@@ -1924,12 +1922,66 @@ export class HorsesService {
         );
       const target = await tx.stall.findUniqueOrThrow({ where: { id: stall.id } });
       await assertPrimaryGroom(tx, target.zoneId, placement.assignedGroomUserId);
+      const receivingGroomId = placement.receivingGroomUserId || placement.assignedGroomUserId;
+      const now = new Date();
+      const clubToday = rosterDay(now);
+      const clubYesterday = new Date(clubToday.getTime() - 86400000);
+      const alreadyOnDuty = (await onDutyGrooms(tx, target.zoneId!, now)).some(
+        (r) => r.groomUserId === receivingGroomId,
+      );
+      let fallbackShift: { shiftId: string; date: Date } | null = null;
+      if (!alreadyOnDuty) {
+        const activeShifts = await tx.shiftCatalog.findMany({
+          where: { isActive: true },
+          orderBy: { startTime: 'asc' },
+        });
+        let matchedDate = clubToday;
+        let matchedShift = activeShifts[0];
+        for (const candidateDate of [clubToday, clubYesterday]) {
+          const found = activeShifts.find((s) => {
+            const range = shiftInterval(candidateDate, s);
+            return range.start <= now.getTime() && now.getTime() < range.end;
+          });
+          if (found) {
+            matchedDate = candidateDate;
+            matchedShift = found;
+            break;
+          }
+        }
+        if (matchedShift) {
+          const exists = await tx.shiftRoster.findFirst({
+            where: {
+              zoneId: target.zoneId!,
+              groomUserId: receivingGroomId,
+              date: matchedDate,
+              shiftId: matchedShift.id,
+            },
+          });
+          if (!exists) {
+            await tx.shiftRoster.create({
+              data: {
+                date: matchedDate,
+                shiftId: matchedShift.id,
+                zoneId: target.zoneId!,
+                groomUserId: receivingGroomId,
+                dutyTypes: ['HORSE_CARE', 'CLEANING'],
+                createdById: user.userId,
+              },
+            });
+          }
+          fallbackShift = { shiftId: matchedShift.id, date: matchedDate };
+        }
+      }
       const receiving = await assertReceivingGroom(
         tx,
         target.zoneId!,
-        placement.receivingGroomUserId,
+        receivingGroomId,
         record.horseId,
-      );
+        now,
+      ).catch((err) => {
+        if (fallbackShift) return fallbackShift;
+        throw err;
+      });
       const admittedAt = new Date();
 
       if (
@@ -1957,7 +2009,7 @@ export class HorsesService {
         record.horseId,
         target.zoneId!,
         target.id,
-        placement.receivingGroomUserId,
+        receivingGroomId,
         receiving.shiftId,
         receiving.date,
       );
