@@ -86,15 +86,21 @@ function hhmm(d: Date): string {
 function conflictInfo(
   other: Date,
   gapMinutes: number,
-  row: { trainingPlan?: { trainer?: { fullName?: string } } | null } | any,
+  row:
+    | {
+        workoutType?: string | null;
+        trainingPlan?: { trainer?: { fullName?: string } } | null;
+      }
+    | any,
 ) {
   const [y, m, d] = clubDate(other).split('-');
+  const durMinutes = row?.workoutType ? workoutDurationMinutes(row.workoutType) : 0;
   return {
     time: hhmm(other),
     date: `${d}/${m}/${y}`,
     trainer: row?.trainingPlan?.trainer?.fullName ?? '—',
     before: hhmm(new Date(other.getTime() - gapMinutes * 60 * 1000)),
-    after: hhmm(new Date(other.getTime() + gapMinutes * 60 * 1000)),
+    after: hhmm(new Date(other.getTime() + (durMinutes + gapMinutes) * 60 * 1000)),
   };
 }
 
