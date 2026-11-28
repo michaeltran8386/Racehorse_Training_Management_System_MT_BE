@@ -1,3 +1,4 @@
+import { effectiveNow, isDemoClockActive } from '../common/utils/demo-clock';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
@@ -44,7 +45,8 @@ export class BusinessMailScheduler {
   ) {}
 
   @Cron('0 7 * * *', { name: 'business-mail.reminders', timeZone: 'Asia/Ho_Chi_Minh' })
-  async remind(): Promise<void> {
+  async remind(fromDemoClock = false): Promise<void> {
+    if (isDemoClockActive() && !fromDemoClock) return;
     // Separate sweeps: a failed invoice query must not suppress care alerts or delivery retries.
     for (const work of [
       () => this.invoices(),
@@ -93,7 +95,7 @@ export class BusinessMailScheduler {
           !([InvoiceStatus.SENT, InvoiceStatus.OVERDUE] as InvoiceStatus[]).includes(invoice.status)
         )
           return;
-        const days = clubDay(invoice.dueAt) - clubDay(new Date());
+        const days = clubDay(invoice.dueAt) - clubDay(effectiveNow());
         const milestone =
           days >= 1 && days <= 3
             ? 'due-3d'
@@ -182,7 +184,7 @@ export class BusinessMailScheduler {
   }
 
   private async tasks(): Promise<void> {
-    const now = new Date();
+    const now = effectiveNow();
     // SQL DATE values encode the local calendar date at UTC midnight.
     const today = new Date(
       `${new Date(now.getTime() + 7 * 3600000).toISOString().slice(0, 10)}T00:00:00Z`,
@@ -292,7 +294,7 @@ export class BusinessMailScheduler {
    * Quét SLA 48h cho yêu cầu phân công chiến mã & SLA Lũy tiến cho lập giáo án
    */
   async handovers(): Promise<void> {
-    const now = new Date();
+    const now = effectiveNow();
 
     // 1. Quét yêu cầu phân công quá hạn 48h chưa phản hồi
     const expiredHandovers = await this.prisma.horseHandoverRequest.findMany({

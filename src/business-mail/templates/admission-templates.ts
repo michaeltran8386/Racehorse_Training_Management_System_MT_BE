@@ -1,3 +1,4 @@
+import { effectiveNow } from '../../common/utils/demo-clock';
 import { BusinessMailContent, linkBase, renderMail } from './html';
 
 /**
@@ -58,7 +59,7 @@ export function admissionRequestReceived(
     { label: 'Tên chiến mã', value: horse.name },
     { label: 'Mã hồ sơ tiếp nhận', value: admission.admissionCode },
     { label: 'Số vi mạch khai báo', value: admission.declaredMicrochip || horse.microchip || '—' },
-    { label: 'Thời gian đăng ký', value: fmtDateTime(admission.createdAt || new Date()) },
+    { label: 'Thời gian đăng ký', value: fmtDateTime(admission.createdAt || effectiveNow()) },
     {
       label: 'Thông báo',
       value:
@@ -143,7 +144,7 @@ export function admissionApproved(
       value:
         'Ngựa đã được đưa vào trung tâm với trạng thái Nghỉ ngơi (RESTING). Bộ phận Quản lý đang tiến hành phân bổ ô chuồng (Stall) và nhân viên chăm sóc (Groom).',
     },
-    { label: 'Thời điểm tiếp nhận', value: fmtDateTime(admission.admittedAt || new Date()) },
+    { label: 'Thời điểm tiếp nhận', value: fmtDateTime(admission.admittedAt || effectiveNow()) },
     { label: 'Xem hồ sơ ngựa', value: `${linkBase()}/horses` },
   ]);
 }

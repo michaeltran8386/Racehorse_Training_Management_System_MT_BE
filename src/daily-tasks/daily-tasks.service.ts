@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { onDutyGrooms } from '../shift-rosters/groom-zones';
 import { lockCareAssignments } from '../stalls/groom-care.rules';
 import { stallMoveCompleted } from '../business-mail/templates/health-templates';
@@ -33,7 +34,7 @@ import { CareCostLedgerService } from '../financial/care-cost-ledger.service';
 const UNDO_WINDOW_MS = 15 * 60 * 1000; // 15 phút (900.000 ms)
 const CLUB_OFFSET_MS = 7 * 60 * 60 * 1000;
 
-function clubDateStr(d = new Date()): string {
+function clubDateStr(d = effectiveNow()): string {
   return new Date(d.getTime() + CLUB_OFFSET_MS).toISOString().slice(0, 10);
 }
 
@@ -129,7 +130,7 @@ export class DailyTasksService {
    * không làm mất trạng thái công việc đã hoàn thành trước đó.
    */
   async generateDailyTasksForDate(
-    targetDate = new Date(),
+    targetDate = effectiveNow(),
     zoneIdFilter?: string,
     horseIdFilter?: string,
   ): Promise<{
@@ -539,7 +540,7 @@ export class DailyTasksService {
       if (!activeTitles || !activeTitles.has(emt.title)) {
         await this.prisma.dailyCareTask.update({
           where: { id: emt.id, isCompleted: false },
-          data: { cancelledAt: new Date() },
+          data: { cancelledAt: effectiveNow() },
         });
       }
     }
@@ -608,7 +609,7 @@ export class DailyTasksService {
     toDateStr?: string,
   ): Promise<void> {
     // Thay đổi từ phía Bác sĩ thú y áp dụng từ ngày hôm sau để không làm xáo trộn ca hôm nay của Groom
-    const tomorrow = new Date();
+    const tomorrow = effectiveNow();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().slice(0, 10);
     const startStr =
@@ -856,7 +857,7 @@ export class DailyTasksService {
       throw new BadRequestException('Không thể hoàn thành việc cho ngựa đã ngừng quản lý.');
     }
 
-    const now = new Date();
+    const now = effectiveNow();
 
     if (task.date) {
       const todayStr = new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -1091,7 +1092,7 @@ export class DailyTasksService {
     }
 
     // Kiểm tra cửa sổ 15 phút
-    const now = new Date();
+    const now = effectiveNow();
     if (task.undoUntil && now > task.undoUntil && currentUser.role !== Role.CLUB_MANAGER) {
       const minutesPassed = Math.round(
         (now.getTime() - (task.completedAt?.getTime() || 0)) / 60000,

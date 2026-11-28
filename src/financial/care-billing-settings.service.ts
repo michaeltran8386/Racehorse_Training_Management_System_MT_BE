@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -23,7 +24,7 @@ export class CareBillingSettingsService {
       await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(74203192)`;
       const prior = await tx.careBillingPolicy.findUnique({ where: { id: 'club' } });
       if (dto.cutoverPeriod && dto.cutoverPeriod !== prior?.cutoverPeriod) {
-        const current = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 7);
+        const current = new Date(effectiveNow().getTime() + 7 * 3600000).toISOString().slice(0, 7);
         if (dto.cutoverPeriod < current || prior?.cutoverPeriod)
           throw apiError(
             HttpStatus.CONFLICT,
@@ -82,7 +83,7 @@ export class CareBillingSettingsService {
           operationKey,
           horseId: record.horseId,
           medicalRecordId: record.id,
-          performedAt: new Date(),
+          performedAt: effectiveNow(),
           prescribedAt: record.examinationDate,
           quantity: 1,
           unit: 'EXAM',

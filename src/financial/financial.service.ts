@@ -549,7 +549,9 @@ export class FinancialService {
         prizeCredit,
         netAmount,
         status: dto.status ?? InvoiceStatus.DRAFT,
-        ...(dto.status === InvoiceStatus.SENT && { dueAt: new Date(Date.now() + 7 * 86400000) }),
+        ...(dto.status === InvoiceStatus.SENT && {
+          dueAt: new Date(effectiveNow().getTime() + 7 * 86400000),
+        }),
         invoiceUrl: dto.invoiceUrl,
       },
       include: {
@@ -650,7 +652,7 @@ export class FinancialService {
             ...(dto.status && { status: dto.status }),
             ...(dto.status === InvoiceStatus.SENT &&
               existing.status === InvoiceStatus.DRAFT &&
-              !existing.dueAt && { dueAt: new Date(Date.now() + 7 * 86400000) }),
+              !existing.dueAt && { dueAt: new Date(effectiveNow().getTime() + 7 * 86400000) }),
             ...(dto.invoiceUrl !== undefined && { invoiceUrl: dto.invoiceUrl }),
           },
           include: {
@@ -775,14 +777,14 @@ export class FinancialService {
             status,
             ...(status === InvoiceStatus.PAID &&
               existing.status !== InvoiceStatus.PAID && {
-                paidAt: new Date(),
+                paidAt: effectiveNow(),
                 paidConfirmedById: user.id,
                 paidConfirmedByName: user.name,
               }),
             ...(status === InvoiceStatus.SENT &&
               existing.status === InvoiceStatus.DRAFT &&
               !existing.dueAt && {
-                dueAt: new Date(Date.now() + 7 * 86400000),
+                dueAt: new Date(effectiveNow().getTime() + 7 * 86400000),
               }),
           },
         });
@@ -901,7 +903,7 @@ export class FinancialService {
     if (user.role === 'HORSE_OWNER') {
       const reported = await this.prisma.financialInvoice.update({
         where: { id, status: existing.status, updatedAt: existing.updatedAt },
-        data: { paymentReportedAt: new Date(), paymentMethod: method, paymentRef: ref },
+        data: { paymentReportedAt: effectiveNow(), paymentMethod: method, paymentRef: ref },
       });
       await this.audit.record(
         { id: user.id, name: user.name },
@@ -918,7 +920,7 @@ export class FinancialService {
       where: { id, status: existing.status, updatedAt: existing.updatedAt },
       data: {
         status: InvoiceStatus.PAID,
-        paidAt: new Date(),
+        paidAt: effectiveNow(),
         paidConfirmedById: user.id,
         paidConfirmedByName: user.name,
         paymentMethod: existing.paymentMethod ?? method,
@@ -1128,7 +1130,7 @@ export class FinancialService {
 
   async sweepOverdue(): Promise<number> {
     const overdueCandidates = await this.prisma.financialInvoice.findMany({
-      where: { status: InvoiceStatus.SENT, dueAt: { lt: new Date() }, netAmount: { gt: 0 } },
+      where: { status: InvoiceStatus.SENT, dueAt: { lt: effectiveNow() }, netAmount: { gt: 0 } },
       select: {
         id: true,
         horseId: true,
@@ -1146,7 +1148,7 @@ export class FinancialService {
     });
 
     const { count } = await this.prisma.financialInvoice.updateMany({
-      where: { status: InvoiceStatus.SENT, dueAt: { lt: new Date() }, netAmount: { gt: 0 } },
+      where: { status: InvoiceStatus.SENT, dueAt: { lt: effectiveNow() }, netAmount: { gt: 0 } },
       data: { status: InvoiceStatus.OVERDUE },
     });
 
@@ -1183,7 +1185,7 @@ export class FinancialService {
       where: { id: { in: horseIds } },
       data: {
         isDebtImpounded: true,
-        debtImpoundedAt: new Date(),
+        debtImpoundedAt: effectiveNow(),
         debtImpoundReason: 'Overdue boarding / stabling fees.',
       },
     });
@@ -1195,7 +1197,7 @@ export class FinancialService {
       where: { id: { in: ownerIds } },
       data: {
         isBadDebtFlagged: true,
-        badDebtFlaggedAt: new Date(),
+        badDebtFlaggedAt: effectiveNow(),
         badDebtReason: 'Có hóa đơn dịch vụ lưu chuồng quá hạn thanh toán.',
       },
     });
@@ -1506,7 +1508,7 @@ export class FinancialService {
 
     const mappedSupplyExpenses = (restocks as any[]).map((req) => {
       const effectiveDate = new Date(
-        req.deliveredAt ?? req.updatedAt ?? req.createdAt ?? new Date(),
+        req.deliveredAt ?? req.updatedAt ?? req.createdAt ?? effectiveNow(),
       );
       const period = toClubBillingPeriod(effectiveDate);
       const quantity = Number(req.approvedQuantity ?? req.requestedQuantity ?? 0);
@@ -1667,7 +1669,7 @@ export class FinancialService {
         where: { id, status: existing.status, updatedAt: existing.updatedAt },
         data: {
           status: InvoiceStatus.PAID,
-          paidAt: new Date(),
+          paidAt: effectiveNow(),
           paidConfirmedById: user.id,
           paidConfirmedByName: user.name,
           paymentMethod: 'PAYOS',
@@ -1744,7 +1746,7 @@ export class FinancialService {
       where: { id },
       data: {
         status: InvoiceStatus.PAID,
-        paidAt: new Date(),
+        paidAt: effectiveNow(),
         paidConfirmedById: user.id,
         paidConfirmedByName: user.name,
         paymentMethod: 'PAYOS_DEMO',

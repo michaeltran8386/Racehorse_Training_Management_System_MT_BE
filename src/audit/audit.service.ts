@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { PermissionRequestStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -33,7 +34,7 @@ export class AuditService {
     if (from && to && new Date(from) > new Date(to)) {
       throw apiError(HttpStatus.BAD_REQUEST, 'VALIDATION', 'From must not be later than to');
     }
-    const now = new Date();
+    const now = effectiveNow();
     const effectiveTo = to ? (new Date(to) > now ? now : new Date(to)) : now;
     return {
       ...(userId && { userId }),
@@ -165,7 +166,7 @@ export class AuditService {
     if (open) {
       await this.prisma.permissionRequest.update({
         where: { id: open.id },
-        data: { reference, at: new Date() },
+        data: { reference, at: effectiveNow() },
       });
     } else {
       await this.prisma.permissionRequest.create({ data: { userId: actor.id, screen, reference } });
@@ -218,7 +219,7 @@ export class AuditService {
 
     const updated = await this.prisma.permissionRequest.update({
       where: { id },
-      data: { status, resolvedAt: new Date(), resolvedBy: actor.name },
+      data: { status, resolvedAt: effectiveNow(), resolvedBy: actor.name },
       include: REQUEST_INCLUDE,
     });
     await this.record(

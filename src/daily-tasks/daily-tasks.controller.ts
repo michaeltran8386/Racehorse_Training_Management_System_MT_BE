@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, CurrentUserPayload } from '../common/decorators/current-user.decorator';
@@ -39,7 +40,7 @@ export class DailyTasksController {
     summary: 'Kích hoạt thủ công sinh danh sách công việc hàng ngày cho một ngày cụ thể',
   })
   generateTasks(@Body() dto: GenerateDailyTasksDto) {
-    const targetDate = dto.date ? new Date(`${dto.date}T00:00:00.000Z`) : new Date();
+    const targetDate = dto.date ? new Date(`${dto.date}T00:00:00.000Z`) : effectiveNow();
     return this.service.generateDailyTasksForDate(targetDate, dto.zoneId);
   }
 

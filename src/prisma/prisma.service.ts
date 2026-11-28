@@ -1,3 +1,4 @@
+import { demoClockExtension } from './demo-clock-extension';
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
@@ -12,6 +13,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
           ? ['query', 'info', 'warn', 'error']
           : ['error', 'warn'],
     });
+    return this.$extends(demoClockExtension) as unknown as this;
   }
 
   async onModuleInit() {

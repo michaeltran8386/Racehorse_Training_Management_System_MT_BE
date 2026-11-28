@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   HorseStatus,
@@ -45,7 +46,7 @@ export class HorseLifecycleService {
     if (active.length === 0) return [];
     await tx.stallAllocation.updateMany({
       where: { horseId, isActive: true },
-      data: { isActive: false, endDate: new Date() },
+      data: { isActive: false, endDate: effectiveNow() },
     });
     await tx.stall.updateMany({
       where: { id: { in: active.map((a) => a.stallId) } },
@@ -117,7 +118,11 @@ export class HorseLifecycleService {
 
       const deleted = await tx.horse.update({
         where: { id },
-        data: { deletedAt: new Date(), deletedById: user.userId, deleteReason: dto.reason.trim() },
+        data: {
+          deletedAt: effectiveNow(),
+          deletedById: user.userId,
+          deleteReason: dto.reason.trim(),
+        },
       });
 
       await this.auditService.record(
@@ -202,7 +207,7 @@ export class HorseLifecycleService {
 
       let reason: string;
       if (dto.undo) {
-        const expired = Date.now() - horse.deletedAt.getTime() > UNDO_WINDOW_MS;
+        const expired = effectiveNow().getTime() - horse.deletedAt.getTime() > UNDO_WINDOW_MS;
         if (expired || horse.deletedById !== user.userId) {
           throw apiError(
             HttpStatus.BAD_REQUEST,
@@ -303,7 +308,7 @@ export class HorseLifecycleService {
               where: { horseId: id, isLocked: true },
               data: {
                 isLocked: false,
-                unlockedAt: new Date(),
+                unlockedAt: effectiveNow(),
                 unlockReason: 'Ngựa đã chết - tự kết thúc khi Ngừng quản lý',
               },
             });
@@ -325,7 +330,7 @@ export class HorseLifecycleService {
 
           // Xóa các việc chăm sóc hằng ngày chưa hoàn thành từ hôm nay trở đi (STT 13: F4)
           try {
-            const today = new Date(new Date().toISOString().slice(0, 10));
+            const today = new Date(effectiveNow().toISOString().slice(0, 10));
             const deletedTasks = await (tx as any).dailyCareTask?.deleteMany({
               where: {
                 horseId: id,

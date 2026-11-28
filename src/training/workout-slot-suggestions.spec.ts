@@ -1,4 +1,4 @@
-import { demoClockMiddleware } from '../common/utils/demo-clock';
+import { setDemoClock } from '../common/utils/demo-clock';
 import {
   rankWorkoutSlots,
   WorkoutSlotSuggestionsService,
@@ -170,14 +170,8 @@ describe('workout slot recommendations', () => {
       expect((await service.suggest('p', dto, user)).slots[0].startAt).toBe(
         '2026-11-24T00:45:00.000Z',
       );
-      let simulated!: ReturnType<typeof service.suggest>;
-      demoClockMiddleware(
-        { headers: { 'x-demo-date': '2026-11-24T13:00' } } as any,
-        {} as any,
-        () => {
-          simulated = service.suggest('p', dto, user);
-        },
-      );
+      setDemoClock(new Date('2026-11-24T13:00:00+07:00'));
+      const simulated = service.suggest('p', dto, user);
       expect((await simulated).slots[0].startAt).toBe('2026-11-24T07:15:00.000Z');
       expect(tx.workoutSession.findMany).toHaveBeenCalledTimes(3);
       tx.trainingPlan.findUnique.mockResolvedValueOnce({
@@ -187,6 +181,7 @@ describe('workout slot recommendations', () => {
       expect((await service.suggest('p', dto, user)).slots).toHaveLength(0);
       expect(tx.workoutSession.findMany).toHaveBeenCalledTimes(3);
     } finally {
+      setDemoClock(null);
       jest.useRealTimers();
     }
   });

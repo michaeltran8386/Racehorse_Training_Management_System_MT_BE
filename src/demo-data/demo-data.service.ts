@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { createRaceReady } from './fixtures/race-ready.fixture';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -45,7 +46,7 @@ export class DemoDataService {
         ? 'Thiếu giống hoặc màu lông đang hoạt động trong danh mục.'
         : undefined;
     return {
-      serverTime: new Date().toISOString(),
+      serverTime: effectiveNow().toISOString(),
       timeZone: 'Asia/Ho_Chi_Minh',
       owners,
       availableStalls,
@@ -215,7 +216,7 @@ export class DemoDataService {
             'DEMO_GENERATION_CONFLICT',
             'Mã yêu cầu trùng với một hồ sơ đã có.',
           );
-        const now = new Date();
+        const now = effectiveNow();
         const result =
           args.scenario === 'ADMISSION_PENDING'
             ? await createAdmissionPending(tx, args, dto.generationId, actor, now)

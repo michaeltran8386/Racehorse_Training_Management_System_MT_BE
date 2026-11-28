@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import { BusinessMailBody, BusinessMailService } from '../business-mail/business-mail.service';
 import { NotificationCategory, Prisma, Role, UserStatus } from '@prisma/client';
@@ -182,7 +183,7 @@ export class NotificationsService {
     }
     await this.prisma.notification.updateMany({
       where: { userId, id: { in: ids }, readAt: null },
-      data: { readAt: new Date() },
+      data: { readAt: effectiveNow() },
     });
     return this.list(userId);
   }
@@ -190,7 +191,7 @@ export class NotificationsService {
   async markAllRead(userId: string) {
     await this.prisma.notification.updateMany({
       where: { userId, readAt: null },
-      data: { readAt: new Date() },
+      data: { readAt: effectiveNow() },
     });
     return this.list(userId);
   }

@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { HorseStatus, PlanStatus, WorkoutStatus } from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
@@ -45,7 +46,7 @@ export class TrainingInsightsService {
     }
     const updated = await this.prisma.workoutSession.update({
       where: { id: workoutId },
-      data: { vetAcknowledgedAt: new Date(), vetNotes: dto.vetNotes.trim() },
+      data: { vetAcknowledgedAt: effectiveNow(), vetNotes: dto.vetNotes.trim() },
       include: WORKOUT_INCLUDE,
     });
     await this.auditService.record(
@@ -78,7 +79,7 @@ export class TrainingInsightsService {
       throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', 'Target horse not found.');
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     const today = startOfClubDay(now);
     const rangeStart = addDays(today, -weeks * 7);
     const loadStart = addDays(today, -35); // 7 ngày + 4 tuần trước đó
@@ -160,7 +161,7 @@ export class TrainingInsightsService {
    */
   async getOverview(user?: CurrentUserPayload) {
     await this.common.sweepOverdue();
-    const now = new Date();
+    const now = effectiveNow();
     const today = startOfClubDay(now);
     // HLV chỉ thấy ngựa mình đang có giáo án (DRAFT/ACTIVE), tối đa 3 con — không thấy ngựa HLV khác.
     const trainerId = user?.role === UserRole.HEAD_TRAINER ? user.userId : null;

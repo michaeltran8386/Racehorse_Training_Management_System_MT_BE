@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import {
   ConflictException,
   ForbiddenException,
@@ -106,7 +107,7 @@ export class TracksService {
         ) {
           if (
             await tx.workoutSession.count({
-              where: { trackId: id, status: 'SCHEDULED', scheduledDate: { gte: new Date() } },
+              where: { trackId: id, status: 'SCHEDULED', scheduledDate: { gte: effectiveNow() } },
             })
           )
             throw new ConflictException(
@@ -151,7 +152,7 @@ export class TracksService {
           (row) =>
             row.trackId ||
             !['SCHEDULED', 'BLOCKED'].includes(row.status) ||
-            row.scheduledDate <= new Date() ||
+            row.scheduledDate <= effectiveNow() ||
             row.trackSurface !== track.surface,
         )
       )

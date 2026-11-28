@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { MedicalLifecycleService } from '../medical/medical-lifecycle.service';
 import { assertIncidentTransition, assertMergeCandidate } from './incident-lifecycle';
 import { clubDate } from '../training/training-rules';
@@ -45,7 +46,7 @@ export class IncidentsService {
     if (actor.role !== Role.VETERINARIAN) throw new ForbiddenException();
     const parent = await this.prisma.incidentReport.findUnique({ where: { id } });
     if (!parent) throw new NotFoundException('INCIDENT_NOT_FOUND');
-    const now = new Date();
+    const now = effectiveNow();
     return this.prisma.incidentReport.findMany({
       where: {
         id: { not: id },
@@ -98,7 +99,7 @@ export class IncidentsService {
       )
         throw new BadRequestException('RECOVERED_RECORD_REQUIRED');
       const children = [] as NonNullable<typeof parent>[];
-      const now = new Date();
+      const now = effectiveNow();
       for (const childId of dto.duplicateIncidentIds) {
         const child = await tx.incidentReport.findUnique({ where: { id: childId } });
         if (
@@ -213,7 +214,7 @@ export class IncidentsService {
         });
         if (prior) return { incident: prior, isNew: false };
       }
-      const dateStr = clubDate(new Date()).replace(/-/g, '');
+      const dateStr = clubDate(effectiveNow()).replace(/-/g, '');
       const count = await tx.incidentReport.count({
         where: { incidentNumber: { startsWith: `INC-${dateStr}-` } },
       });
@@ -613,7 +614,7 @@ export class IncidentsService {
         status: dto.status,
         vetNotes: dto.vetNotes ? dto.vetNotes.trim() : incident.vetNotes,
         reviewedById: reviewer.userId,
-        reviewedAt: new Date(),
+        reviewedAt: effectiveNow(),
       },
       include: {
         horse: true,

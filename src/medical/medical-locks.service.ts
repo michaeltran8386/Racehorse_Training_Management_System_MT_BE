@@ -33,7 +33,7 @@ export async function generateMedicalLockCode(tx: {
     findUnique?: (args: any) => Promise<any>;
   };
 }): Promise<string> {
-  const year = new Date().getFullYear();
+  const year = effectiveNow().getFullYear();
   const prefix = `MLK-${year}-`;
   let seq = 1;
   try {
@@ -106,7 +106,7 @@ export class MedicalLocksService {
 
     const appliedStatus = dto.appliedMedicalStatus || HorseStatus.INJURED;
 
-    const now = new Date();
+    const now = effectiveNow();
     let recheckDate: Date;
     const inputDate = dto.recheckDate;
     if (inputDate) {
@@ -227,7 +227,7 @@ export class MedicalLocksService {
         where: {
           horseId: dto.horseId,
           status: WorkoutStatus.SCHEDULED,
-          scheduledDate: { gte: new Date() },
+          scheduledDate: { gte: effectiveNow() },
           ...HEAVY_WORKOUT_WHERE,
         },
         data: {
@@ -276,7 +276,7 @@ export class MedicalLocksService {
           horseId: dto.horseId,
           status: { in: [RegistrationStatus.REGISTERED, RegistrationStatus.CONFIRMED] },
           tournament: {
-            raceDate: { gte: new Date() },
+            raceDate: { gte: effectiveNow() },
             status: { notIn: [TournamentStatus.COMPLETED, TournamentStatus.CANCELLED] },
           },
         },
@@ -598,7 +598,7 @@ export class MedicalLocksService {
         );
       }
 
-      const now = new Date();
+      const now = effectiveNow();
       let newRecheckDate: Date;
 
       const targetDate = dto.recheckDate;
@@ -778,7 +778,7 @@ export class MedicalLocksService {
       where.appliedMedicalStatus = appliedMedicalStatus;
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     if (overdueOnly === 'true') {
       where.isLocked = true;
       where.recheckDate = { lt: now };
@@ -878,7 +878,7 @@ export class MedicalLocksService {
 
     await this.access.checkHorseAccess(lock.horseId, currentUser);
 
-    const now = new Date();
+    const now = effectiveNow();
     const isOverdue = lock.isLocked && !!lock.recheckDate && lock.recheckDate < now;
     let daysOverdue = 0;
     if (isOverdue && lock.recheckDate) {

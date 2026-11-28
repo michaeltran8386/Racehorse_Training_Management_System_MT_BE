@@ -1,47 +1,46 @@
-import { demoClockMiddleware, effectiveNow, parseDemoDate } from './demo-clock';
+import {
+  demoClockMiddleware,
+  effectiveNow,
+  getDemoClockState,
+  parseDemoDate,
+  setDemoClock,
+} from './demo-clock';
 
-describe('demo-clock', () => {
-  const originalEnv = process.env.NODE_ENV;
-
+describe('shared running business clock', () => {
+  const env = process.env.NODE_ENV;
+  beforeEach(() => {
+    process.env.NODE_ENV = 'test';
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-28T01:00:00Z'));
+    setDemoClock(null);
+  });
   afterEach(() => {
-    process.env.NODE_ENV = originalEnv;
+    process.env.NODE_ENV = 'test';
+    setDemoClock(null);
+    jest.useRealTimers();
+    process.env.NODE_ENV = env;
   });
-
-  it('parses YYYY-MM-DD in development and returns null in production or for invalid dates', () => {
-    process.env.NODE_ENV = 'development';
-    const parsed = parseDemoDate('2026-12-15');
-    expect(parsed).toBeInstanceOf(Date);
-    expect(parsed?.toISOString().slice(0, 10)).toMatch(/^2026-12-1[45]$/);
-    expect(parseDemoDate('not-a-date')).toBeNull();
-
-    process.env.NODE_ENV = 'production';
-    expect(parseDemoDate('2026-12-15')).toBeNull();
-  });
-
-  it('accepts an exact club time, rejects invalid calendar dates, and remains request scoped', () => {
-    process.env.NODE_ENV = 'development';
-    expect(parseDemoDate('2026-11-29T15:30')?.toISOString()).toBe('2026-11-29T08:30:00.000Z');
-    for (const value of ['2026-02-30', '2026-13-01', '2026-11-29T24:00', '2026-11-29T15:60'])
-      expect(parseDemoDate(value)).toBeNull();
-    demoClockMiddleware(
-      { headers: { 'x-demo-date': '2026-11-29T15:30' } } as any,
-      {} as any,
-      () => {
-        expect(effectiveNow().toISOString()).toBe('2026-11-29T08:30:00.000Z');
-      },
+  it('runs from the chosen instant across requests and rolls into the next day', () => {
+    const initial = setDemoClock(new Date('2026-11-29T16:59:59Z'));
+    jest.advanceTimersByTime(2000);
+    expect(effectiveNow().toISOString()).toBe('2026-11-29T17:00:01.000Z');
+    demoClockMiddleware({ headers: { 'x-demo-date': '2030-01-01' } } as any, {} as any, () =>
+      expect(effectiveNow().toISOString()).toBe('2026-11-29T17:00:01.000Z'),
     );
-    process.env.NODE_ENV = 'production';
-    expect(parseDemoDate('2026-11-29T15:30')).toBeNull();
+    expect(getDemoClockState().revision).toBe(initial.revision);
+    expect(getDemoClockState().simulated).toBe(true);
+    setDemoClock(null);
+    expect(+effectiveNow()).toBe(Date.now());
+    expect(getDemoClockState().revision).not.toBe(initial.revision);
   });
-  it('scopes effectiveNow() per request via demoClockMiddleware in development', () => {
-    process.env.NODE_ENV = 'development';
-    let capturedInside: Date | null = null;
-    demoClockMiddleware({ headers: { 'x-demo-date': '2030-05-10' } } as any, {} as any, () => {
-      capturedInside = effectiveNow();
-    });
-    expect(capturedInside).toBeInstanceOf(Date);
-    expect((capturedInside as unknown as Date).getUTCFullYear()).toBe(2030);
-    // Outside middleware scope, effectiveNow() falls back to real server year
-    expect(effectiveNow().getUTCFullYear()).toBe(new Date().getUTCFullYear());
+  it('validates legacy club dates and never simulates in production', () => {
+    expect(parseDemoDate('2026-11-29T15:30')?.toISOString()).toBe('2026-11-29T08:30:00.000Z');
+    for (const raw of ['2026-02-30', '2026-13-01', '2026-11-29T24:00', '2026-11-29T15:60'])
+      expect(parseDemoDate(raw)).toBeNull();
+    expect(() => setDemoClock(new Date('invalid'))).toThrow();
+    setDemoClock(new Date('2030-01-01T00:00:00Z'));
+    process.env.NODE_ENV = 'production';
+    expect(+effectiveNow()).toBe(Date.now());
+    expect(parseDemoDate('2030-01-01')).toBeNull();
+    expect(() => setDemoClock(null)).toThrow('disabled');
   });
 });

@@ -1,3 +1,4 @@
+import { isDemoClockActive } from '../common/utils/demo-clock';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { TrainingCommonService } from './training-common.service';
@@ -14,7 +15,8 @@ export class TrainingScheduler {
   constructor(private readonly common: TrainingCommonService) {}
 
   @Cron('5 0 * * *', { name: 'training-sweep', timeZone: 'Asia/Ho_Chi_Minh' })
-  async nightlySweep(): Promise<void> {
+  async nightlySweep(fromDemoClock = false): Promise<void> {
+    if (isDemoClockActive() && !fromDemoClock) return;
     try {
       await this.common.sweepOverdue();
     } catch (err) {

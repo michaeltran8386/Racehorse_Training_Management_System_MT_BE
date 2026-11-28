@@ -1,9 +1,41 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 
 const CLUB_OFFSET_MS = 7 * 60 * 60 * 1000;
 const DEMO_DATE_RE = /^(\d{4}-\d{2}-\d{2})(?:T([01]\d|2[0-3]):([0-5]\d))?$/;
-const demoClockStorage = new AsyncLocalStorage<Date>();
+// shortcut: clock state is local to one backend process; use shared storage before running multiple replicas.
+let offsetMs = 0;
+let simulated = false;
+let revision = randomUUID();
+
+export function isDemoClockActive(): boolean {
+  return process.env.NODE_ENV !== 'production' && simulated;
+}
+
+/** The business clock runs at normal speed; authentication and session lifetimes use the real clock. */
+export function effectiveNow(): Date {
+  return new Date(Date.now() + (isDemoClockActive() ? offsetMs : 0));
+}
+
+export function getDemoClockState() {
+  const real = Date.now();
+  return {
+    serverNow: new Date(real + (isDemoClockActive() ? offsetMs : 0)).toISOString(),
+    realNow: new Date(real).toISOString(),
+    simulated: isDemoClockActive(),
+    revision,
+  };
+}
+
+export function setDemoClock(at: Date | null) {
+  if (process.env.NODE_ENV === 'production')
+    throw new Error('TimeControl is disabled in production');
+  if (at && !Number.isFinite(+at)) throw new RangeError('Invalid TimeControl timestamp');
+  offsetMs = at ? +at - Date.now() : 0;
+  simulated = at !== null;
+  revision = randomUUID();
+  return getDemoClockState();
+}
 
 /**
  * Parses YYYY-MM-DD or YYYY-MM-DDTHH:mm in club time (+07:00), keeping current time-of-day when omitted
@@ -37,28 +69,7 @@ export function parseDemoDate(raw: unknown): Date | null {
   return parsed;
 }
 
-export function demoClockMiddleware(req: Request, _res: Response, next: NextFunction): void {
-  if (process.env.NODE_ENV === 'production') {
-    next();
-    return;
-  }
-  const header = req.headers['x-demo-date'];
-  const raw = Array.isArray(header) ? header[0] : header;
-  const demoDate = parseDemoDate(raw);
-  if (!demoDate) {
-    next();
-    return;
-  }
-  demoClockStorage.run(demoDate, () => next());
-}
-
-/** Returns request-scoped simulated Date in non-production when X-Demo-Date is set; otherwise real Date. */
-export function effectiveNow(): Date {
-  if (process.env.NODE_ENV === 'production') return new Date();
-  return demoClockStorage.getStore() ?? new Date();
-}
-
-/** True only in non-production while a valid X-Demo-Date override is active for the current request. */
-export function isDemoClockActive(): boolean {
-  return process.env.NODE_ENV !== 'production' && demoClockStorage.getStore() !== undefined;
+// Retained for existing bootstrap callers; request headers cannot change the shared clock.
+export function demoClockMiddleware(_req: Request, _res: Response, next: NextFunction): void {
+  next();
 }

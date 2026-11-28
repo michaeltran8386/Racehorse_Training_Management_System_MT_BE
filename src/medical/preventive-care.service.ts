@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
@@ -24,7 +25,7 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
  * Chuẩn hóa các mốc ngày theo múi giờ CLB (Asia/Ho_Chi_Minh: UTC+7).
  * Lịch chăm sóc chỉ bị coi là quá hạn (OVERDUE) sau khi hết ngày hôm nay theo giờ CLB.
  */
-export function getClubDateBounds(now: Date = new Date()) {
+export function getClubDateBounds(now: Date = effectiveNow()) {
   const startOfTodayClub = new Date(
     Math.floor((now.getTime() + CLUB_OFFSET_MS) / DAY_MS) * DAY_MS - CLUB_OFFSET_MS,
   );
@@ -304,7 +305,7 @@ export class PreventiveCareService {
 
     const baseWhere = { ...where };
 
-    const now = new Date();
+    const now = effectiveNow();
     const { startOfTodayClub, endOf7Days, endOf30Days } = getClubDateBounds(now);
 
     if (status) {
@@ -574,7 +575,7 @@ export class PreventiveCareService {
       throw apiError(HttpStatus.BAD_REQUEST, 'VALIDATION', 'Enter the product or vaccine used.');
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     const performedDate = dto.performedDate ? new Date(dto.performedDate) : now;
     if (performedDate > now) {
       throw apiError(
@@ -771,7 +772,7 @@ export class PreventiveCareService {
     });
     if (!horse) throw apiError(HttpStatus.NOT_FOUND, 'HORSE_NOT_FOUND', 'Horse not found.');
 
-    const now = new Date();
+    const now = effectiveNow();
     for (const item of dto.schedules) {
       const catalog = await this.prisma.preventiveTypeCatalog.findUnique({
         where: { id: item.typeCatalogId },
@@ -930,7 +931,7 @@ export class PreventiveCareService {
     }
 
     const dueDate = new Date(dto.dueDate);
-    const todayStart = new Date();
+    const todayStart = effectiveNow();
     todayStart.setHours(0, 0, 0, 0);
     if (dueDate < todayStart) {
       throw apiError(

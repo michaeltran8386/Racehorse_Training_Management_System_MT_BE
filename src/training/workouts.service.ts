@@ -1617,7 +1617,7 @@ export class WorkoutsService {
 
     if (dateStr && this.prisma.shiftRoster?.findMany) {
       const d = new Date(dateStr);
-      const dayStart = startOfClubDay(isNaN(d.getTime()) ? new Date() : d);
+      const dayStart = startOfClubDay(isNaN(d.getTime()) ? effectiveNow() : d);
       const rosters = await this.prisma.shiftRoster.findMany({
         where: {
           date: { gte: dayStart, lt: addDays(dayStart, 1) },
@@ -1646,7 +1646,7 @@ export class WorkoutsService {
     const groomDailySessionCountMap = new Map<string, number>();
     if (dateStr && this.prisma.workoutSession?.findMany) {
       const d = new Date(dateStr);
-      const dayStart = startOfClubDay(isNaN(d.getTime()) ? new Date() : d);
+      const dayStart = startOfClubDay(isNaN(d.getTime()) ? effectiveNow() : d);
       const daySessions = await this.prisma.workoutSession.findMany({
         where: {
           status: { not: WorkoutStatus.CANCELLED },

@@ -1,3 +1,5 @@
+import { DemoClockController } from './common/demo-clock.controller';
+import { DemoClockScheduler } from './common/demo-clock.scheduler';
 import { DemoDataModule } from './demo-data/demo-data.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -72,8 +74,9 @@ import { SimulatorModule } from './simulator/simulator.module';
     InventoryModule,
     SimulatorModule,
   ],
-  controllers: [],
+  controllers: [DemoClockController],
   providers: [
+    DemoClockScheduler,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import {
   BadRequestException,
   ConflictException,
@@ -28,7 +29,7 @@ export class MedicalLifecycleService {
     tx: Prisma.TransactionClient,
     dto: CreateMedicalLockDto,
     actor: CurrentUserPayload,
-    recheckDate = new Date(Date.now() + (dto.expectedRestDays ?? 7) * 86400000),
+    recheckDate = new Date(effectiveNow().getTime() + (dto.expectedRestDays ?? 7) * 86400000),
   ) {
     if (actor.role !== 'VETERINARIAN') throw new ForbiddenException();
     await tx.$queryRaw`SELECT "id" FROM "Horse" WHERE "id" = ${dto.horseId} FOR UPDATE`;
@@ -82,7 +83,7 @@ export class MedicalLifecycleService {
       where: {
         horseId: horse.id,
         status: 'SCHEDULED',
-        scheduledDate: { gte: new Date() },
+        scheduledDate: { gte: effectiveNow() },
         ...HEAVY_WORKOUT_WHERE,
       },
       data: { status: 'BLOCKED', statusReason: `Khóa y tế ${lock.lockCode}` },
@@ -92,7 +93,7 @@ export class MedicalLifecycleService {
         horseId: horse.id,
         status: { in: ['REGISTERED', 'CONFIRMED'] },
         tournament: {
-          raceDate: { gte: new Date() },
+          raceDate: { gte: effectiveNow() },
           status: { notIn: ['COMPLETED', 'CANCELLED'] },
         },
       },
@@ -127,7 +128,7 @@ export class MedicalLifecycleService {
       where: { medicalRecordId: record.id, isLocked: true },
       data: {
         isLocked: false,
-        unlockedAt: new Date(),
+        unlockedAt: effectiveNow(),
         unlockVetUserId: actor.userId,
         unlockReason: 'Bác sĩ xác nhận hồi phục khi kết thúc bệnh án',
       },
@@ -136,7 +137,7 @@ export class MedicalLifecycleService {
     if (incidentIds.length)
       await tx.incidentReport.updateMany({
         where: { id: { in: incidentIds }, status: { in: ['REPORTED', 'UNDER_REVIEW'] } },
-        data: { status: 'RESOLVED', resolvedAt: new Date(), reviewedById: actor.userId },
+        data: { status: 'RESOLVED', resolvedAt: effectiveNow(), reviewedById: actor.userId },
       });
     const remainingActiveLocks = await tx.medicalLock.findMany({
       where: { horseId: horse.id, isLocked: true },
@@ -175,7 +176,7 @@ export class MedicalLifecycleService {
     const status = [HorseStatus.INJURED, HorseStatus.ISOLATED].includes(horse.status as any)
       ? horse.status
       : HorseStatus.UNDER_OBSERVATION;
-    const now = new Date();
+    const now = effectiveNow();
     const lockCode = await generateMedicalLockCode(tx);
     const lock = await tx.medicalLock.create({
       data: {

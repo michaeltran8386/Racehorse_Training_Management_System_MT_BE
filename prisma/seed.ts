@@ -62,6 +62,7 @@ import {
   effectiveIntensity,
   effectiveSurface,
   GROOM_BUFFER_MINUTES,
+  TRAINER_BUFFER_MINUTES,
   workoutDurationMinutes,
 } from '../src/training/training-rules';
 
@@ -1222,13 +1223,13 @@ function phaseFor(planCode: string, start: Date, end: Date, speed = 38) {
     {
       id: `${planCode}-PH1`,
       name: 'Nền tảng và duy trì thể lực',
-      type: 'FOUNDATION',
-      focus: 'FOUNDATION',
+      type: 'BASE',
+      focus: 'BASE',
       startDate: clubDate(start),
       endDate: clubDate(end),
       durationDays: Math.round((+end - +start) / DAY_MS) + 1,
-      sessionsPerWeek: 3,
-      maxWeeklyDistance: 6000,
+      sessionsPerWeek: 5,
+      maxWeeklyDistance: 10000,
       surface: 'TURF',
       targetSpeedKmh: speed,
       targetDistanceM: 1400,
@@ -1266,8 +1267,21 @@ async function seedTraining(tx: Tx) {
     if (h.status === HorseStatus.RETIRED || i >= 14) continue;
     const trainerId = trainerFor(i);
     const draft = i === 7;
-    const unassigned = [10, 12, 13].includes(i);
-    if (unassigned) continue;
+    const unassigned = [3, 10, 12, 13].includes(i);
+    if (unassigned) {
+      if (i === 3) {
+        await tx.horse.update({
+          where: { id: h.id },
+          data: {
+            assignedTrainerId: trainerId,
+            trainerAssignmentStatus: TrainerAssignmentStatus.ASSIGNED,
+            trainerAssignedAt: days(-44),
+            trainerRespondedAt: days(-44, 10),
+          },
+        });
+      }
+      continue;
+    }
     const code = `GA-${String(i + 1).padStart(6, '0')}`;
     const planId = id(`plan:current:${h.id}`);
     const start = days(draft ? 1 : -42),
@@ -1290,11 +1304,38 @@ async function seedTraining(tx: Tx) {
           trackSurface: TrackSurface.TURF,
           targetSpeed: 38,
           targetDistance: 1400,
-          createdAt: days(-43),
+          createdAt: draft ? now : days(-43),
         },
       ],
       skipDuplicates: true,
     });
+    if (draft) {
+      // Repair automatic expiry on stale seeded draft without overwriting manual cancellations.
+      await tx.trainingPlan.updateMany({
+        where: {
+          id: planId,
+          OR: [
+            {
+              status: PlanStatus.CANCELLED,
+              cancelReason:
+                'Hệ thống tự động hủy do bản nháp quá hạn 72 giờ hoặc quá ngày bắt đầu mà chưa được kích hoạt.',
+            },
+            {
+              status: PlanStatus.DRAFT,
+              createdAt: { lt: new Date(+now - 72 * 60 * 60 * 1000) },
+            },
+          ],
+        },
+        data: {
+          status: PlanStatus.DRAFT,
+          cancelReason: null,
+          startDate: start,
+          endDate: end,
+          phases: phaseFor(code, start, end),
+          createdAt: now,
+        },
+      });
+    }
     await tx.horse.update({
       where: { id: h.id },
       data: {
@@ -1306,7 +1347,7 @@ async function seedTraining(tx: Tx) {
       },
     });
     if (draft) continue;
-    for (let d = -42; d <= 21; d += 2) {
+    for (let d = -42; d <= 10; d += 2) {
       const afternoon = i % 7 >= 4;
       const scheduledDate = days(d, afternoon ? 13 : 6, 0);
       const locked = Boolean(h.isMedicalLocked) && d >= -10;
@@ -1396,9 +1437,12 @@ async function seedTraining(tx: Tx) {
   const placed: Array<{ start: number; end: number; groom: string | null; trainer: string }> = [];
   workouts.sort((a, b) => +new Date(a.scheduledDate) - +new Date(b.scheduledDate));
   for (const w of workouts) {
-    if ([WorkoutStatus.CANCELLED, WorkoutStatus.BLOCKED].includes(w.status as any)) continue;
+    if (w.status === WorkoutStatus.CANCELLED) continue;
     const trainer = trainerFor(HORSES.findIndex((h) => h.id === w.horseId));
-    const duration = (workoutDurationMinutes(w.workoutType) + GROOM_BUFFER_MINUTES) * 60000;
+    const duration =
+      (workoutDurationMinutes(w.workoutType) +
+        Math.max(GROOM_BUFFER_MINUTES, TRAINER_BUFFER_MINUTES)) *
+      60000;
     let start = +new Date(w.scheduledDate);
     while (
       placed.some(

@@ -1,3 +1,4 @@
+import { effectiveNow, isDemoClockActive } from '../common/utils/demo-clock';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { FinancialService } from './financial.service';
@@ -8,8 +9,9 @@ export class FinancialScheduler {
   constructor(private readonly financial: FinancialService) {}
 
   @Cron('10 0 1 * *', { name: 'monthly-boarding-invoices', timeZone: 'Asia/Ho_Chi_Minh' })
-  async generatePreviousMonth(): Promise<void> {
-    const club = new Date(Date.now() + 7 * 3600000);
+  async generatePreviousMonth(fromDemoClock = false): Promise<void> {
+    if (isDemoClockActive() && !fromDemoClock) return;
+    const club = new Date(effectiveNow().getTime() + 7 * 3600000);
     club.setUTCDate(1);
     club.setUTCMonth(club.getUTCMonth() - 1);
     try {
@@ -24,7 +26,8 @@ export class FinancialScheduler {
   }
 
   @Cron('0 * * * * *', { name: 'invoice-overdue-sweep', timeZone: 'Asia/Ho_Chi_Minh' })
-  async sweep(): Promise<void> {
+  async sweep(fromDemoClock = false): Promise<void> {
+    if (isDemoClockActive() && !fromDemoClock) return;
     try {
       await this.financial.sweepOverdue();
     } catch (err) {

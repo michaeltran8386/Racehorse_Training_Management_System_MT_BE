@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { PlanStatus, Role, WorkoutStatus } from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
@@ -79,7 +80,7 @@ export class TrainingCommonService {
    *   Buổi Bỏ lỡ giữ nguyên để HT còn ghi bù trong 7 ngày (LATE_RESULT_DAYS).
    * Dự án chưa có bộ lập lịch (cron) nên làm "lười" ở đây; kết quả giống nhau dù chạy bao nhiêu lần.
    */
-  async sweepOverdue(now = new Date()): Promise<void> {
+  async sweepOverdue(now = effectiveNow()): Promise<void> {
     const today = startOfClubDay(now);
     // Buổi của giáo án Nháp chưa phải lịch thật nên không bị tính Bỏ lỡ.
     const missed: MissedWorkout[] = await this.prisma.workoutSession.findMany({
@@ -248,7 +249,7 @@ export class TrainingCommonService {
     if (!planIds.length) {
       return new Map<string, { completed: number; total: number; due: number; overdue: number }>();
     }
-    const now = new Date();
+    const now = effectiveNow();
     const [allRows, dueRows] = await Promise.all([
       this.prisma.workoutSession.groupBy({
         by: ['trainingPlanId', 'status'],

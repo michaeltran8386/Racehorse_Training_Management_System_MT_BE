@@ -209,6 +209,7 @@ export class WorkoutSlotSuggestionsService {
           }),
         ]);
         const live = rows.filter((r) => r.id !== dto.excludeWorkoutId);
+        let hitWeekQuota = false;
         const slots = rankWorkoutSlots(
           {
             horseId: horse.id,
@@ -302,8 +303,10 @@ export class WorkoutSlotSuggestionsService {
                 weekRows.reduce((n, r) => n + r.distanceMeters * r.repetitions, 0) +
                   dto.distanceMeters * (dto.repetitions ?? 1) >
                   phase.maxWeeklyDistance
-              )
+              ) {
+                hitWeekQuota = true;
                 return false;
+              }
             }
             return true;
           },
@@ -311,9 +314,11 @@ export class WorkoutSlotSuggestionsService {
         return {
           slots,
           reasons:
-            slots.length < 3
-              ? ['Fewer than three slots meet the current safety and phase limits.']
-              : [],
+            slots.length === 0 && hitWeekQuota
+              ? ['PHASE_WEEK_QUOTA_FULL']
+              : slots.length < 3
+                ? ['Fewer than three slots meet the current safety and phase limits.']
+                : [],
           evaluatedAt: now.toISOString(),
         };
       },

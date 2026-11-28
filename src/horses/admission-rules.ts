@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus } from '@nestjs/common';
 import { AdmissionStatus } from '@prisma/client';
 import { UserRole } from '../common/enums/role.enum';
@@ -200,7 +201,7 @@ export interface CancelActor {
 export function assertValidCancelTransition(
   record: CancelTargetRecord,
   user: CancelActor,
-  now: Date = new Date(),
+  now: Date = effectiveNow(),
 ): void {
   if (
     record.status === AdmissionStatus.APPROVED ||

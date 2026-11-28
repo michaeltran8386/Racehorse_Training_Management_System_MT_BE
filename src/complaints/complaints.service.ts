@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import {
   BadRequestException,
   ConflictException,
@@ -118,7 +119,7 @@ export class ComplaintsService {
     });
     if (!subject) throw new BadRequestException('Subject must be an active staff member');
     const row = await this.prisma.$transaction(async (tx) => {
-      const dateStr = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+      const dateStr = effectiveNow().toISOString().slice(0, 10).replaceAll('-', '');
       const countToday = await tx.complaint.count({
         where: { code: { startsWith: `CMP-${dateStr}-` } },
       });
@@ -187,7 +188,7 @@ export class ComplaintsService {
   }
 
   review(id: string, dto: ReviewComplaintDto, user: CurrentUserPayload) {
-    if (dto.responseDueAt && new Date(dto.responseDueAt) <= new Date())
+    if (dto.responseDueAt && new Date(dto.responseDueAt) <= effectiveNow())
       throw new BadRequestException('Response deadline must be in the future');
     return this.transition(
       id,
@@ -239,7 +240,7 @@ export class ComplaintsService {
         throw new ForbiddenException('Involved staff cannot handle this complaint');
       if (!allowed.includes(before.status))
         throw new ConflictException('Complaint cannot transition from its current status');
-      const reviewedAt = new Date();
+      const reviewedAt = effectiveNow();
       const updated = await tx.complaint.updateMany({
         where: { id, status: before.status },
         data: { ...data, status: to, reviewedById: user.userId, reviewedAt },

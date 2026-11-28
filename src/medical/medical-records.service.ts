@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { MedicalLifecycleService } from './medical-lifecycle.service';
 import { renderMail, linkBase } from '../business-mail/templates/html';
 import { prescriptionIssued } from '../business-mail/templates/health-templates';
@@ -187,10 +188,10 @@ export class MedicalRecordsService {
       );
     }
 
-    let examDate = new Date();
+    let examDate = effectiveNow();
     if (dto.examinationDate) {
       examDate = new Date(dto.examinationDate);
-      const now = new Date();
+      const now = effectiveNow();
       if (examDate > now) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
@@ -210,7 +211,7 @@ export class MedicalRecordsService {
 
     const isDraft = dto.isDraft ?? false;
     const recommendedHorseStatus = this.toHorseStatus(dto.recommendedHorseStatus);
-    const recordNumber = await this.nextRecordNumber(new Date());
+    const recordNumber = await this.nextRecordNumber(effectiveNow());
 
     // Build labTests JSON
     let labTestsStr: string | null = null;
@@ -585,7 +586,7 @@ export class MedicalRecordsService {
         ? typeof record.examinationDate === 'string'
           ? record.examinationDate
           : record.examinationDate.toISOString()
-        : new Date().toISOString(),
+        : effectiveNow().toISOString(),
       closedAt: record.closedAt
         ? typeof record.closedAt === 'string'
           ? record.closedAt
@@ -600,12 +601,12 @@ export class MedicalRecordsService {
         ? typeof record.createdAt === 'string'
           ? record.createdAt
           : record.createdAt.toISOString()
-        : new Date().toISOString(),
+        : effectiveNow().toISOString(),
       updatedAt: record.updatedAt
         ? typeof record.updatedAt === 'string'
           ? record.updatedAt
           : record.updatedAt.toISOString()
-        : new Date().toISOString(),
+        : effectiveNow().toISOString(),
     };
   }
 
@@ -666,7 +667,7 @@ export class MedicalRecordsService {
     }
     if (dto.examinationDate) {
       const examDate = new Date(dto.examinationDate);
-      const now = new Date();
+      const now = effectiveNow();
       if (examDate > now) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
@@ -969,7 +970,7 @@ export class MedicalRecordsService {
       } catch {
         /* Preserve closure for legacy malformed prescriptions. */
       }
-      const now = new Date();
+      const now = effectiveNow();
       const stopped = rx.map((item) =>
         item.status === 'ACTIVE'
           ? {
@@ -1053,7 +1054,7 @@ export class MedicalRecordsService {
         data: {
           isMedicalLocked: true,
           medicalLockNotes: 'Bác sĩ thú y đã kết thúc điều trị / đóng bệnh án.',
-          cancelledAt: new Date(),
+          cancelledAt: effectiveNow(),
         },
       });
     }
@@ -1126,7 +1127,7 @@ export class MedicalRecordsService {
 
     // Kiểm tra quy tắc nghiệp vụ: Chỉ được mở lại trong vòng 7 ngày kể từ khi kết thúc
     if (record.closedAt) {
-      const diffMs = Date.now() - new Date(record.closedAt).getTime();
+      const diffMs = effectiveNow().getTime() - new Date(record.closedAt).getTime();
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
       if (diffDays > 7) {
         throw apiError(
@@ -1137,7 +1138,7 @@ export class MedicalRecordsService {
       }
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     // Cập nhật Database: đổi trạng thái sang OPEN, ghi nhận reopenedAt và reopenReason
     const updated = await this.prisma.medicalRecord.update({
       where: { id },
@@ -1229,7 +1230,7 @@ export class MedicalRecordsService {
       endDate: dto.endDate,
       target: dto.target || null,
       careInstructions: dto.careInstructions || [],
-      createdAt: new Date().toISOString(),
+      createdAt: effectiveNow().toISOString(),
     };
 
     phases.push(phase);
@@ -1298,7 +1299,7 @@ export class MedicalRecordsService {
     const updatedPhase = {
       ...phases[index],
       ...dto,
-      updatedAt: new Date().toISOString(),
+      updatedAt: effectiveNow().toISOString(),
     };
 
     if (updatedPhase.startDate && updatedPhase.endDate) {
@@ -1437,7 +1438,7 @@ export class MedicalRecordsService {
 
     let effectiveEndDate = dto.endDate;
     if (!effectiveEndDate) {
-      const s = new Date(dto.startDate || Date.now());
+      const s = new Date(dto.startDate || effectiveNow().getTime());
       const days = Number(dto.daysCount) > 0 ? Number(dto.daysCount) : 1;
       effectiveEndDate = new Date(s.getTime() + (days - 1) * 86400000).toISOString().split('T')[0];
     }
@@ -1458,7 +1459,7 @@ export class MedicalRecordsService {
       withdrawalDays: dto.withdrawalDays || 0,
       notes: dto.notes || '',
       status: 'ACTIVE',
-      createdAt: new Date().toISOString(),
+      createdAt: effectiveNow().toISOString(),
     };
 
     currentRx.push(newPrescription);
@@ -1545,7 +1546,7 @@ export class MedicalRecordsService {
     // Quy tắc nghiệp vụ: Chỉ cho phép chỉnh sửa khi đơn thuốc chưa bắt đầu dùng (startDate > now)
     if (rx.startDate) {
       const start = new Date(rx.startDate);
-      if (start.getTime() <= Date.now()) {
+      if (start.getTime() <= effectiveNow().getTime()) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
           'PRESCRIPTION_STARTED',
@@ -1563,7 +1564,7 @@ export class MedicalRecordsService {
       delete patch.unit; // đơn vị luôn theo thuốc trong kho
     }
     if (dto.dosage !== undefined) patch.dosage = String(this.assertDose(dto.dosage));
-    currentRx[index] = { ...rx, ...patch, updatedAt: new Date().toISOString() };
+    currentRx[index] = { ...rx, ...patch, updatedAt: effectiveNow().toISOString() };
 
     // Cập nhật mảng đơn thuốc vào cột prescriptions trong Database
     await this.prisma.medicalRecord.update({
@@ -1637,8 +1638,8 @@ export class MedicalRecordsService {
     rx.status = 'STOPPED';
     rx.stoppedReason = dto.reason || 'Bác sĩ yêu cầu dừng thuốc';
     rx.stopNotes = '';
-    rx.stoppedDate = dto.stoppedDate || new Date().toISOString().split('T')[0];
-    rx.stoppedAt = new Date().toISOString();
+    rx.stoppedDate = dto.stoppedDate || effectiveNow().toISOString().split('T')[0];
+    rx.stoppedAt = effectiveNow().toISOString();
 
     // Cập nhật trạng thái dừng đơn thuốc vào cột prescriptions trong Database
     await this.prisma.medicalRecord.update({
@@ -1677,7 +1678,7 @@ export class MedicalRecordsService {
     }
 
     const rawVisitDate = dto.followUpDate;
-    const visitDate = rawVisitDate ? new Date(rawVisitDate) : new Date();
+    const visitDate = rawVisitDate ? new Date(rawVisitDate) : effectiveNow();
 
     let followUps: any[] = [];
     if (record.followUps) {
@@ -1698,7 +1699,7 @@ export class MedicalRecordsService {
       progressNotes: dto.progressNotes,
       adjustments: dto.adjustments || null,
       vetName: actor.fullName || actor.email || 'Veterinarian',
-      createdAt: new Date().toISOString(),
+      createdAt: effectiveNow().toISOString(),
     };
 
     followUps.push(followUp);
@@ -1721,7 +1722,7 @@ export class MedicalRecordsService {
       recordId,
     );
 
-    if (followUp.followUpDate >= clubDate(new Date())) {
+    if (followUp.followUpDate >= clubDate(effectiveNow())) {
       const horse = await this.prisma.horse.findUnique({
         where: { id: record.horseId },
         select: { name: true, horseCode: true },
@@ -1815,7 +1816,7 @@ export class MedicalRecordsService {
       },
     });
 
-    const today = clubDate(new Date());
+    const today = clubDate(effectiveNow());
     const items = tasks.map((t) => {
       const day = t.date.toISOString().slice(0, 10);
       const status = t.isCompleted ? 'DONE' : day < today ? 'MISSED' : 'UPCOMING';

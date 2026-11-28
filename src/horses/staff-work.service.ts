@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -236,7 +237,7 @@ export class StaffWorkService {
         location: '',
         link: '/medical',
       });
-    const now = Date.now();
+    const now = effectiveNow().getTime();
     return {
       members,
       events: events.sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
@@ -258,7 +259,7 @@ export class StaffWorkService {
 
   async create(dto: CreateStaffWorkDto, actor: CurrentUserPayload) {
     const interval = workInterval(dto.startsAt, dto.endsAt);
-    if (interval.startsAt <= new Date())
+    if (interval.startsAt <= effectiveNow())
       throw apiError(
         HttpStatus.BAD_REQUEST,
         'WORK_IN_PAST',

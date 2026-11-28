@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { Prisma } from '@prisma/client';
 import { clubDate } from '../training/training-rules';
 
@@ -14,7 +15,7 @@ type RosterReader = {
 };
 
 /** Ngày CLB (UTC+7) dạng cột @db.Date của ShiftRoster. */
-export function rosterDay(at = new Date()): Date {
+export function rosterDay(at = effectiveNow()): Date {
   return new Date(`${clubDate(at)}T00:00:00.000Z`);
 }
 
@@ -33,7 +34,11 @@ export function shiftInterval(
 }
 
 /** Actual duty now, including the previous day's overnight roster. */
-export async function onDutyGrooms(db: Prisma.TransactionClient, zoneId: string, at = new Date()) {
+export async function onDutyGrooms(
+  db: Prisma.TransactionClient,
+  zoneId: string,
+  at = effectiveNow(),
+) {
   const today = rosterDay(at);
   const rows = await db.shiftRoster.findMany({
     where: {
@@ -58,7 +63,7 @@ export async function onDutyGrooms(db: Prisma.TransactionClient, zoneId: string,
 export async function groomZoneIds(
   prisma: RosterReader | any,
   groomUserId: string,
-  at = new Date(),
+  at = effectiveNow(),
 ): Promise<string[]> {
   const delegate: RosterDelegate | undefined = prisma?.shiftRoster ?? prisma?.groomAssignment;
   if (!delegate?.findMany || typeof delegate.findMany !== 'function') {
@@ -80,7 +85,7 @@ export function horsesInZones(zoneIds: string[]): Prisma.HorseWhereInput {
 export async function zoneGroomIds(
   prisma: RosterReader | any,
   zoneId: string | null | undefined,
-  at = new Date(),
+  at = effectiveNow(),
 ): Promise<string[]> {
   if (!zoneId) return [];
   const delegate: RosterDelegate | undefined = prisma?.shiftRoster ?? prisma?.groomAssignment;
