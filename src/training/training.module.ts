@@ -25,6 +25,12 @@ import { WorkoutSlotSuggestionsService } from './workout-slot-suggestions.servic
     TrainerReviewsService,
     TrainingScheduler,
   ],
-  exports: [TrainingCommonService, TrainingPlansService, WorkoutsService, TrainingInsightsService],
+  exports: [
+    TrainingScheduler,
+    TrainingCommonService,
+    TrainingPlansService,
+    WorkoutsService,
+    TrainingInsightsService,
+  ],
 })
 export class TrainingModule {}

@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { NotificationCategory, Prisma, RestockStatus, Role, SupplyCategory } from '@prisma/client';
 import * as crypto from 'crypto';
@@ -135,7 +136,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   verifyAckCapability(
     requestId: string,
     capability: string,
-    now: Date = new Date(),
+    now: Date = effectiveNow(),
   ): { valid: boolean; reason?: string } {
     try {
       // R-4: Validate ACK field types before processing
@@ -193,7 +194,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
   }
 
   async recoverPendingDeliveries(): Promise<void> {
-    const now = new Date();
+    const now = effectiveNow();
     try {
       if (!this.prisma?.restockRequest) {
         return;
@@ -271,7 +272,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       return { completed: false, alreadyCompleted: true, status: request.status };
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     const amountToAdd = Number(request.approvedQuantity || request.requestedQuantity);
 
     const txResult = await this.prisma.$transaction(async (tx) => {
@@ -655,7 +656,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
     if (!zone) throw apiError(HttpStatus.NOT_FOUND, 'ZONE_NOT_FOUND', 'Khu chuồng không tồn tại.');
     if (!supply) throw apiError(HttpStatus.NOT_FOUND, 'SUPPLY_NOT_FOUND', 'Vật tư không tồn tại.');
 
-    const now = new Date();
+    const now = effectiveNow();
     const updated = await this.prisma.$transaction(async (tx) => {
       // R-1: Zone-row lock to serialize concurrent stock adjustments, approvals, and deliveries
       await tx.$queryRaw`SELECT id FROM "StallZone" WHERE id = ${dto.zoneId} FOR UPDATE`;
@@ -1035,7 +1036,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     const count = await this.prisma.restockRequest.count();
     const yy = now.getFullYear().toString().slice(-2);
     const mm = (now.getMonth() + 1).toString().padStart(2, '0');
@@ -1297,7 +1298,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     const isApproved = dto.action === 'APPROVE';
 
     // R-1: Capacity validation moved inside transaction with SELECT FOR UPDATE advisory lock
@@ -1504,7 +1505,7 @@ export class InventoryService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const now = new Date();
+    const now = effectiveNow();
 
     // Transaction: cập nhật phiếu sang DELIVERED & cộng dồn vào StockBalance
     // Dùng interactive transaction có zone-row lock và updateMany where status == APPROVED để đảm bảo tính nguyên tử:

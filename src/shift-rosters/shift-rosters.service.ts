@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { assertRosterSlot } from './roster-validation';
 import { lockCareAssignments } from '../stalls/groom-care.rules';
 import { HttpStatus, Injectable, Optional } from '@nestjs/common';
@@ -159,7 +160,7 @@ export class ShiftRostersService {
     if (
       !roster.shift.isActive ||
       !roster.zone.isActive ||
-      shiftInterval(roster.date, roster.shift).start <= Date.now()
+      shiftInterval(roster.date, roster.shift).start <= effectiveNow().getTime()
     ) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -237,7 +238,7 @@ export class ShiftRostersService {
           !other.zone.isActive ||
           other.groom.role !== Role.GROOM ||
           other.groom.status !== UserStatus.ACTIVE ||
-          shiftInterval(other.date, other.shift).start <= Date.now()
+          shiftInterval(other.date, other.shift).start <= effectiveNow().getTime()
         )
           throw apiError(
             HttpStatus.CONFLICT,
@@ -724,7 +725,7 @@ export class ShiftRostersService {
     const targetMonday = parseDateOnly(dto.targetWeekStart);
 
     // Không thể sao chép vào tuần đã qua
-    const currentMonday = getMondayOfDate(new Date());
+    const currentMonday = getMondayOfDate(effectiveNow());
     if (targetMonday < currentMonday) {
       throw apiError(
         HttpStatus.BAD_REQUEST,

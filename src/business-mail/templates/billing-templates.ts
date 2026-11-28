@@ -1,3 +1,4 @@
+import { effectiveNow } from '../../common/utils/demo-clock';
 import { BusinessMailContent, linkBase, renderMail } from './html';
 
 /**
@@ -132,7 +133,7 @@ export function invoicePaid(
     { label: 'Kỳ thanh toán', value: inv.billingPeriod },
     { label: 'Số tiền đã thanh toán', value: fmtVnd(inv.netAmount) },
     { label: 'Mã giao dịch', value: paymentRef || '—' },
-    { label: 'Thời điểm', value: fmtDate(new Date()) },
+    { label: 'Thời điểm', value: fmtDate(effectiveNow()) },
     { label: 'Ngựa', value: horse.name },
     { label: 'Xem sao kê', value: `${linkBase()}/financial-reports` },
   ]);

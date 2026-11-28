@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
@@ -89,7 +90,7 @@ export class SimulatorService {
           'Only scheduled workouts can be simulated.',
         );
       }
-      if (workout.scheduledDate > new Date() && !allowEarlyWorkoutStart()) {
+      if (workout.scheduledDate > effectiveNow() && !allowEarlyWorkoutStart()) {
         throw apiError(
           HttpStatus.CONFLICT,
           'WORKOUT_NOT_STARTED',
@@ -329,7 +330,7 @@ export class SimulatorService {
         prizePool: Number(tournament.prizePool || 0),
       };
 
-      const now = new Date();
+      const now = effectiveNow();
       if (existing) {
         return tx.simulatorSession.update({
           where: { id: existing.id },
@@ -386,7 +387,7 @@ export class SimulatorService {
       );
     }
 
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(effectiveNow().getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const tournament = await this.prisma.tournament.findUnique({
       where: { id: tournamentId },
@@ -707,7 +708,7 @@ export class SimulatorService {
    */
   async getStaffForSimulator() {
     // Ngày hôm nay theo giờ câu lạc bộ (UTC+7); ShiftRoster.date là cột @db.Date.
-    const clubToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+    const clubToday = new Date(effectiveNow().getTime() + 7 * 3600_000).toISOString().slice(0, 10);
     const users = await this.prisma.user.findMany({
       where: {
         status: 'ACTIVE',

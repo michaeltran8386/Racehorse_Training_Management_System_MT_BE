@@ -1,7 +1,14 @@
 import { WorkoutsService } from './workouts.service';
 import { lockWorkoutSchedule } from './workout-availability.service';
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { HorseStatus, PlanStatus, Prisma, TrackSurface, WorkoutStatus } from '@prisma/client';
+import {
+  HorseStatus,
+  PlanStatus,
+  Prisma,
+  TrackSurface,
+  TrainerAssignmentStatus,
+  WorkoutStatus,
+} from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
 import { effectiveNow } from '../common/utils/demo-clock';
 import { UserRole } from '../common/enums/role.enum';
@@ -735,7 +742,14 @@ export class TrainingPlansService {
       await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${trainerId} FOR UPDATE`;
       const current = await tx.horse.findUnique({
         where: { id: horse.id },
-        include: { medicalLocks: { where: { isLocked: true }, select: { id: true }, take: 1 } },
+        include: {
+          medicalLocks: { where: { isLocked: true }, select: { id: true }, take: 1 },
+          stallAllocations: {
+            where: { isActive: true },
+            take: 1,
+            select: { stall: { select: { zoneId: true, zoneRef: { select: { name: true } } } } },
+          },
+        },
       });
       if (
         !current ||
@@ -751,7 +765,37 @@ export class TrainingPlansService {
         );
       await this.assertNoOtherTrainer(horse.id, horse.name, trainerId, tx);
       await this.assertTrainerCapacity(horse.id, horse.name, trainerId, tx);
+      const trainer = tx.user?.findUnique
+        ? await tx.user.findUnique({
+            where: { id: trainerId },
+            select: { assignedBarnId: true },
+          })
+        : null;
+      const horseStall = current.stallAllocations?.[0]?.stall;
+      if (
+        trainer?.assignedBarnId &&
+        horseStall?.zoneId &&
+        trainer.assignedBarnId !== horseStall.zoneId
+      ) {
+        throw apiError(
+          HttpStatus.CONFLICT,
+          'TRAINER_ZONE_MISMATCH',
+          `${horse.name} đang ở ${horseStall.zoneRef?.name ?? 'khu chuồng khác'}. HLV chỉ được lập giáo án cho chiến mã trong cùng khu chuồng.`,
+        );
+      }
       const created = await tx.trainingPlan.create({ data, include: PLAN_INCLUDE });
+      if (current.assignedTrainerId === null && tx.horse?.update) {
+        const now = effectiveNow();
+        await tx.horse.update({
+          where: { id: horse.id },
+          data: {
+            assignedTrainerId: trainerId,
+            trainerAssignmentStatus: TrainerAssignmentStatus.ASSIGNED,
+            trainerAssignedAt: now,
+            trainerRespondedAt: now,
+          },
+        });
+      }
       if (data.workoutSessions?.create) {
         const copies = await tx.workoutSession.findMany({
           where: { trainingPlanId: created.id, status: 'SCHEDULED' },
@@ -793,7 +837,7 @@ export class TrainingPlansService {
     action = 'TRAINER_HORSE_COOLDOWN',
   ) {
     if (!this.prisma.auditLog?.create) return;
-    const cooldownUntil = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const cooldownUntil = new Date(effectiveNow().getTime() + 48 * 60 * 60 * 1000);
     await this.prisma.auditLog.create({
       data: {
         action,
@@ -818,7 +862,7 @@ export class TrainingPlansService {
     trainerUserId: string,
   ): Promise<Date | null> {
     if (!this.prisma.auditLog?.findFirst) return null;
-    const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const since = new Date(effectiveNow().getTime() - 48 * 60 * 60 * 1000);
     const latestCooldown = await this.prisma.auditLog.findFirst({
       where: {
         action: {
@@ -851,7 +895,7 @@ export class TrainingPlansService {
       }
     }
 
-    if (cooldownUntil <= new Date()) return null;
+    if (cooldownUntil <= effectiveNow()) return null;
 
     // Kiểm tra xem Quản lý CLB có mở khóa sau thời điểm cooldown này không
     const unlock = await this.prisma.auditLog.findFirst({
@@ -885,7 +929,7 @@ export class TrainingPlansService {
     horseId: string,
   ): Promise<{ remainingHours: number; trainerUserId: string; trainerName: string } | null> {
     if (!this.prisma.auditLog?.findFirst) return null;
-    const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const since = new Date(effectiveNow().getTime() - 48 * 60 * 60 * 1000);
     const latest = await this.prisma.auditLog.findFirst({
       where: {
         action: {
@@ -907,9 +951,11 @@ export class TrainingPlansService {
     if (!latest || !latest.userId) return null;
 
     const cooldownUntil = await this.getTrainerHorseCooldown(horseId, latest.userId);
-    if (!cooldownUntil || cooldownUntil <= new Date()) return null;
+    if (!cooldownUntil || cooldownUntil <= effectiveNow()) return null;
 
-    const remainingHours = Math.ceil((cooldownUntil.getTime() - Date.now()) / (3600 * 1000));
+    const remainingHours = Math.ceil(
+      (cooldownUntil.getTime() - effectiveNow().getTime()) / (3600 * 1000),
+    );
     return {
       remainingHours,
       trainerUserId: latest.userId,
@@ -947,7 +993,7 @@ export class TrainingPlansService {
           trainerUserId: dto.trainerUserId,
           unlockedBy: user.fullName || user.email,
           reason: dto.reason.trim(),
-          unlockedAt: new Date().toISOString(),
+          unlockedAt: effectiveNow().toISOString(),
         }),
       },
     });
@@ -976,8 +1022,10 @@ export class TrainingPlansService {
     const client = tx || this.prisma;
     // Kiểm tra Cooldown: nếu HLV này đang trong thời gian chờ (48h) do hủy / hết hạn
     const cooldownUntil = await this.getTrainerHorseCooldown(horseId, userId);
-    if (cooldownUntil && cooldownUntil > new Date()) {
-      const remainingHours = Math.ceil((cooldownUntil.getTime() - Date.now()) / (3600 * 1000));
+    if (cooldownUntil && cooldownUntil > effectiveNow()) {
+      const remainingHours = Math.ceil(
+        (cooldownUntil.getTime() - effectiveNow().getTime()) / (3600 * 1000),
+      );
       throw apiError(
         HttpStatus.CONFLICT,
         'TRAINER_IN_COOLDOWN',
@@ -1111,7 +1159,7 @@ export class TrainingPlansService {
       where: {
         trainingPlanId: plan.id,
         status: WorkoutStatus.SCHEDULED,
-        scheduledDate: { gte: startOfClubDay(new Date()) },
+        scheduledDate: { gte: startOfClubDay(effectiveNow()) },
       },
     });
     if (validUpcomingWorkouts === 0) {
@@ -1121,7 +1169,7 @@ export class TrainingPlansService {
         'Giáo án phải có ít nhất 1 buổi tập khả thi trong tương lai (từ hôm nay trở đi) trước khi kích hoạt.',
       );
     }
-    if (plan.endDate < startOfClubDay(new Date())) {
+    if (plan.endDate < startOfClubDay(effectiveNow())) {
       throw apiError(HttpStatus.BAD_REQUEST, 'PLAN_ENDED', 'Ngày kết thúc của giáo án đã qua.');
     }
     if (MEDICAL_STATUSES.includes(horse.status) && !dto.vetConsulted) {
@@ -1246,7 +1294,7 @@ export class TrainingPlansService {
       );
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     const startDate = dto.startDate ? new Date(dto.startDate) : addDays(startOfClubDay(now), 1);
     this.assertStartsFromTomorrow(startDate);
     const shift = startDate.getTime() - source.startDate.getTime();
@@ -1384,8 +1432,31 @@ export class TrainingPlansService {
       deletedAt: null,
       status: { not: HorseStatus.RETIRED },
     };
+    let trainerBarnId: string | null = null;
     if (user.role === UserRole.HEAD_TRAINER) {
-      whereCondition.assignedTrainerId = user.userId;
+      const me = this.prisma.user?.findUnique
+        ? await this.prisma.user.findUnique({
+            where: { id: user.userId },
+            select: { assignedBarnId: true },
+          })
+        : null;
+      trainerBarnId = me?.assignedBarnId ?? null;
+      whereCondition.OR = [
+        { assignedTrainerId: user.userId },
+        ...(trainerBarnId
+          ? [
+              {
+                assignedTrainerId: null,
+                stallAllocations: {
+                  some: {
+                    isActive: true,
+                    stall: { zoneId: trainerBarnId },
+                  },
+                },
+              },
+            ]
+          : []),
+      ];
     }
     const horses = await this.prisma.horse.findMany({
       where: whereCondition,
@@ -1494,7 +1565,9 @@ export class TrainingPlansService {
           | 'DRAFT_OTHER'
           | 'MEDICAL_LOCKED'
           | 'DEBT_IMPOUNDED'
-          | 'COOLDOWN_SELF' = 'READY';
+          | 'COOLDOWN_SELF'
+          | 'PENDING_ACCEPTANCE'
+          | 'UNASSIGNED_TRAINER' = 'READY';
         let canAssign = true;
         let badge = 'Sẵn sàng';
         let explanation = 'Chiến mã sẵn sàng để tạo giáo án mới.';
@@ -1560,7 +1633,7 @@ export class TrainingPlansService {
                 h.trainerAssignmentStatus === 'PENDING_ACCEPTANCE' ||
                 (h.trainerAssignmentStatus as string) === 'PENDING'
               ) {
-                planState = 'READY';
+                planState = 'PENDING_ACCEPTANCE';
                 canAssign = false;
                 badge = 'Chờ bạn tiếp nhận';
                 explanation = 'Chiến mã đang chờ bạn xác nhận tiếp nhận trước khi lập giáo án.';
@@ -1578,8 +1651,14 @@ export class TrainingPlansService {
                 badge = 'Đã phân công cho bạn';
                 explanation = 'Chiến mã sẵn sàng để bạn lập giáo án mới.';
               }
-            } else {
+            } else if (trainerBarnId) {
               planState = 'READY';
+              canAssign = true;
+              badge = 'Ngựa mới trong khu · Sẵn sàng';
+              explanation =
+                'Chiến mã thuộc khu chuồng bạn phụ trách và chưa có HLV, sẵn sàng lập giáo án ngay.';
+            } else {
+              planState = 'UNASSIGNED_TRAINER';
               canAssign = false;
               badge = 'Chưa phân công HLV';
               explanation = 'Chiến mã chưa được phân công cho bạn.';
@@ -1594,8 +1673,10 @@ export class TrainingPlansService {
         } | null = null;
         if (user.role === UserRole.HEAD_TRAINER) {
           const cd = await this.getTrainerHorseCooldown(h.id, user.userId);
-          if (cd && cd > new Date()) {
-            const remainingHours = Math.ceil((cd.getTime() - Date.now()) / (3600 * 1000));
+          if (cd && cd > effectiveNow()) {
+            const remainingHours = Math.ceil(
+              (cd.getTime() - effectiveNow().getTime()) / (3600 * 1000),
+            );
             activeCooldown = {
               remainingHours,
               trainerUserId: user.userId,

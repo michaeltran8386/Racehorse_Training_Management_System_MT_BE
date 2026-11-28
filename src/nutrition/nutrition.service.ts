@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   NotificationCategory,
@@ -115,7 +116,7 @@ export class NutritionService {
    * Sinh mã định danh kế hoạch khẩu phần: NP-YYMM-NNN
    */
   private async generatePlanCode(): Promise<string> {
-    const now = new Date();
+    const now = effectiveNow();
     const yy = String(now.getFullYear()).slice(-2);
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const count = await this.prisma.nutritionPlan.count();
@@ -399,7 +400,7 @@ export class NutritionService {
         horseWeightSnapshot: metrics.horseWeightKg,
         mealsJson: dto.meals as unknown as Prisma.InputJsonValue,
         specialInstructions: dto.specialInstructions,
-        validFrom: dto.validFrom ? new Date(dto.validFrom) : new Date(),
+        validFrom: dto.validFrom ? new Date(dto.validFrom) : effectiveNow(),
         validTo: dto.validTo ? new Date(dto.validTo) : null,
         createdById: currentUser.userId,
       },
@@ -650,7 +651,7 @@ export class NutritionService {
           },
           data: {
             status: NutritionPlanStatus.ARCHIVED,
-            validTo: new Date(),
+            validTo: effectiveNow(),
           },
         });
         return tx.nutritionPlan.update({
@@ -658,7 +659,7 @@ export class NutritionService {
           data: {
             status: NutritionPlanStatus.APPROVED,
             approvedById: currentUser.userId,
-            approvedAt: new Date(),
+            approvedAt: effectiveNow(),
             vetNotes: dto.vetNotes ?? plan.vetNotes,
             rejectionReason: null,
           },
@@ -716,7 +717,7 @@ export class NutritionService {
         data: {
           status: NutritionPlanStatus.REJECTED,
           approvedById: currentUser.userId,
-          approvedAt: new Date(),
+          approvedAt: effectiveNow(),
           rejectionReason: dto.rejectionReason.trim(),
           vetNotes: dto.vetNotes ?? plan.vetNotes,
         },

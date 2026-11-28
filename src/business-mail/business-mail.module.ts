@@ -10,6 +10,6 @@ import { BusinessMailScheduler } from './business-mail.scheduler';
 @Global()
 @Module({
   providers: [BusinessMailService, BusinessMailScheduler],
-  exports: [BusinessMailService],
+  exports: [BusinessMailScheduler, BusinessMailService],
 })
 export class BusinessMailModule {}

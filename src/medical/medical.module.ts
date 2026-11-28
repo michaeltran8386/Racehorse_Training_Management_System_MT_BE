@@ -26,6 +26,7 @@ import { MailModule } from '../mail/mail.module';
     PreventiveScheduler,
   ],
   exports: [
+    PreventiveScheduler,
     MedicalAccessService,
     InjuriesService,
     MedicalLocksService,

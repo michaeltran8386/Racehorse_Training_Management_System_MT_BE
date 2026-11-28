@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -248,7 +249,7 @@ export class ShiftsService {
     }
 
     if (!dto.isActive) {
-      const today = new Date();
+      const today = effectiveNow();
       today.setHours(0, 0, 0, 0);
 
       const activeFutureRosters = await this.prisma.shiftRoster.count({

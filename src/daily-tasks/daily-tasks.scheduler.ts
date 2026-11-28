@@ -1,3 +1,4 @@
+import { effectiveNow, isDemoClockActive } from '../common/utils/demo-clock';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DailyTasksService } from './daily-tasks.service';
@@ -13,10 +14,11 @@ export class DailyTasksScheduler {
   constructor(private readonly service: DailyTasksService) {}
 
   @Cron('5 0 * * *', { name: 'daily-care-tasks-sweep', timeZone: 'Asia/Ho_Chi_Minh' })
-  async handleNightlyTaskGeneration() {
+  async handleNightlyTaskGeneration(fromDemoClock = false) {
+    if (isDemoClockActive() && !fromDemoClock) return;
     this.logger.log('[DailyTasksScheduler] Running nightly task generation cron job at 00:05...');
     try {
-      const now = new Date();
+      const now = effectiveNow();
       const clubNow = new Date(now.getTime() + 7 * 60 * 60 * 1000);
       const result = await this.service.generateDailyTasksForDate(clubNow);
       this.logger.log(

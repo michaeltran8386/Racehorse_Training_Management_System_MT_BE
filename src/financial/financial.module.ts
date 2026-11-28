@@ -11,6 +11,6 @@ import { PayOSService } from './payos.service';
   imports: [PrismaModule, AuditModule, NotificationsModule],
   controllers: [FinancialController],
   providers: [FinancialService, FinancialScheduler, PayOSService],
-  exports: [FinancialService, PayOSService],
+  exports: [FinancialScheduler, FinancialService, PayOSService],
 })
 export class FinancialModule {}

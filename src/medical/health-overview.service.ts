@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
@@ -301,7 +302,7 @@ export class HealthOverviewService {
    * toàn đàn, danh sách trả về đã áp bộ lọc.
    */
   async getHealthBoard(query: HealthBoardQueryDto, currentUser: CurrentUserPayload) {
-    const now = new Date();
+    const now = effectiveNow();
     const { startOfTodayClub, endOf30Days } = getClubDateBounds(now);
     const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     // C-03: OWNER chỉ thấy ngựa mình sở hữu, GROOM chỉ thấy ngựa trong khu mình trực hôm nay (giống getMedicalRecords).

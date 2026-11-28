@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
@@ -62,7 +63,7 @@ export async function assertReceivingGroom(
   zoneId: string,
   groomId: string,
   horseId: string,
-  at = new Date(),
+  at = effectiveNow(),
   duty = 'HORSE_CARE',
 ) {
   const roster = (await onDutyGrooms(tx, zoneId, at)).find(

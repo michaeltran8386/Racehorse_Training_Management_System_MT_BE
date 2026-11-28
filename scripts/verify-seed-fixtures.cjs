@@ -14,6 +14,7 @@ global.Date = class extends RealDate {
   }
 };
 const { seedFixtures } = require('../prisma/seed');
+const { TrainingCommonService } = require('../src/training/training-common.service');
 const models = Prisma.dmmf.datamodel.models;
 const tables = new Map(models.map((m) => [m.name, new Map()]));
 const uniqueIndexes = new Map();
@@ -208,6 +209,22 @@ const counts = () => Object.fromEntries([...tables].map(([name, table]) => [name
 async function main() {
   await seedFixtures(tx, 'test-only-password-hash');
   checkRelations();
+  const common = new TrainingCommonService(
+    {
+      ...tx,
+      workoutSession: { ...tx.workoutSession, findMany: async () => [] },
+      $transaction: async (operations) => Promise.all(operations),
+    },
+    { notifyUsers: async () => {} },
+  );
+  const draft = rows('TrainingPlan').find((plan) => plan.planCode === 'GA-000008');
+  assert.ok(draft, 'Showcase draft must exist');
+  await common.sweepOverdue(new Date());
+  assert.equal(
+    draft.status,
+    'DRAFT',
+    'Fresh seed draft must survive the real 72-hour expiry sweep',
+  );
   const initial = counts();
   await seedFixtures(tx, 'test-only-password-hash');
   assert.deepEqual(counts(), initial, 'Second run must not add duplicate fixtures');
@@ -343,6 +360,17 @@ async function main() {
   live.paymentRef = 'USER-REPORTED-TRANSFER';
   await seedFixtures(tx, 'test-only-password-hash');
   assert.equal(live.paymentRef, 'USER-REPORTED-TRANSFER', 'Seed must preserve live payment edits');
+  draft.createdAt = new Date(Date.now() - 43 * 86400000);
+  await common.sweepOverdue(new Date());
+  assert.equal(draft.status, 'CANCELLED', 'Reproduce the old seed timestamp bug');
+  await seedFixtures(tx, 'test-only-password-hash');
+  assert.equal(draft.status, 'DRAFT', 'Normal seed rerun must repair its auto-expired draft');
+  await common.sweepOverdue(new Date());
+  assert.equal(draft.status, 'DRAFT', 'Repaired draft must remain valid after the next sweep');
+  draft.status = 'CANCELLED';
+  draft.cancelReason = 'Chủ ngựa yêu cầu hủy';
+  await seedFixtures(tx, 'test-only-password-hash');
+  assert.equal(draft.status, 'CANCELLED', 'Preserve manual cancellation');
   await seedFixtures(tx, 'test-only-password-hash', true);
   checkRelations();
   assert.deepEqual(counts(), initial, 'Reset must recreate the same dataset');

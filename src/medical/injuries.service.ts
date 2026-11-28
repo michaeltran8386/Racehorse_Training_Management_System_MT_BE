@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { apiError } from '../common/exceptions/api-error';
 import { CurrentUserPayload } from '../common/decorators/current-user.decorator';
@@ -198,11 +199,11 @@ export class InjuriesService {
       );
     }
 
-    let discDate = new Date();
+    let discDate = effectiveNow();
     if (dto.discoveryDate) {
       discDate = new Date(dto.discoveryDate);
-      const now = new Date();
-      // Dung sai 5 phút cho lệch đồng hồ client/server (FE gửi new Date() lúc tạo).
+      const now = effectiveNow();
+      // Dung sai 5 phút cho lệch đồng hồ client/server (FE gửi effectiveNow() lúc tạo).
       if (discDate.getTime() > now.getTime() + 5 * 60 * 1000) {
         throw apiError(
           HttpStatus.BAD_REQUEST,
@@ -245,7 +246,7 @@ export class InjuriesService {
       notes: dto.description || 'Ghi nhận vị trí chấn thương ban đầu',
       updatedByUserId: actor.userId,
       updatedByName: actor.fullName,
-      createdAt: new Date().toISOString(),
+      createdAt: effectiveNow().toISOString(),
     };
 
     const injury = await this.prisma.injuryLog.create({
@@ -410,12 +411,12 @@ export class InjuriesService {
         history.push({
           id: `hist-${Date.now()}`,
           stage: dto.stage,
-          evaluationDate: new Date().toISOString(),
+          evaluationDate: effectiveNow().toISOString(),
           severity: dto.severity || injury.severity,
           notes: dto.description || `Cập nhật giai đoạn sang ${dto.stage}`,
           updatedByUserId: actor.userId,
           updatedByName: actor.fullName,
-          createdAt: new Date().toISOString(),
+          createdAt: effectiveNow().toISOString(),
         });
         dataToUpdate.recoveryHistory = history;
       }
@@ -454,7 +455,7 @@ export class InjuriesService {
       throw apiError(HttpStatus.NOT_FOUND, 'INJURY_NOT_FOUND', 'Injury point not found.');
     }
 
-    const now = new Date().getTime();
+    const now = effectiveNow().getTime();
     const createdTime = new Date(injury.createdAt).getTime();
     const hoursDifference = (now - createdTime) / (1000 * 60 * 60);
 
@@ -518,7 +519,7 @@ export class InjuriesService {
         );
       }
 
-      const now = new Date();
+      const now = effectiveNow();
       const evalDate = dto.evaluationDate ? new Date(dto.evaluationDate) : now;
       if (evalDate > now) {
         throw apiError(
@@ -564,7 +565,7 @@ export class InjuriesService {
         notes: dto.notes,
         updatedByUserId: actor.userId,
         updatedByName: actor.fullName,
-        createdAt: new Date().toISOString(),
+        createdAt: effectiveNow().toISOString(),
       };
 
       history.push(newEntry);

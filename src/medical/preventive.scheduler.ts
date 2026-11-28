@@ -1,3 +1,4 @@
+import { effectiveNow, isDemoClockActive } from '../common/utils/demo-clock';
 import { followUpDue } from '../business-mail/templates/health-templates';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
@@ -24,7 +25,8 @@ export class PreventiveScheduler {
 
   /** #12: 06:00 mỗi ngày nhắc lịch tái khám hôm nay và ngày mai cho bác sĩ phụ trách, Groom và chủ ngựa. */
   @Cron('0 6 * * *', { name: 'follow-up-reminders', timeZone: 'Asia/Ho_Chi_Minh' })
-  async followUpReminders(now = new Date()): Promise<number> {
+  async followUpReminders(now = effectiveNow(), fromDemoClock = false): Promise<number> {
+    if (isDemoClockActive() && !fromDemoClock) return 0;
     try {
       const { startOfTodayClub, endOfTodayClub } = getClubDateBounds(now);
       const records = await this.prisma.medicalRecord.findMany({
@@ -77,7 +79,8 @@ export class PreventiveScheduler {
   }
 
   @Cron('0 6 * * *', { name: 'preventive-reminders', timeZone: 'Asia/Ho_Chi_Minh' })
-  async dailyReminders(now = new Date()): Promise<number> {
+  async dailyReminders(now = effectiveNow(), fromDemoClock = false): Promise<number> {
+    if (isDemoClockActive() && !fromDemoClock) return 0;
     try {
       const { startOfTodayClub, endOfTodayClub, endOf30Days } = getClubDateBounds(now);
       const schedules = await this.prisma.preventiveSchedule.findMany({

@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { apiError } from '../common/exceptions/api-error';
@@ -20,7 +21,7 @@ export async function assertRosterSlot(
       'Ca trực hoặc khu chuồng đã ngừng hoạt động.',
     );
   const interval = shiftInterval(date, shift);
-  if (interval.end <= Date.now())
+  if (interval.end <= effectiveNow().getTime())
     throw apiError(
       HttpStatus.CONFLICT,
       'ROSTER_SHIFT_ENDED',

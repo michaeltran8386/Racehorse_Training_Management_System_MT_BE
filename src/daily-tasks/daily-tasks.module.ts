@@ -8,6 +8,6 @@ import { InventoryModule } from '../inventory/inventory.module';
   imports: [InventoryModule],
   controllers: [DailyTasksController],
   providers: [DailyTasksService, DailyTasksScheduler],
-  exports: [DailyTasksService],
+  exports: [DailyTasksScheduler, DailyTasksService],
 })
 export class DailyTasksModule {}

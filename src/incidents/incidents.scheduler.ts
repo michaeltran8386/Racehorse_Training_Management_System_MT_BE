@@ -1,3 +1,4 @@
+import { effectiveNow, isDemoClockActive } from '../common/utils/demo-clock';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { IncidentStatus, Role, SeverityLevel } from '@prisma/client';
@@ -21,7 +22,8 @@ export class IncidentsScheduler {
   ) {}
 
   @Cron('0 * * * *', { name: 'incident-escalation-reminders' })
-  async checkAndSendReminders(now = new Date()): Promise<number> {
+  async checkAndSendReminders(now = effectiveNow(), fromDemoClock = false): Promise<number> {
+    if (isDemoClockActive() && !fromDemoClock) return 0;
     try {
       const unreviewedIncidents = await this.prisma.incidentReport.findMany({
         where: {

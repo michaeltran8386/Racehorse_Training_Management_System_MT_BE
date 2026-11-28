@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import { STALL_HANDOVER_PREFIX } from '../daily-tasks/daily-schedule';
 import { Injectable, Logger } from '@nestjs/common';
 import { BusinessMailing, MailingStatus, Role, UserStatus } from '@prisma/client';
@@ -311,8 +312,8 @@ export class BusinessMailService {
       if (eventCode === 'MANUAL_REMIND') return true;
       if (!invoice.dueAt) return false;
       const day = (date: Date) => Math.floor((date.getTime() + 7 * 3600000) / 86400000);
-      const days = day(invoice.dueAt) - day(new Date());
-      if (eventCode === 'INVOICE_OVERDUE') return invoice.dueAt < new Date();
+      const days = day(invoice.dueAt) - day(effectiveNow());
+      if (eventCode === 'INVOICE_OVERDUE') return invoice.dueAt < effectiveNow();
       if (milestone === 'due-3d') return days > 0 && days <= 3;
       if (milestone === 'due-day') return days <= 0 && days > -3;
       if (milestone === 'overdue-3d') return days <= -3 && days > -7;
@@ -331,14 +332,14 @@ export class BusinessMailService {
     if (!task || task.isCompleted || task.horse.deletedAt || task.horse.status === 'RETIRED')
       return false;
     const date = task.date.toISOString().slice(0, 10);
-    const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
+    const today = new Date(effectiveNow().getTime() + 7 * 3600000).toISOString().slice(0, 10);
     if (eventCode === 'TASK_DUE_SOON') {
       const due = new Date(date + 'T' + task.scheduledTime + ':00+07:00').getTime();
       if (
         date !== today ||
         !Number.isFinite(due) ||
-        due < Date.now() ||
-        due > Date.now() + 3 * 3600000
+        due < effectiveNow().getTime() ||
+        due > effectiveNow().getTime() + 3 * 3600000
       )
         return false;
     } else if (eventCode !== 'TASK_ASSIGNED' && date >= today) return false;

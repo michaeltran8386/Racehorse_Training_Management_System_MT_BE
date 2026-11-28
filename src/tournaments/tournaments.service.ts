@@ -295,7 +295,7 @@ export class TournamentsService {
       );
     }
 
-    const now = new Date();
+    const now = effectiveNow();
     let initialStatus = dto.status;
     if (!initialStatus) {
       initialStatus =
@@ -411,7 +411,7 @@ export class TournamentsService {
     if (
       targetStatus === TournamentStatus.OPEN_REGISTRATION &&
       registrationDeadline &&
-      new Date(registrationDeadline) < new Date()
+      new Date(registrationDeadline) < effectiveNow()
     ) {
       throw apiError(
         HttpStatus.BAD_REQUEST,
@@ -654,7 +654,7 @@ export class TournamentsService {
           where: {
             status: 'COMPLETED',
             scheduledDate: {
-              gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 ngày qua
+              gte: new Date(effectiveNow().getTime() - 30 * 24 * 60 * 60 * 1000), // 30 ngày qua
             },
           },
           select: { id: true },
@@ -859,7 +859,7 @@ export class TournamentsService {
     }
 
     // 2. Độ tuổi tối thiểu
-    const raceDate = tournament.raceDate ? new Date(tournament.raceDate) : new Date();
+    const raceDate = tournament.raceDate ? new Date(tournament.raceDate) : effectiveNow();
     const dob = horse.dob
       ? new Date(horse.dob)
       : new Date(raceDate.getTime() - 4 * 365.25 * 86400000);
@@ -1411,7 +1411,7 @@ export class TournamentsService {
 
       const hasSimResults = tournament.registrations.some((r) => r.result !== null);
       if (
-        new Date() < new Date(tournament.raceDate) &&
+        effectiveNow() < new Date(tournament.raceDate) &&
         !hasSimResults &&
         (!dto.results || dto.results.length === 0)
       ) {

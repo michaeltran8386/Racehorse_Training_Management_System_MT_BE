@@ -1,3 +1,4 @@
+import { effectiveNow } from './demo-clock';
 // Chuẩn hóa giá trị client gửi lên (DTO chỉ kiểm tra kiểu; luật nghiệp vụ nằm ở service
 // để trả đúng mã lỗi FE đọc, vd. INVALID_EMAIL, WEAK_PASSWORD).
 
@@ -27,6 +28,6 @@ export function normEmail(value: unknown): string {
 }
 
 // "YYMM" của thời điểm hiện tại, dùng trong mã REQ-YYMM-NNN và 403-YYMM-NNNN.
-export function yymm(date = new Date()): string {
+export function yymm(date = effectiveNow()): string {
   return `${String(date.getFullYear()).slice(2)}${String(date.getMonth() + 1).padStart(2, '0')}`;
 }

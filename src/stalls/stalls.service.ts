@@ -1,3 +1,4 @@
+import { effectiveNow } from '../common/utils/demo-clock';
 import {
   assertPrimaryGroom,
   assertReceivingGroom,
@@ -863,7 +864,7 @@ export class StallsService {
         old.horseId,
       );
 
-      const now = new Date();
+      const now = effectiveNow();
       await tx.stallAllocation.update({
         where: { id: allocationId },
         data: { isActive: false, endDate: now },
@@ -1034,7 +1035,7 @@ export class StallsService {
       const sourceGroomIds = await zoneGroomIds(tx, old.stall.zoneId);
       await tx.stallAllocation.update({
         where: { id: allocationId },
-        data: { isActive: false, endDate: new Date() },
+        data: { isActive: false, endDate: effectiveNow() },
       });
       await tx.stall.update({
         where: { id: old.stallId },
@@ -1079,7 +1080,7 @@ export class StallsService {
               { code: result.stallCode },
               { code: 'Đã trả ô' },
               dto.notes ?? 'Trả ô chuồng',
-              new Date(),
+              effectiveNow(),
               { name: user.fullName },
             ),
             refId: allocationId,
@@ -1102,7 +1103,7 @@ export class StallsService {
             { code: result.stallCode },
             { code: 'Đã trả ô' },
             dto.notes ?? 'Trả ô chuồng',
-            new Date(),
+            effectiveNow(),
             { name: user.fullName },
           ),
           refId: allocationId,
